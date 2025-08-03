@@ -1,4 +1,4 @@
 import express from 'express';
-const payemntRouter = express.Router();
+const paymentRouter = express.Router();
 
-export default payemntRouter;
+export default paymentRouter;

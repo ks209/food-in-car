@@ -3,6 +3,10 @@ import dotenv from 'dotenv';
 import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
 
+import orderRouter from './routes/order/order.js';
+import restaurantRouter from './routes/restaurant/restaurant.js';
+import menuRouter from './routes/menu/menu.js';
+
 
 
 dotenv.config();
@@ -25,10 +29,10 @@ const limiter = rateLimit({
 app.use(limiter);
 
 
-app.use('/api/order', orderRoutes);
-app.use('/api/restaurant', restaurantRoutes);
-app.use('/api/menu', menuRoutes);
-app.use('/api/payment', paymentRoutes);
+app.use('/api/order', orderRouter);
+app.use('/api/restaurant', restaurantRouter);
+app.use('/api/menu', menuRouter);
+app.use('/api/payment', paymentRouter);
 
 
 app.get('/', async(req,res)=> res.send("Food Odering App"))

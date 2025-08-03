@@ -15,28 +15,30 @@ datasource db {
 }
 
 model Restaurant {
-  id       Int        @id @default(autoincrement())
-  domain   String
-  username String
-  password String
+  id             Int @id @default(autoincrement())
+  domain         String
+  username       String
+  password       String
   paymentGateway String
-  address  String
-  refreshToken  String?
-  menu     MenuItem[]
-  orders   Order[]
-  category  Category[]
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  address        String
+  refreshToken   String?
+  menu           MenuItem[]
+  orders         Order[]
+  category       Category[]
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  isActive       Boolean
 }
 
 model Category {
-  id         Int         @id @default(autoincrement())
-  name       String
-  restaurant Restaurant  @relation(fields: [restaurantId], references: [id])
-  restaurantId Int
-  menuItems  MenuItem[]
+  id            Int         @id @default(autoincrement())
+  name          String
+  restaurant    Restaurant  @relation(fields: [restaurantId], references: [id])
+  restaurantId  Int
+  menuItems     MenuItem[]
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
+  isActive      Boolean
 }
 
 
@@ -54,6 +56,7 @@ model MenuItem {
   menuItemHistory MenuItemHistory[]
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
+  isActive      Boolean
 }
 
 model OptionGroup {
@@ -84,9 +87,10 @@ model Order {
   restaurantId Int
   items        Json
   totalAmount  Float
-  customerName String
-  phoneNumber  String
+  user         User  @relation(fields: [userId], references: [id])
+  userId       Int
   status       OrderStatus
+  deliveryInstructions  String
   orderStatusHistory OrderStatusHistory[]
   merchantTransaction MerchantTransaction[]
   createdAt     DateTime    @default(now())
@@ -108,11 +112,12 @@ model MenuItemHistory {
   menuItemId   Int
   name         String
   description  String?
-  price        Float
+  price        Decimal    @default(0.0) @db.Decimal(10,2)
   available    Boolean
   changedAt    DateTime @default(now())
   changedBy    String?   
   menuItem     MenuItem @relation(fields: [menuItemId], references: [id])
+  isActive     Boolean
 }
 
 enum OrderStatus {
@@ -129,4 +134,15 @@ model MerchantTransaction {
   txnId        String
   status       String
   order        Order @relation(fields: [orderId], references: [id])
+}
+
+model User {
+  id           Int     @id @default(autoincrement())
+  customerName String
+  phoneNumber  String  @unique
+  username     String
+  password     String
+  vehicleNo    String
+  orders       Order[]
+  isActive     Boolean
 }
