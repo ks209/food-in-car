@@ -1,0 +1,132 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Restaurant {
+  id       Int        @id @default(autoincrement())
+  domain   String
+  username String
+  password String
+  paymentGateway String
+  address  String
+  refreshToken  String?
+  menu     MenuItem[]
+  orders   Order[]
+  category  Category[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+model Category {
+  id         Int         @id @default(autoincrement())
+  name       String
+  restaurant Restaurant  @relation(fields: [restaurantId], references: [id])
+  restaurantId Int
+  menuItems  MenuItem[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+
+model MenuItem {
+  id            Int         @id @default(autoincrement())
+  name          String
+  description   String?
+  price         Float
+  available     Boolean
+  restaurant    Restaurant  @relation(fields: [restaurantId], references: [id])
+  restaurantId  Int
+  category      Category?   @relation(fields: [categoryId], references: [id])
+  categoryId    Int?
+  optionGroups  OptionGroup[]
+  menuItemHistory MenuItemHistory[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+model OptionGroup {
+  id          Int         @id @default(autoincrement())
+  title       String
+  required    Boolean
+  multiple    Boolean
+  menuItem    MenuItem    @relation(fields: [menuItemId], references: [id])
+  menuItemId  Int
+  options     Option[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+model Option {
+  id            Int         @id @default(autoincrement())
+  name          String
+  priceDelta    Float
+  optionGroup   OptionGroup @relation(fields: [optionGroupId], references: [id])
+  optionGroupId Int
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+model Order {
+  id           Int        @id @default(autoincrement())
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  restaurantId Int
+  items        Json
+  totalAmount  Float
+  customerName String
+  phoneNumber  String
+  status       OrderStatus
+  orderStatusHistory OrderStatusHistory[]
+  merchantTransaction MerchantTransaction[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+model OrderStatusHistory {
+  id        Int      @id @default(autoincrement())
+  orderId   Int
+  status    String
+  updatedAt DateTime @default(now())
+  updatedBy String?   
+  order     Order    @relation(fields: [orderId], references: [id])
+}
+
+
+model MenuItemHistory {
+  id           Int      @id @default(autoincrement())
+  menuItemId   Int
+  name         String
+  description  String?
+  price        Float
+  available    Boolean
+  changedAt    DateTime @default(now())
+  changedBy    String?   
+  menuItem     MenuItem @relation(fields: [menuItemId], references: [id])
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  PROCESSING
+  DELIVERED
+  CANCELLED
+}
+
+model MerchantTransaction {
+  id           Int    @id @default(autoincrement())
+  orderId      Int
+  txnId        String
+  status       String
+  order        Order @relation(fields: [orderId], references: [id])
+}
