@@ -17,7 +17,7 @@ datasource db {
 model Restaurant {
   id             Int @id @default(autoincrement())
   domain         String
-  username       String
+  username       String @unique
   password       String
   paymentGateway String
   address        String
@@ -52,6 +52,7 @@ model MenuItem {
   restaurantId  Int
   category      Category?   @relation(fields: [categoryId], references: [id])
   categoryId    Int?
+  imageUrl     String?
   optionGroups  OptionGroup[]
   menuItemHistory MenuItemHistory[]
   createdAt     DateTime    @default(now())
@@ -63,7 +64,7 @@ model OptionGroup {
   id          Int         @id @default(autoincrement())
   title       String
   required    Boolean
-  multiple    Boolean
+  multiple    Boolean // Indicates if multiple options can be selected within this group
   menuItem    MenuItem    @relation(fields: [menuItemId], references: [id])
   menuItemId  Int
   options     Option[]
@@ -74,6 +75,7 @@ model OptionGroup {
 model Option {
   id            Int         @id @default(autoincrement())
   name          String
+  // Represents the additional cost or discount for this option
   priceDelta    Float
   optionGroup   OptionGroup @relation(fields: [optionGroupId], references: [id])
   optionGroupId Int

@@ -1,5 +1,11 @@
 import express from 'express';
+import bcrypt from 'bcryptjs';
+import prisma from '../../config/prisma.js';
+import jwt from 'jsonwebtoken';
+import cookieParser from 'cookie-parser';
+
 const restaurantRouter = express.Router();
+restaurantRouter.use(cookieParser());
 
 restaurantRouter.get('/all', async (req, res) => {
     try {
@@ -49,7 +55,9 @@ restaurantRouter.post('/create', async (req, res) => {
         address,
     } = req.body;
 
-    if (!domain || !username || !password || !paymentGateway || !address) {
+    console.log(req.body);
+
+    if (!domain || !username || !password || !address) {
         return res.status(400).json({ message: 'Missing required fields' });
     }
 
@@ -69,6 +77,7 @@ restaurantRouter.post('/create', async (req, res) => {
 
         res.status(201).json(restaurant);
     } catch (err) {
+        console.error('Error creating restaurant:', err);
         res.status(500).json({ message: 'Error creating restaurant', error: err });
     }
 });
@@ -76,7 +85,7 @@ restaurantRouter.post('/create', async (req, res) => {
 
 restaurantRouter.put('/update/:id', async (req, res) => {
     const id = Number(req.params.id);
-    const { domain, username, password, paymentGateway, address } = req.body;
+    const { domain, username, paymentGateway, address } = req.body;
 
     try {
         const existing = await prisma.restaurant.findUnique({ where: { id } });
@@ -90,15 +99,6 @@ restaurantRouter.put('/update/:id', async (req, res) => {
             paymentGateway,
             address,
         };
-
-        if (password) {
-            updateData.password = await bcrypt.hash(password, 10);
-        }
-
-        const updated = await prisma.restaurant.update({
-            where: { id },
-            data: updateData,
-        });
 
         res.json(updated);
     } catch (err) {
@@ -127,6 +127,38 @@ restaurantRouter.delete('/delete/:id', async (req, res) => {
     } catch (err) {
         res.status(500).json({ message: 'Error deactivating restaurant', error: err });
     }
+});
+
+restaurantRouter.post('/login',async(req,res)=>{
+    const {username,password}=req.body;
+    const existing = await prisma.restaurant.findUnique({where:{username:username}})
+    
+    
+    if(await bcrypt.compare(password,existing.password)){
+        const accessToken=jwt.sign({ id: existing.id }, process.env.JWT_SECRET || "s3cret", { expiresIn: '24h' });
+        const refreshToken=jwt.sign({ id: existing.id }, process.env.JWT_SECRET || "s3cret", { expiresIn:'7d' });
+        prisma.restaurant.update({
+            where: { id: existing.id },
+            data: {
+                refreshToken: refreshToken,
+            },
+        })
+        res.cookie("token", accessToken, {
+        httpOnly: true,
+        secure: false,       // change to true in production with HTTPS
+        sameSite: "lax",     // or "strict" if you want tighter CSRF protection
+        maxAge: 24 * 60 * 60 * 1000 // 1 day
+        });
+        res.json({code:200,message:"loggedIn"});
+    }else{
+        res.json({code:401, message:"Wrong Credentials"})
+    }
+
+})
+
+restaurantRouter.post("/logout", (req, res) => {
+  res.clearCookie("token");
+  res.json({ message: "Logged out" });
 });
 
 export default restaurantRouter;
