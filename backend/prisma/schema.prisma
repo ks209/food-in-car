@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
   output   = "../generated/prisma"
@@ -15,67 +9,76 @@ datasource db {
 }
 
 model Restaurant {
-  id             Int @id @default(autoincrement())
+  id             Int         @id @default(autoincrement())
+  name           String?
   domain         String
-  username       String @unique
+  username       String      @unique
   password       String
   paymentGateway String
   address        String
+  phone          String?
+  themeColor     String      @default("#f97316")
+  logoUrl        String?
+  coverUrl       String?
+  cuisines       String?
+  rating         Float?
+  ratingCount    Int?
   refreshToken   String?
   menu           MenuItem[]
   orders         Order[]
   category       Category[]
+  waiters        Waiter[]
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
   isActive       Boolean
 }
 
 model Category {
-  id            Int         @id @default(autoincrement())
-  name          String
-  restaurant    Restaurant  @relation(fields: [restaurantId], references: [id])
-  restaurantId  Int
-  menuItems     MenuItem[]
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-  isActive      Boolean
+  id           Int        @id @default(autoincrement())
+  name         String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  restaurantId Int
+  menuItems    MenuItem[]
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  isActive     Boolean
 }
 
-
 model MenuItem {
-  id            Int         @id @default(autoincrement())
-  name          String
-  description   String?
-  price         Float
-  available     Boolean
-  restaurant    Restaurant  @relation(fields: [restaurantId], references: [id])
-  restaurantId  Int
-  category      Category?   @relation(fields: [categoryId], references: [id])
-  categoryId    Int?
-  imageUrl     String?
-  optionGroups  OptionGroup[]
+  id              Int               @id @default(autoincrement())
+  name            String
+  description     String?
+  price           Float
+  available       Boolean
+  isVeg           Boolean?
+  restaurant      Restaurant        @relation(fields: [restaurantId], references: [id])
+  restaurantId    Int
+  category        Category?         @relation(fields: [categoryId], references: [id])
+  categoryId      Int?
+  imageUrl        String?
+  optionGroups    OptionGroup[]
+  orderItems      OrderItem[]
   menuItemHistory MenuItemHistory[]
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-  isActive      Boolean
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  isActive        Boolean
 }
 
 model OptionGroup {
-  id          Int         @id @default(autoincrement())
-  title       String
-  required    Boolean
-  multiple    Boolean // Indicates if multiple options can be selected within this group
-  menuItem    MenuItem    @relation(fields: [menuItemId], references: [id])
-  menuItemId  Int
-  options     Option[]
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  id         Int      @id @default(autoincrement())
+  title      String
+  required   Boolean
+  multiple   Boolean
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+  menuItemId Int
+  options    Option[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
 model Option {
   id            Int         @id @default(autoincrement())
   name          String
-  // Represents the additional cost or discount for this option
   priceDelta    Float
   optionGroup   OptionGroup @relation(fields: [optionGroupId], references: [id])
   optionGroupId Int
@@ -84,19 +87,47 @@ model Option {
 }
 
 model Order {
-  id           Int        @id @default(autoincrement())
-  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
-  restaurantId Int
-  items        Json
-  totalAmount  Float
-  user         User  @relation(fields: [userId], references: [id])
-  userId       Int
-  status       OrderStatus
-  deliveryInstructions  String
-  orderStatusHistory OrderStatusHistory[]
-  merchantTransaction MerchantTransaction[]
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  id                   Int                  @id @default(autoincrement())
+  restaurant           Restaurant           @relation(fields: [restaurantId], references: [id])
+  restaurantId         Int
+  user                 User?                @relation(fields: [userId], references: [id])
+  userId               Int?
+  waiter               Waiter?              @relation(fields: [waiterId], references: [id])
+  waiterId             Int?
+  guestName            String?
+  guestVehicle         String?
+  totalAmount          Float
+  status               OrderStatus
+  deliveryCode         String?              @unique
+  deviceKey            String?
+  deliveryInstructions String
+  orderItems           OrderItem[]
+  orderStatusHistory   OrderStatusHistory[]
+  merchantTransaction  MerchantTransaction[]
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+}
+
+model OrderItem {
+  id         Int               @id @default(autoincrement())
+  order      Order             @relation(fields: [orderId], references: [id])
+  orderId    Int
+  menuItem   MenuItem?         @relation(fields: [menuItemId], references: [id])
+  menuItemId Int?
+  name       String
+  unitPrice  Float
+  finalPrice Float
+  quantity   Int
+  options    OrderItemOption[]
+  createdAt  DateTime          @default(now())
+}
+
+model OrderItemOption {
+  id          Int       @id @default(autoincrement())
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id])
+  orderItemId Int
+  name        String
+  priceDelta  Float
 }
 
 model OrderStatusHistory {
@@ -104,47 +135,76 @@ model OrderStatusHistory {
   orderId   Int
   status    String
   updatedAt DateTime @default(now())
-  updatedBy String?   
+  updatedBy String?
   order     Order    @relation(fields: [orderId], references: [id])
 }
 
-
 model MenuItemHistory {
-  id           Int      @id @default(autoincrement())
-  menuItemId   Int
-  name         String
-  description  String?
-  price        Decimal    @default(0.0) @db.Decimal(10,2)
-  available    Boolean
-  changedAt    DateTime @default(now())
-  changedBy    String?   
-  menuItem     MenuItem @relation(fields: [menuItemId], references: [id])
-  isActive     Boolean
+  id          Int      @id @default(autoincrement())
+  menuItemId  Int
+  name        String
+  description String?
+  price       Decimal  @default(0.0) @db.Decimal(10, 2)
+  available   Boolean
+  changedAt   DateTime @default(now())
+  changedBy   String?
+  menuItem    MenuItem @relation(fields: [menuItemId], references: [id])
+  isActive    Boolean
 }
 
 enum OrderStatus {
   PENDING
   PAID
-  PROCESSING
-  DELIVERED
+  PREPARING
+  READY
+  COMPLETED
   CANCELLED
 }
 
 model MerchantTransaction {
-  id           Int    @id @default(autoincrement())
-  orderId      Int
-  txnId        String
-  status       String
-  order        Order @relation(fields: [orderId], references: [id])
+  id      Int    @id @default(autoincrement())
+  orderId Int
+  txnId   String
+  status  String
+  order   Order  @relation(fields: [orderId], references: [id])
 }
 
+// Auto-created on first order keyed by phone number; upgraded to full account on registration
 model User {
-  id           Int     @id @default(autoincrement())
+  id           Int           @id @default(autoincrement())
   customerName String
-  phoneNumber  String  @unique
-  username     String
-  password     String
-  vehicleNo    String
+  phoneNumber  String        @unique
+  username     String?       @unique
+  password     String?
   orders       Order[]
-  isActive     Boolean
+  vehicles     UserVehicle[]
+  isActive     Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 }
+
+// A user's saved vehicles (one user -> many vehicles), used for prefill on later orders
+model UserVehicle {
+  id         Int      @id @default(autoincrement())
+  user       User     @relation(fields: [userId], references: [id])
+  userId     Int
+  vehicleNo  String
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @updatedAt
+
+  @@unique([userId, vehicleNo])
+}
+
+// Delivery staff of a restaurant. Scan orders via a 1-day token (no login required).
+model Waiter {
+  id           Int        @id @default(autoincrement())
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  restaurantId Int
+  name         String
+  phone        String?
+  isActive     Boolean    @default(true)
+  orders       Order[]
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+

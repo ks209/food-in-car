@@ -1,0 +1,43 @@
+services:
+  backend:
+    build: .
+    ports:
+      - "5000:5000"
+    # Secrets (JWT_SECRET, PHONEPE_*, ADMIN_*, FRONTEND_URL, etc.) come from .env
+    env_file:
+      - .env
+    # These override whatever is in .env so the app talks to the compose services
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/foodincar?schema=public
+      REDIS_URL: redis://redis:6379
+      PORT: 5000
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: foodincar
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

@@ -29,18 +29,12 @@ categoryRouter.post('/create', restaurantAuth, async (req, res) => {
 
 categoryRouter.get('/all', restaurantAuth, async (req, res) => {
   try {
-    console.log("Fetching all categories for restaurantId:", req.body?.restaurantId);
     const categories = await prisma.category.findMany({
-      where: { restaurantId: req.body?.restaurantId },
-      select: {
-        id: true,
-        name: true
-    }});
-
+      where: { restaurantId: req.restaurantId, isActive: true },
+      select: { id: true, name: true }
+    });
     res.status(200).json(categories);
-  }
-
-  catch (error) {
+  } catch (error) {
     res.status(500).json({ error: "Failed to fetch all categories", details: error.message });
   }
 });
@@ -66,14 +60,13 @@ categoryRouter.get('/:id', async (req, res) => {
 categoryRouter.get('/', restaurantAuth, async (req, res) => {
   try {
     const categories = await prisma.category.findMany({
-      where: { restaurantId: req.body?.restaurantId }
+      where: { restaurantId: req.restaurantId },
+      include: { menuItems: { where: { isActive: true } } }
     });
-
     res.status(200).json(categories);
-  }
-    catch (error) {
+  } catch (error) {
     res.status(500).json({ error: "Failed to fetch categories", details: error.message });
-    }
+  }
 });
 
 
@@ -113,9 +106,16 @@ categoryRouter.get('/restaurant/:restaurantId', async (req, res) => {
   try {
     const restaurantId = parseInt(req.params.restaurantId);
     const categories = await prisma.category.findMany({
-      where: { restaurantId: restaurantId, isActive: 1 },
+      where: { restaurantId: restaurantId, isActive: true },
       include: {
-        menuItems: true
+        menuItems: {
+          where: { isActive: true, available: true },
+          include: {
+            optionGroups: {
+              include: { options: true }
+            }
+          }
+        }
       }
     });
     res.status(200).json(categories);
@@ -127,7 +127,7 @@ categoryRouter.get('/restaurant/:restaurantId', async (req, res) => {
 categoryRouter.get('/active', async (req, res) => {
     try {
         const categories = await prisma.category.findMany({
-            where: { isActive: 1 },
+            where: { isActive: true },
             include: {
                 restaurant: {
                 select: {
