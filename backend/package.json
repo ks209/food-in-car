@@ -5,9 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "nodemon index.js",
-    "start": "npx prisma migrate deploy && node index.js",
+    "start": "npx prisma migrate deploy && node prisma/seed.js && node index.js",
+    "seed": "node prisma/seed.js",
     "generate": "prisma generate",
     "postinstall": "prisma generate"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
   },
   "keywords": [],
   "author": "",

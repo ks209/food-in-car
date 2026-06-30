@@ -1,23 +1,25 @@
 # backend/Dockerfile
 
-FROM node:18
+FROM node:20-slim
+
+# Prisma needs openssl on the slim image to run its query engine
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
+# Install deps first so this layer is cached unless package files change.
+# postinstall runs `prisma generate`, so copy the schema before installing.
 COPY package*.json ./
-RUN npm install
-
-RUN npx prisma generate
-
 COPY prisma ./prisma
+RUN npm ci
 
-
-# Copy the entire backend code
+# Copy the rest of the backend source
 COPY . .
 
-# RUN npx prisma migrate dev --name init --create-only
-# RUN npx prisma generate
+# Regenerate the client against the copied schema (output: ../generated/prisma)
+RUN npx prisma generate
 
 EXPOSE 5000
 
-CMD ["npm", "run", "dev"]
+# `start` runs: prisma migrate deploy && seed && node index.js
+CMD ["npm", "start"]

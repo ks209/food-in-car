@@ -13,26 +13,47 @@ services:
     ports:
       - "5432:5432"
 
+  redis:
+    image: redis:7.2
+    container_name: redis_server
+    ports:
+      - "6379:6379"
+
   backend:
     build: ./backend
     ports:
       - "5000:5000"
     volumes:
       - ./backend:/app
+      - /app/node_modules
     environment:
       DATABASE_URL: postgres://postgres:postgres@db:5432/foodincar
+      JWT_SECRET: supersecretjwtkey
     depends_on:
       - db
-    command: sh -c "npx prisma migrate dev && npx prisma generate && npm run start"
-  redis:
-    image: redis:7.2
-    container_name: redis_server
-    ports:
-      - "6379:6379"
-  frontend:
-    build: ./frontend
+      - redis
+
+  # SaaS admin panel — manage restaurants
+  admin:
+    build: ./admin
     ports:
       - "3000:3000"
+    depends_on:
+      - backend
+
+  # Restaurant management dashboard
+  dashboard:
+    build: ./dashboard
+    ports:
+      - "3001:3000"
+    depends_on:
+      - backend
+
+  # Customer mobile-first ordering app
+  mobile:
+    build: ./mobile
+    ports:
+      - "3002:80"
     depends_on:
       - backend
 
