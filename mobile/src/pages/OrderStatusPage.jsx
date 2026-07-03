@@ -98,7 +98,9 @@ export default function OrderStatusPage() {
   const isDone = order.status === "COMPLETED" || order.status === "DELIVERED"
   const currentStepIdx = stepIndex(order.status)
   const customerName = order.guestName || order.user?.customerName
-  const vehicleNo = order.guestVehicle || order.user?.vehicles?.[0]
+  // The order's own vehicle is the source of truth: absent = pickup.
+  const vehicleNo = order.guestVehicle
+  const isPickup = !vehicleNo
 
   const headerBg = isCancelled
     ? "linear-gradient(135deg, #E06A6A 0%, #C24C4C 100%)"
@@ -213,8 +215,8 @@ export default function OrderStatusPage() {
           </div>
         )}
 
-        {/* Customer + vehicle */}
-        {(customerName || vehicleNo) && (
+        {/* Customer + fulfilment (vehicle or pickup) */}
+        {(
           <div className="card" style={{ padding:"1rem 1.25rem" }}>
             <div style={{ display:"flex", gap:"1.25rem" }}>
               {customerName && (
@@ -223,12 +225,14 @@ export default function OrderStatusPage() {
                   <p style={{ fontWeight:700, fontSize:"0.95rem" }}>{customerName}</p>
                 </div>
               )}
-              {vehicleNo && (
-                <div style={{ flex:1 }}>
-                  <p style={{ fontSize:"0.72rem", fontWeight:600, color:"var(--muted)", textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:"0.2rem" }}>Vehicle</p>
-                  <p style={{ fontWeight:700, fontSize:"0.95rem", color:"var(--primary)", letterSpacing:"0.05em" }}>{vehicleNo}</p>
-                </div>
-              )}
+              <div style={{ flex:1 }}>
+                <p style={{ fontSize:"0.72rem", fontWeight:600, color:"var(--muted)", textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:"0.2rem" }}>
+                  {isPickup ? "Fulfilment" : "Vehicle"}
+                </p>
+                <p style={{ fontWeight:700, fontSize:"0.95rem", color:"var(--primary)", letterSpacing:"0.05em" }}>
+                  {isPickup ? "Pickup" : vehicleNo}
+                </p>
+              </div>
             </div>
           </div>
         )}

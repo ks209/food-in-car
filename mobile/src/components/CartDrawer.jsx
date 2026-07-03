@@ -15,6 +15,7 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
   const [name, setName] = useState("")
   const [vehicle, setVehicle] = useState("")
   const [phone, setPhone] = useState("")
+  const [orderType, setOrderType] = useState("car") // "car" (deliver to vehicle) | "pickup"
   const [instructions, setInstructions] = useState("")
   const [placing, setPlacing] = useState(false)
   const [error, setError] = useState("")
@@ -29,7 +30,10 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
 
   const isPhonePe = restaurant?.paymentGateway?.toUpperCase() === "PHONEPE"
   const phoneValid = /^\d{10}$/.test(phone.trim())
-  const canOrder = name.trim() && phoneValid && vehicle.trim() && cart.length > 0
+  // Pickup is only an option if the restaurant enabled it; otherwise vehicle is mandatory.
+  const pickupAllowed = !!restaurant?.pickupEnabled
+  const needsVehicle = !pickupAllowed || orderType === "car"
+  const canOrder = name.trim() && phoneValid && cart.length > 0 && (!needsVehicle || vehicle.trim())
 
   const orderPayload = () => ({
     restaurantId: parseInt(restaurantId),
@@ -40,7 +44,8 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
     totalAmount: total,
     deliveryInstructions: instructions,
     guestName: name.trim(),
-    guestVehicle: vehicle.trim().toUpperCase(),
+    // Vehicle only for in-car delivery; empty means "pickup" (backend treats absent as pickup)
+    guestVehicle: needsVehicle ? vehicle.trim().toUpperCase() : "",
     mobileNumber: phone.trim(),
     deviceKey: getDeviceKey(),
   })
@@ -154,6 +159,32 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
                   <Car size={15} strokeWidth={2.2} /> Your Details
                 </p>
                 <div style={{ display:"flex", flexDirection:"column", gap:"0.65rem" }}>
+                  {/* Order type: only shown if the restaurant allows pickup */}
+                  {pickupAllowed && (
+                    <div className="field">
+                      <label>How would you like it?</label>
+                      <div style={{ display:"flex", gap:"0.5rem" }}>
+                        {[
+                          { key:"car", label:"Deliver in Car" },
+                          { key:"pickup", label:"Pickup" },
+                        ].map(opt => {
+                          const active = orderType === opt.key
+                          return (
+                            <button key={opt.key} type="button" onClick={() => setOrderType(opt.key)}
+                              style={{
+                                flex:1, padding:"0.7rem", borderRadius:12, fontWeight:700, fontSize:"0.88rem",
+                                border:`1.5px solid ${active ? "var(--primary)" : "var(--border)"}`,
+                                background: active ? "var(--primary-light)" : "var(--surface)",
+                                color: active ? "var(--primary)" : "var(--text-secondary)",
+                                transition:"all 0.12s",
+                              }}>
+                              {opt.label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
                   <div className="field">
                     <label>Your Name</label>
                     <input className="input" placeholder="e.g. Rahul Sharma" value={name}
@@ -162,17 +193,19 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
                   <div className="field">
                     <label>Mobile Number</label>
                     <input className="input" type="tel" inputMode="numeric" placeholder="10-digit mobile number" value={phone}
-                      onChange={e => setPhone(e.target.value.replace(/\D/g, ""))} style={{ background:"white" }} maxLength={10} />
+                      onChange={e => setPhone(e.target.value.replace(/\D/g, ""))} maxLength={10} />
                     {phone.trim() && !phoneValid && (
                       <span style={{ fontSize:"0.72rem", color:"var(--error)" }}>Enter a valid 10-digit number</span>
                     )}
                   </div>
-                  <div className="field">
-                    <label>Vehicle Number</label>
-                    <input className="input" placeholder="e.g. DL 4C AB 1234" value={vehicle}
-                      onChange={e => setVehicle(e.target.value)}
-                      style={{ background:"var(--surface-2)", textTransform:"uppercase", letterSpacing:"0.05em" }} />
-                  </div>
+                  {needsVehicle && (
+                    <div className="field">
+                      <label>Vehicle Number</label>
+                      <input className="input" placeholder="e.g. DL 4C AB 1234" value={vehicle}
+                        onChange={e => setVehicle(e.target.value)}
+                        style={{ background:"var(--surface-2)", textTransform:"uppercase", letterSpacing:"0.05em" }} />
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -236,7 +269,9 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
 
             {!canOrder && cart.length > 0 && (
               <p style={{ textAlign:"center", fontSize:"0.78rem", color:"var(--muted)" }}>
-                Enter your name, mobile number and vehicle to continue
+                {needsVehicle
+                  ? "Enter your name, mobile number and vehicle to continue"
+                  : "Enter your name and mobile number to continue"}
               </p>
             )}
 

@@ -29,11 +29,11 @@ const STATUS_COLORS = {
 
 export function DashboardOverview() {
   const [orders, setOrders] = useState([])
-  const [menuCount, setMenuCount] = useState(0)
+  const [menuItems, setMenuItems] = useState([])
 
   useEffect(() => {
     axios.get(`${API}/api/order`, { withCredentials: true }).then((r) => setOrders(r.data)).catch(() => {})
-    axios.get(`${API}/api/menu/`, { withCredentials: true }).then((r) => setMenuCount(r.data.length)).catch(() => {})
+    axios.get(`${API}/api/menu/`, { withCredentials: true }).then((r) => setMenuItems(r.data)).catch(() => {})
   }, [])
 
   const today = new Date().toDateString()
@@ -41,22 +41,28 @@ export function DashboardOverview() {
   const revenueToday = todayOrders.filter((o) => REVENUE_STATES.includes(o.status)).reduce((sum, o) => sum + o.totalAmount, 0)
   const activeOrders = orders.filter((o) => ["PENDING", "PAID", "PREPARING", "READY"].includes(o.status)).length
 
+  // Exclude soft-deleted items (isActive === false); split the rest by availability
+  const liveItems = menuItems.filter((m) => m.isActive !== false)
+  const activeItems = liveItems.filter((m) => m.available).length
+  const inactiveItems = liveItems.filter((m) => !m.available).length
+
   const stats = [
     { title: "Orders Today", value: todayOrders.length, icon: ShoppingBag },
     { title: "Revenue Today", value: `₹${revenueToday.toFixed(0)}`, icon: IndianRupee },
     { title: "Active Orders", value: activeOrders, icon: Clock },
-    { title: "Menu Items", value: menuCount, icon: ChefHat },
+    { title: "Menu Items", value: liveItems.length, icon: ChefHat,
+      sub: `${activeItems} active · ${inactiveItems} inactive` },
   ]
 
-  // Revenue for the last 7 days (committed orders), oldest → newest
-  const revenue7d = Array.from({ length: 7 }, (_, i) => {
+  // Revenue for the last 15 days (committed orders), oldest → newest
+  const revenue15d = Array.from({ length: 15 }, (_, i) => {
     const d = new Date()
-    d.setDate(d.getDate() - (6 - i))
+    d.setDate(d.getDate() - (14 - i))
     const key = d.toDateString()
     const revenue = orders
       .filter((o) => REVENUE_STATES.includes(o.status) && new Date(o.createdAt).toDateString() === key)
       .reduce((s, o) => s + o.totalAmount, 0)
-    return { day: d.toLocaleDateString([], { weekday: "short" }), revenue }
+    return { day: d.toLocaleDateString([], { day: "numeric", month: "short" }), revenue }
   })
 
   // Orders grouped by status
@@ -75,6 +81,7 @@ export function DashboardOverview() {
                 <div>
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{stat.title}</p>
                   <p className="text-2xl font-bold text-slate-900 mt-1">{stat.value}</p>
+                  {stat.sub && <p className="text-xs text-slate-400 mt-1">{stat.sub}</p>}
                 </div>
                 <div className="p-2.5 rounded-xl brand-bg-subtle">
                   <stat.icon className="h-5 w-5 brand-text" />
@@ -89,13 +96,14 @@ export function DashboardOverview() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="border-0 shadow-sm lg:col-span-2">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-700 uppercase tracking-wide">Revenue · last 7 days</CardTitle>
+            <CardTitle className="text-sm font-semibold text-slate-700 uppercase tracking-wide">Revenue · last 15 days</CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={revenue7d} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
+              <BarChart data={revenue15d} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-                <XAxis dataKey="day" tickLine={false} axisLine={false} fontSize={12} stroke="#71717a" />
+                <XAxis dataKey="day" tickLine={false} axisLine={false} fontSize={11} stroke="#71717a"
+                  interval="preserveStartEnd" minTickGap={12} />
                 <YAxis tickLine={false} axisLine={false} fontSize={12} stroke="#71717a" width={48}
                   tickFormatter={(v) => `₹${v}`} />
                 <Tooltip formatter={(v) => [`₹${v}`, "Revenue"]} cursor={{ fill: "rgba(255,255,255,0.04)" }}
@@ -148,9 +156,11 @@ export function DashboardOverview() {
                       <p className="text-sm font-medium text-slate-800">
                         {order.user?.customerName || order.guestName || "Guest"}
                       </p>
-                      {(order.guestVehicle || order.user?.vehicles?.[0]) && (
-                        <p className="text-xs text-slate-400">{order.guestVehicle || order.user?.vehicles?.[0]}</p>
-                      )}
+                      <p className="text-xs text-slate-400">
+                        {order.guestVehicle
+                          ? order.guestVehicle
+                          : <span className="text-amber-600 font-medium">Pickup</span>}
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-4">

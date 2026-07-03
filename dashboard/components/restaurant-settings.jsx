@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Check, Loader2, Palette, Store } from "lucide-react"
+import { Switch } from "@/components/ui/switch"
+import { Check, Loader2, Palette, Store, Car } from "lucide-react"
 import { toast } from "sonner"
 import axios from "axios"
 import { API } from "@/lib/api"
@@ -40,6 +41,7 @@ export function RestaurantSettings() {
           address: r.data.address || "",
           themeColor: r.data.themeColor || "#f97316",
           logoUrl: r.data.logoUrl || "",
+          pickupEnabled: r.data.pickupEnabled ?? false,
           username: r.data.username,
           domain: r.data.domain,
         }
@@ -69,6 +71,7 @@ export function RestaurantSettings() {
           address: form.address,
           themeColor: form.themeColor,
           logoUrl: form.logoUrl,
+          pickupEnabled: form.pickupEnabled,
         },
         { withCredentials: true }
       )
@@ -137,6 +140,29 @@ export function RestaurantSettings() {
               <div className="space-y-1.5">
                 <Label className="text-sm">Logo URL</Label>
                 <Input value={form.logoUrl} onChange={(e) => setField("logoUrl", e.target.value)} placeholder="https://…/logo.png" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-0">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-2">
+                <Car className="h-4 w-4" /> Fulfilment
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-0.5">
+                  <Label className="text-sm">Allow pickup orders</Label>
+                  <p className="text-xs text-muted-foreground">
+                    When on, customers can choose “Pickup” and skip the vehicle number. When off, a vehicle number is required on every order.
+                  </p>
+                </div>
+                <Switch
+                  checked={form.pickupEnabled}
+                  onCheckedChange={(v) => setField("pickupEnabled", v)}
+                  className="mt-0.5 flex-shrink-0"
+                />
               </div>
             </CardContent>
           </Card>
