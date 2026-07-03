@@ -19,7 +19,7 @@ const openSans = Open_Sans({
 })
 
 export const metadata = {
-  title: "FoodInCar Dashboard",
+  title: "Carkhanaa Dashboard",
   description: "Restaurant management dashboard",
 }
 

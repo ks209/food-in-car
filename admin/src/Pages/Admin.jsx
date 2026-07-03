@@ -121,8 +121,8 @@ const Admin = ({ onLogout }) => {
       <div className="sidebar">
         <div>
           <div className="sidebar-logo">
-            <div className="logo-badge">F</div>
-            <span>FoodInCar</span>
+            <img src="/carkhanaalogo.png" alt="Carkhanaa" style={{ width: 32, height: 32, borderRadius: 8, objectFit: 'cover' }} />
+            <span>Carkhanaa</span>
           </div>
           <div className="sidebar-label">Admin Portal</div>
         </div>

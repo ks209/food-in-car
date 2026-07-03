@@ -35,16 +35,16 @@ const Login = ({ onSuccess }) => {
       {/* Left panel */}
       <div className="login-left">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div className="logo-badge">F</div>
-          <span style={{ color: 'var(--text)', fontWeight: 600, fontSize: 15 }}>FoodInCar Admin</span>
+          <img src="/carkhanaalogo.png" alt="Carkhanaa" style={{ width: 32, height: 32, borderRadius: 8, objectFit: 'cover' }} />
+          <span style={{ color: 'var(--text)', fontWeight: 600, fontSize: 15 }}>Carkhanaa Admin</span>
         </div>
         <div>
           <p className="login-tagline">
             Manage your restaurants with <strong>precision</strong> and ease.
           </p>
-          <p className="login-footer" style={{ marginTop: 12 }}>Support portal · FoodInCar SaaS</p>
+          <p className="login-footer" style={{ marginTop: 12 }}>Support portal · Carkhanaa SaaS</p>
         </div>
-        <div className="login-footer">© {new Date().getFullYear()} FoodInCar</div>
+        <div className="login-footer">© {new Date().getFullYear()} Carkhanaa</div>
       </div>
 
       {/* Right panel */}

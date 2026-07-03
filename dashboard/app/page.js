@@ -17,10 +17,8 @@ export default function LoginPage() {
         <div className="pointer-events-none absolute bottom-0 right-0 h-72 w-72 rounded-full blur-3xl opacity-20 brand-bg" />
 
         <div className="flex items-center gap-3 relative anim-fade-up">
-          <div className="h-9 w-9 rounded-xl brand-bg flex items-center justify-center text-white text-lg font-bold">
-            F
-          </div>
-          <span className="text-white font-semibold text-lg tracking-tight">FoodInCar</span>
+          <img src="/carkhanaalogo.png" alt="Carkhanaa" className="h-9 w-9 rounded-xl object-cover" />
+          <span className="text-white font-semibold text-lg tracking-tight">Carkhanaa</span>
         </div>
 
         <div className="relative anim-fade-up" style={{ animationDelay: "0.08s" }}>
@@ -57,10 +55,8 @@ export default function LoginPage() {
         <div className="w-full max-w-sm anim-fade-up" style={{ animationDelay: "0.1s" }}>
           {/* Mobile logo */}
           <div className="flex items-center gap-2 mb-10 lg:hidden">
-            <div className="h-8 w-8 rounded-lg brand-bg flex items-center justify-center text-white font-bold text-sm">
-              F
-            </div>
-            <span className="font-semibold text-foreground">FoodInCar</span>
+            <img src="/carkhanaalogo.png" alt="Carkhanaa" className="h-8 w-8 rounded-lg object-cover" />
+            <span className="font-semibold text-foreground">Carkhanaa</span>
           </div>
 
           <h1 className="text-2xl font-bold text-foreground mb-1 tracking-tight">Welcome back</h1>

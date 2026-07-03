@@ -130,8 +130,7 @@ export function DeliveryScan() {
                 </div>
                 <p className="text-sm text-slate-600">
                   {result.order.user?.customerName || result.order.guestName || "Guest"}
-                  {(result.order.guestVehicle || result.order.user?.vehicles?.[0]) &&
-                    ` · ${result.order.guestVehicle || result.order.user?.vehicles?.[0]}`}
+                  {` · ${result.order.guestVehicle || "Pickup"}`}
                 </p>
                 <p className="text-sm text-slate-500">
                   {result.order.orderItems?.map((i) => `${i.quantity}× ${i.name}`).join(", ")}

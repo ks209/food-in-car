@@ -9,7 +9,7 @@ import { Printer, Receipt } from "lucide-react"
 export function OrderInvoice({ order }) {
   if (!order) return null
   const customer = order.user?.customerName || order.guestName || "Guest"
-  const vehicle = order.guestVehicle || order.user?.vehicles?.[0]
+  const vehicle = order.guestVehicle
   const phone = order.user?.phoneNumber
   const r = order.restaurant || {}
 
@@ -37,7 +37,7 @@ export function OrderInvoice({ order }) {
             <div className="flex justify-between"><span>Date</span><span>{new Date(order.createdAt).toLocaleString()}</span></div>
             <div className="flex justify-between"><span>Customer</span><span>{customer}</span></div>
             {phone && <div className="flex justify-between"><span>Phone</span><span>{phone}</span></div>}
-            {vehicle && <div className="flex justify-between"><span>Vehicle</span><span>{vehicle}</span></div>}
+            <div className="flex justify-between"><span>{vehicle ? "Vehicle" : "Fulfilment"}</span><span>{vehicle || "Pickup"}</span></div>
             {order.waiter?.name && <div className="flex justify-between"><span>Delivered by</span><span>{order.waiter.name}</span></div>}
           </div>
 

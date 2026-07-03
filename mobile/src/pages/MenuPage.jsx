@@ -8,6 +8,9 @@ import MenuItemCard from "../components/MenuItemCard"
 import AccountMenu from "../components/AccountMenu"
 import { useRestaurantTheme } from "../lib/theme"
 
+// Mandatory synthetic category shown first — aggregates every item across categories.
+const ALL_ID = "__all__"
+
 function SkeletonCard() {
   return (
     <div className="item-card">
@@ -43,7 +46,7 @@ export default function MenuPage() {
         setRestaurant(rRes.data)
         const cats = cRes.data
         setCategories(cats)
-        if (cats.length > 0) setActiveCategory(cats[0].id)
+        setActiveCategory(ALL_ID)
       })
       .catch(() => setError("Couldn't load menu. Please try again."))
       .finally(() => setLoading(false))
@@ -71,14 +74,21 @@ export default function MenuPage() {
 
   const q = search.trim().toLowerCase()
 
+  // Every active/available item across all categories (backs the "All" tab + search).
+  const allItems = useMemo(
+    () => categories.flatMap(c => c.menuItems || []).filter(i => i.isActive && i.available),
+    [categories]
+  )
+
   const displayItems = useMemo(() => {
     if (q) {
-      return categories.flatMap(c => c.menuItems || []).filter(
-        i => i.isActive && i.available && (i.name.toLowerCase().includes(q) || i.description?.toLowerCase().includes(q))
+      return allItems.filter(
+        i => i.name.toLowerCase().includes(q) || i.description?.toLowerCase().includes(q)
       )
     }
+    if (activeCategory === ALL_ID) return allItems
     return categories.find(c => c.id === activeCategory)?.menuItems?.filter(i => i.isActive && i.available) || []
-  }, [q, categories, activeCategory])
+  }, [q, categories, activeCategory, allItems])
 
   if (error) return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100dvh", padding: "2rem", flexDirection: "column", gap: "0.9rem" }}>
@@ -166,9 +176,14 @@ export default function MenuPage() {
       </div>
 
       {/* ── Category segmented control ── */}
-      {!loading && !q && categories.length > 0 && (
+      {!loading && !q && allItems.length > 0 && (
         <div className="cat-bar">
           <div ref={tabsRef} className="cat-scroller">
+            <button data-cat={ALL_ID} onClick={() => switchCategory(ALL_ID)}
+              className={`cat-chip ${activeCategory === ALL_ID ? "active" : ""}`}>
+              All
+              <span className="cat-count">{allItems.length}</span>
+            </button>
             {categories.map(cat => {
               const active = activeCategory === cat.id
               const count = cat.menuItems?.filter(i => i.isActive && i.available).length || 0
@@ -189,7 +204,7 @@ export default function MenuPage() {
         {!loading && !q && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0.35rem 0.15rem 0.85rem" }}>
             <h2 style={{ fontSize: "1.15rem", fontWeight: 800 }}>
-              {categories.find(c => c.id === activeCategory)?.name || "Menu"}
+              {activeCategory === ALL_ID ? "All" : categories.find(c => c.id === activeCategory)?.name || "Menu"}
             </h2>
             <span style={{ fontSize: "0.78rem", color: "var(--muted)", fontWeight: 600 }}>{displayItems.length} items</span>
           </div>

@@ -112,19 +112,22 @@ orderRouter.get('/:id', async (req, res) => {
 orderRouter.post('/create', async (req, res) => {
   try {
     const { restaurantId, items, totalAmount, deliveryInstructions, guestName, guestVehicle, mobileNumber, deviceKey } = req.body;
-    if (!restaurantId || !items || !totalAmount || !guestName || !guestVehicle || !mobileNumber) {
-      return res.status(400).json({ error: 'Name, phone number, vehicle number and items are required' });
+    if (!restaurantId || !items || !totalAmount || !guestName || !mobileNumber) {
+      return res.status(400).json({ error: 'Name, phone number and items are required' });
     }
 
-    // Auto-create or find the customer by phone number; remember their vehicle
-    const customer = await resolveCustomerByPhone(mobileNumber, guestName, guestVehicle);
+    // Vehicle is optional: absent means the customer chose pickup.
+    const vehicle = guestVehicle && guestVehicle.trim() ? guestVehicle.trim().toUpperCase() : null;
+
+    // Auto-create or find the customer by phone number; remember their vehicle (if any)
+    const customer = await resolveCustomerByPhone(mobileNumber, guestName, vehicle);
 
     const order = await prisma.order.create({
       data: {
         restaurantId: parseInt(restaurantId),
         userId: customer.id,
         guestName,
-        guestVehicle: guestVehicle.toUpperCase(),
+        guestVehicle: vehicle,
         totalAmount: parseFloat(totalAmount),
         deliveryCode: genDeliveryCode(),
         deviceKey: deviceKey || null,

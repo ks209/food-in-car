@@ -29,7 +29,8 @@ function xVerifyForStatus(endpoint) {
 }
 
 async function createOrder(req, { restaurantId, items, totalAmount, deliveryInstructions, guestName, guestVehicle, mobileNumber, deviceKey }) {
-  const vehicle = guestVehicle.toUpperCase();
+  // Vehicle is optional: absent means pickup.
+  const vehicle = guestVehicle && guestVehicle.trim() ? guestVehicle.trim().toUpperCase() : null;
   const customer = await resolveCustomerByPhone(mobileNumber, guestName, vehicle);
   return prisma.order.create({
     data: {
@@ -65,8 +66,8 @@ async function createOrder(req, { restaurantId, items, totalAmount, deliveryInst
 // ── POST /api/payment/initiate ────────────────────────────────────────────────
 paymentRouter.post('/initiate', async (req, res) => {
   const { restaurantId, items, totalAmount, deliveryInstructions, guestName, guestVehicle, mobileNumber, deviceKey } = req.body;
-  if (!restaurantId || !items || !totalAmount || !guestName || !guestVehicle || !mobileNumber) {
-    return res.status(400).json({ error: 'Missing required fields (name, phone, vehicle, items)' });
+  if (!restaurantId || !items || !totalAmount || !guestName || !mobileNumber) {
+    return res.status(400).json({ error: 'Missing required fields (name, phone, items)' });
   }
 
   try {

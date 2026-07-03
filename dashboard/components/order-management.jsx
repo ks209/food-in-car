@@ -130,9 +130,11 @@ export function OrderManagement() {
                         <p className="text-sm font-medium text-slate-800">
                           {order.user?.customerName || order.guestName || "Guest"}
                         </p>
-                        {(order.guestVehicle || order.user?.vehicles?.[0]) && (
-                          <p className="text-xs text-slate-400">{order.guestVehicle || order.user?.vehicles?.[0]}</p>
-                        )}
+                        <p className="text-xs text-slate-400">
+                          {order.guestVehicle
+                            ? order.guestVehicle
+                            : <span className="text-amber-600 font-medium">Pickup</span>}
+                        </p>
                         <p className="text-xs text-slate-400 mt-1">
                           {order.orderItems?.map((i) => `${i.quantity}× ${i.name}`).join(", ") || "—"}
                         </p>
@@ -170,7 +172,9 @@ export function OrderManagement() {
                               <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Customer</p>
                               <p className="text-sm font-medium">{selectedOrder.user?.customerName || selectedOrder.guestName}</p>
                               {selectedOrder.user?.phoneNumber && <p className="text-sm text-slate-500">{selectedOrder.user.phoneNumber}</p>}
-                              <p className="text-sm text-slate-500">Vehicle: {selectedOrder.guestVehicle || selectedOrder.user?.vehicles?.[0]}</p>
+                              <p className="text-sm text-slate-500">
+                                {selectedOrder.guestVehicle ? `Vehicle: ${selectedOrder.guestVehicle}` : "Pickup order"}
+                              </p>
                             </div>
                             {selectedOrder.waiter?.name && (
                               <div>

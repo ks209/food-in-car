@@ -23,6 +23,7 @@ model Restaurant {
   cuisines       String?
   rating         Float?
   ratingCount    Int?
+  pickupEnabled  Boolean     @default(false)
   refreshToken   String?
   menu           MenuItem[]
   orders         Order[]

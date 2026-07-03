@@ -27,6 +27,7 @@ const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:5174",
   "https://app.carkhanaa.in",
+  "https://dash.carkhanaa.in",
   "https://food-in-car-three.vercel.app"
 ];
 app.use(cors({

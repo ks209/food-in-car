@@ -13,7 +13,7 @@ restaurantRouter.get('/me', restaurantAuth, async (req, res) => {
     try {
         const restaurant = await prisma.restaurant.findUnique({
             where: { id: req.restaurantId },
-            select: { id: true, name: true, username: true, domain: true, address: true, phone: true, themeColor: true, logoUrl: true },
+            select: { id: true, name: true, username: true, domain: true, address: true, phone: true, themeColor: true, logoUrl: true, pickupEnabled: true },
         });
         if (!restaurant) return res.status(404).json({ message: 'Restaurant not found' });
         res.json(restaurant);
@@ -24,7 +24,7 @@ restaurantRouter.get('/me', restaurantAuth, async (req, res) => {
 
 // Restaurant edits its OWN profile/branding from the dashboard settings page.
 restaurantRouter.put('/me', restaurantAuth, async (req, res) => {
-    const { name, phone, address, themeColor, logoUrl } = req.body;
+    const { name, phone, address, themeColor, logoUrl, pickupEnabled } = req.body;
     try {
         const data = {};
         if (name !== undefined) data.name = name || null;
@@ -32,11 +32,12 @@ restaurantRouter.put('/me', restaurantAuth, async (req, res) => {
         if (address !== undefined) data.address = address;
         if (themeColor !== undefined) data.themeColor = themeColor || '#f97316';
         if (logoUrl !== undefined) data.logoUrl = logoUrl || null;
+        if (pickupEnabled !== undefined) data.pickupEnabled = !!pickupEnabled;
 
         const updated = await prisma.restaurant.update({
             where: { id: req.restaurantId },
             data,
-            select: { id: true, name: true, username: true, domain: true, address: true, phone: true, themeColor: true, logoUrl: true },
+            select: { id: true, name: true, username: true, domain: true, address: true, phone: true, themeColor: true, logoUrl: true, pickupEnabled: true },
         });
         res.json(updated);
     } catch (err) {
