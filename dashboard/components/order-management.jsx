@@ -1,12 +1,12 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Search, RefreshCw, Eye, ScanLine } from "lucide-react"
+import { Search, RefreshCw, Eye, ScanLine, Bell, BellOff } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { toast } from "sonner"
 import axios from "axios"
@@ -31,12 +31,75 @@ export function OrderManagement() {
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(false)
+  const [muted, setMuted] = useState(false)
+
+  const knownIdsRef = useRef(null) // null until first load — avoids alert burst on open
+  const audioCtxRef = useRef(null)
+  const mutedRef = useRef(false)
+
+  // Load mute preference
+  useEffect(() => {
+    const saved = localStorage.getItem("orderAlertsMuted") === "true"
+    setMuted(saved)
+    mutedRef.current = saved
+  }, [])
+
+  const toggleMuted = () => {
+    setMuted((prev) => {
+      const next = !prev
+      mutedRef.current = next
+      localStorage.setItem("orderAlertsMuted", String(next))
+      return next
+    })
+  }
+
+  // Unlock/create the AudioContext on the first user gesture (browser autoplay policy)
+  const unlockAudio = () => {
+    try {
+      if (!audioCtxRef.current) {
+        const Ctx = window.AudioContext || window.webkitAudioContext
+        if (Ctx) audioCtxRef.current = new Ctx()
+      }
+      if (audioCtxRef.current?.state === "suspended") audioCtxRef.current.resume()
+    } catch {}
+  }
+
+  const playBeep = () => {
+    const ctx = audioCtxRef.current
+    if (!ctx || ctx.state !== "running") return // not unlocked yet — stay silent
+    try {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = "sine"
+      osc.frequency.value = 880
+      gain.gain.setValueAtTime(0.15, ctx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.15)
+      osc.connect(gain).connect(ctx.destination)
+      osc.start()
+      osc.stop(ctx.currentTime + 0.15)
+    } catch {}
+  }
 
   const fetchOrders = async () => {
     setLoading(true)
     try {
       const res = await axios.get(`${API}/api/order`, { withCredentials: true })
-      setOrders(res.data)
+      const data = res.data
+
+      // Detect newly-arrived orders by diffing IDs against the last poll
+      const incomingIds = data.map((o) => o.id)
+      if (knownIdsRef.current === null) {
+        knownIdsRef.current = new Set(incomingIds) // first load: seed, don't alert
+      } else {
+        const newIds = incomingIds.filter((id) => !knownIdsRef.current.has(id))
+        if (newIds.length > 0) {
+          toast(newIds.length === 1 ? `New order #${newIds[0]}` : `${newIds.length} new orders`)
+          if (!mutedRef.current) playBeep()
+        }
+        knownIdsRef.current = new Set(incomingIds)
+      }
+
+      setOrders(data)
     } catch {
       toast.error("Failed to fetch orders")
     } finally {
@@ -94,9 +157,18 @@ export function OrderManagement() {
         <Button
           variant="ghost"
           size="sm"
-          onClick={fetchOrders}
-          disabled={loading}
+          onClick={() => { unlockAudio(); toggleMuted() }}
           className="ml-auto h-8 text-slate-500 hover:text-slate-800"
+          title={muted ? "New-order sound is off" : "New-order sound is on"}
+        >
+          {muted ? <BellOff className="h-3.5 w-3.5" /> : <Bell className="h-3.5 w-3.5" />}
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => { unlockAudio(); fetchOrders() }}
+          disabled={loading}
+          className="h-8 text-slate-500 hover:text-slate-800"
         >
           <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${loading ? "animate-spin" : ""}`} />
           Refresh

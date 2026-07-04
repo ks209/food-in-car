@@ -121,8 +121,7 @@ function ScanInner() {
                 <p className="font-semibold">✓ Order #{result.order.id} delivered</p>
                 <p className="text-slate-600">
                   {result.order.user?.customerName || result.order.guestName || "Guest"}
-                  {(result.order.guestVehicle || result.order.user?.vehicles?.[0]) &&
-                    ` · ${result.order.guestVehicle || result.order.user?.vehicles?.[0]}`}
+                  {` · ${result.order.guestVehicle || "Pickup"}`}
                 </p>
                 <p className="font-bold text-slate-800">₹{result.order.totalAmount.toFixed(0)}</p>
               </div>
