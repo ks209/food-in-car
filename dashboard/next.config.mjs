@@ -11,7 +11,10 @@ const BACKEND_ORIGIN =
   (process.env.VERCEL ? "https://api.carkhanaa.in" : "http://localhost:5000")
 
 const nextConfig = {
-  output: "standalone",
+  // "standalone" builds a self-contained Node server for LAN/self-hosting. Vercel
+  // ships its own serverless output, where standalone is redundant and can break
+  // the deploy — so only enable it when we're NOT building on Vercel.
+  ...(process.env.VERCEL ? {} : { output: "standalone" }),
   async rewrites() {
     return [
       { source: "/api/:path*", destination: `${BACKEND_ORIGIN}/api/:path*` },
