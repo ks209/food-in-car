@@ -5,7 +5,8 @@ import { signWaiterToken } from '../../utils/waiterToken.js';
 
 const waiterRouter = express.Router();
 
-const DASHBOARD_URL = process.env.DASHBOARD_URL || 'http://localhost:3000';
+const DASHBOARD_URL =
+  process.env.DASHBOARD_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
 
 // List a restaurant's waiters with how many orders each has delivered
 waiterRouter.get('/', restaurantAuth, async (req, res) => {

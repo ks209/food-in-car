@@ -19,6 +19,10 @@ import waiterRouter from './routes/waiter/waiter.js';
 
 dotenv.config();
 
+if (process.env.NODE_ENV === 'production' && !process.env.DASHBOARD_URL) {
+  console.warn('[config] DASHBOARD_URL is not set — waiter scan links will point at the wrong host.');
+}
+
 const app =express();
 
 const allowedOrigins = [
