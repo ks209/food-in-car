@@ -5,8 +5,13 @@ import { signWaiterToken } from '../../utils/waiterToken.js';
 
 const waiterRouter = express.Router();
 
+// Dashboard host used to build waiter scan links. Do NOT fall back to
+// FRONTEND_URL — that's the mobile ordering app (app.carkhanaa.in) which has no
+// /scan route. In production a missing value must fail loudly, not silently
+// point waiters at the wrong domain. Localhost default is dev-only.
 const DASHBOARD_URL =
-  process.env.DASHBOARD_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
+  process.env.DASHBOARD_URL ||
+  (process.env.NODE_ENV === 'production' ? null : 'http://localhost:3000');
 
 // List a restaurant's waiters with how many orders each has delivered
 waiterRouter.get('/', restaurantAuth, async (req, res) => {
@@ -65,6 +70,12 @@ waiterRouter.post('/:id/token', restaurantAuth, async (req, res) => {
     const waiter = await prisma.waiter.findFirst({ where: { id, restaurantId: req.restaurantId } });
     if (!waiter) return res.status(404).json({ error: 'Waiter not found' });
     if (!waiter.isActive) return res.status(400).json({ error: 'Waiter is inactive' });
+
+    if (!DASHBOARD_URL) {
+      return res.status(500).json({
+        error: 'Scan links are not configured: set DASHBOARD_URL (e.g. https://dash.carkhanaa.in) on the backend.',
+      });
+    }
 
     const token = signWaiterToken({ waiterId: waiter.id, restaurantId: req.restaurantId });
     const scanUrl = `${DASHBOARD_URL}/scan?token=${token}`;

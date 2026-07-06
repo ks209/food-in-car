@@ -40,20 +40,39 @@ function ScanInner() {
 
   const startCamera = async () => {
     setResult(null)
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setResult({
+        ok: false,
+        message: "Camera needs a secure (https) connection — open this page on dash.carkhanaa.in, or use manual entry below.",
+      })
+      return
+    }
     try {
       const { Html5Qrcode } = await import("html5-qrcode")
       const scanner = new Html5Qrcode(READER_ID)
       scannerRef.current = scanner
+      // Responsive qrbox: never larger than the video, or html5-qrcode throws.
+      const qrbox = (viewfinderWidth, viewfinderHeight) => {
+        const size = Math.floor(Math.min(viewfinderWidth, viewfinderHeight) * 0.7)
+        return { width: size, height: size }
+      }
       await scanner.start(
         { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 240, height: 240 } },
+        { fps: 10, qrbox },
         (decoded) => completeOrder(decoded),
         () => {}
       )
       setScanning(true)
-    } catch {
-      setResult({ ok: false, message: "Unable to access camera — use manual entry below" })
-      setScanning(false)
+    } catch (err) {
+      // Clean up a half-started scanner so the next attempt isn't blocked.
+      await stopCamera()
+      const denied = err?.name === "NotAllowedError" || /permission/i.test(err?.message || "")
+      setResult({
+        ok: false,
+        message: denied
+          ? "Camera permission was blocked — allow camera access in your browser, then try again."
+          : "Unable to access camera — use manual entry below.",
+      })
     }
   }
 
@@ -84,8 +103,14 @@ function ScanInner() {
           <p className="text-xs text-slate-500">Scan the QR on the customer's phone to complete the order.</p>
         </div>
 
-        <div id={READER_ID} className="rounded-xl overflow-hidden bg-slate-900 aspect-square w-full flex items-center justify-center text-slate-500 text-xs">
-          {!scanning && "Camera is off"}
+        <div className="relative rounded-xl overflow-hidden bg-slate-900 aspect-square w-full">
+          {/* Owned entirely by html5-qrcode — keep it free of React children. */}
+          <div id={READER_ID} className="w-full h-full [&_video]:w-full [&_video]:h-full [&_video]:object-cover" />
+          {!scanning && (
+            <div className="absolute inset-0 flex items-center justify-center text-slate-500 text-xs pointer-events-none">
+              Camera is off
+            </div>
+          )}
         </div>
 
         {scanning ? (
