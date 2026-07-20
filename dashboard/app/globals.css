@@ -212,17 +212,18 @@
 .anim-fade    { animation: fin-fade 0.4s ease both; }
 .anim-scale   { animation: fin-scale 0.3s cubic-bezier(0.16, 1, 0.3, 1) both; }
 
-/* Card lift on hover (shadcn Card root) */
+/* Card hover (shadcn Card root) — a subtle border/shadow change reads calmer in a
+   dense dashboard than a lift/translate, which feels more like a marketing page. */
 [data-slot="card"] {
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
-[data-slot="card"]:hover { transform: translateY(-2px); }
+[data-slot="card"]:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06); }
 
 .dark [data-slot="card"] {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), inset 0 0 0 1px oklch(1 0 0 / 5%);
 }
 .dark [data-slot="card"]:hover {
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), inset 0 0 0 1px oklch(1 0 0 / 10%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), inset 0 0 0 1px oklch(1 0 0 / 10%);
 }
 
 /* Buttons / interactive feel */

@@ -1,16 +1,17 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { UserPlus, QrCode, Copy, Power } from "lucide-react"
+import { UserPlus, QrCode, Copy, Power, Users } from "lucide-react"
 import { QRCodeSVG } from "qrcode.react"
 import { toast } from "sonner"
 import axios from "axios"
 
 import { API } from "@/lib/api"
+import { StatusDot } from "@/components/ui/status-dot"
 
 export function WaiterManagement() {
   const [waiters, setWaiters] = useState([])
@@ -73,7 +74,12 @@ export function WaiterManagement() {
     <div className="max-w-2xl space-y-5">
       {/* Add waiter */}
       <Card className="border-0 shadow-sm">
-        <CardContent className="p-5">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-2">
+            <UserPlus className="h-4 w-4" /> Add waiter
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
           <form onSubmit={createWaiter} className="flex flex-col sm:flex-row gap-2">
             <Input placeholder="Waiter name" value={name} onChange={(e) => setName(e.target.value)} className="bg-white" />
             <Input placeholder="Phone (optional)" value={phone} onChange={(e) => setPhone(e.target.value)} className="bg-white sm:max-w-[180px]" />
@@ -86,6 +92,11 @@ export function WaiterManagement() {
 
       {/* Waiter list */}
       <Card className="border-0 shadow-sm">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-2">
+            <Users className="h-4 w-4" /> Waiters
+          </CardTitle>
+        </CardHeader>
         <CardContent className="p-0">
           {loading && waiters.length === 0 ? (
             <p className="text-slate-400 text-sm text-center py-10">Loading…</p>
@@ -94,22 +105,22 @@ export function WaiterManagement() {
           ) : (
             <div className="divide-y divide-slate-50">
               {waiters.map((w) => (
-                <div key={w.id} className="flex items-center justify-between px-5 py-4">
+                <div key={w.id} className="flex items-center justify-between px-5 py-4 hover:bg-muted/40 transition-colors">
                   <div>
-                    <p className="text-sm font-medium text-slate-800">
+                    <p className="text-sm font-medium text-slate-800 flex items-center gap-2">
                       {w.name}
-                      {!w.isActive && <span className="ml-2 text-xs text-red-500">(inactive)</span>}
+                      {!w.isActive && <StatusDot color="#94a3b8">Inactive</StatusDot>}
                     </p>
                     <p className="text-xs text-slate-400">
                       {w.phone ? `${w.phone} · ` : ""}{w.deliveredCount} delivered
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!w.isActive}
+                    <Button size="sm" variant="outline" className="text-xs" disabled={!w.isActive}
                       onClick={() => generateToken(w)}>
                       <QrCode className="h-3.5 w-3.5 mr-1" /> Scan link
                     </Button>
-                    <Button size="sm" variant="ghost" className={`h-8 text-xs ${w.isActive ? "text-red-500" : "text-emerald-600"}`}
+                    <Button size="sm" variant="ghost" className={`text-xs ${w.isActive ? "text-red-500" : "text-emerald-600"}`}
                       onClick={() => toggleActive(w)}>
                       <Power className="h-3.5 w-3.5 mr-1" /> {w.isActive ? "Deactivate" : "Activate"}
                     </Button>

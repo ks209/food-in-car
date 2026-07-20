@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { StatusDot } from "@/components/ui/status-dot"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -23,6 +23,7 @@ const emptyCategory = { name: "", isActive: true }
 
 export function MenuManagement() {
   const [searchTerm, setSearchTerm] = useState("")
+  const [categoryFilter, setCategoryFilter] = useState("all")
   const [categories, setCategories] = useState([])
   const [menuItems, setMenuItems] = useState([])
 
@@ -177,7 +178,7 @@ export function MenuManagement() {
     item.name.toLowerCase().includes(term) ||
     (item.description || "").toLowerCase().includes(term)
 
-  const groups = [
+  const allGroups = [
     ...categories.map((c) => ({
       key: String(c.id), id: c.id, name: c.name, isActive: c.isActive,
       items: menuItems.filter((i) => i.categoryId === c.id && matches(i)),
@@ -186,7 +187,11 @@ export function MenuManagement() {
       key: "uncategorized", id: null, name: "Uncategorized", isActive: true,
       items: menuItems.filter((i) => !i.categoryId && matches(i)),
     },
-  ].filter((g) => !term || g.items.length > 0)
+  ]
+
+  const groups = allGroups
+    .filter((g) => categoryFilter === "all" || g.key === categoryFilter)
+    .filter((g) => !term || g.items.length > 0)
 
   return (
     <div className="space-y-5">
@@ -208,6 +213,23 @@ export function MenuManagement() {
         <Input placeholder="Search items…" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9 bg-white" />
       </div>
 
+      {/* Category filter */}
+      <div className="flex flex-wrap gap-2">
+        {[{ key: "all", name: "All" }, ...allGroups].map((g) => (
+          <button
+            key={g.key}
+            onClick={() => setCategoryFilter(g.key)}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+              categoryFilter === g.key
+                ? "brand-bg text-white"
+                : "bg-white border border-slate-200 text-slate-600 hover:border-slate-400"
+            }`}
+          >
+            {g.name}{g.items ? ` · ${g.items.length}` : ""}
+          </button>
+        ))}
+      </div>
+
       {/* Groups */}
       <div className="space-y-8">
         {groups.map((group) => (
@@ -215,7 +237,7 @@ export function MenuManagement() {
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-semibold text-slate-700">{group.name}</h3>
-                {!group.isActive && <Badge variant="secondary" className="text-xs">Inactive</Badge>}
+                {!group.isActive && <StatusDot color="#94a3b8">Inactive</StatusDot>}
                 <span className="text-xs text-slate-400">{group.items.length}</span>
               </div>
               <div className="flex items-center gap-1">
@@ -423,7 +445,7 @@ function SortableMenuItemRow({ item, onToggleAvailability, onEdit, onDelete }) {
   }
 
   return (
-    <Card ref={setNodeRef} style={style} className="border-0 shadow-sm">
+    <Card ref={setNodeRef} style={style} className="border-0 shadow-sm hover:bg-muted/40">
       <CardContent className="p-3 flex items-center gap-3">
         <button {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500 touch-none" aria-label="Reorder">
           <GripVertical className="h-4 w-4" />
@@ -432,9 +454,7 @@ function SortableMenuItemRow({ item, onToggleAvailability, onEdit, onDelete }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <h3 className="font-semibold text-slate-800 text-sm truncate">{item.name}</h3>
-            <Badge variant={item.available ? "default" : "secondary"} className={`text-xs ${item.available ? "brand-bg text-white border-0" : ""}`}>
-              {item.available ? "Available" : "Off"}
-            </Badge>
+            <StatusDot color={item.available ? "#10b981" : "#94a3b8"}>{item.available ? "Available" : "Off"}</StatusDot>
           </div>
           {item.description && <p className="text-slate-400 text-xs mt-0.5 truncate">{item.description}</p>}
           {item.optionGroups?.length > 0 && (
