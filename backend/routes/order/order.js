@@ -18,11 +18,29 @@ const ORDER_INCLUDE = {
 
 const VALID_STATUSES = ['PENDING', 'PAID', 'PREPARING', 'READY', 'COMPLETED', 'CANCELLED'];
 
-// Restaurant: all their orders
+// Restaurant: their orders, optionally bounded by ?from=&to= (ISO timestamps).
+// Callers pass local day boundaries already converted to UTC — this route does no
+// timezone math of its own, just a plain createdAt range filter.
 orderRouter.get('/', restaurantAuth, async (req, res) => {
   try {
+    const { from, to } = req.query;
+    const where = { restaurantId: req.restaurantId };
+    if (from || to) {
+      where.createdAt = {};
+      if (from) {
+        const fromDate = new Date(from);
+        if (isNaN(fromDate)) return res.status(400).json({ error: 'Invalid from date' });
+        where.createdAt.gte = fromDate;
+      }
+      if (to) {
+        const toDate = new Date(to);
+        if (isNaN(toDate)) return res.status(400).json({ error: 'Invalid to date' });
+        where.createdAt.lte = toDate;
+      }
+    }
+
     const orders = await prisma.order.findMany({
-      where: { restaurantId: req.restaurantId },
+      where,
       include: ORDER_INCLUDE,
       orderBy: { createdAt: 'desc' },
     });
@@ -88,6 +106,66 @@ orderRouter.put('/scan', scanAuth, async (req, res) => {
     res.json(updated);
   } catch (error) {
     res.status(500).json({ error: 'Failed to complete order', details: error.message });
+  }
+});
+
+// Restaurant: distinct customers who've ordered here, optionally filtered by
+// ?search= (matches phone or name). Registered before the public GET /:id
+// below — Express matches routes in registration order, and /:id would
+// otherwise swallow /customers (treating "customers" as the id param).
+orderRouter.get('/customers', restaurantAuth, async (req, res) => {
+  try {
+    const restaurantId = req.restaurantId;
+    const search = (req.query.search || '').trim();
+
+    const customers = await prisma.user.findMany({
+      where: {
+        orders: { some: { restaurantId } },
+        ...(search
+          ? { OR: [
+              { phoneNumber: { contains: search } },
+              { customerName: { contains: search, mode: 'insensitive' } },
+            ] }
+          : {}),
+      },
+      select: {
+        id: true,
+        customerName: true,
+        phoneNumber: true,
+        vehicles: { select: { vehicleNo: true } },
+        orders: {
+          where: { restaurantId },
+          select: { totalAmount: true, status: true, createdAt: true },
+        },
+      },
+    });
+
+    const REVENUE_STATES = ['PAID', 'PREPARING', 'READY', 'COMPLETED'];
+    const result = customers.map(({ orders, ...c }) => ({
+      ...c,
+      orderCount: orders.length,
+      totalSpent: orders.filter(o => REVENUE_STATES.includes(o.status)).reduce((s, o) => s + o.totalAmount, 0),
+      lastOrderAt: orders.reduce((max, o) => (o.createdAt > max ? o.createdAt : max), orders[0]?.createdAt || null),
+    })).sort((a, b) => new Date(b.lastOrderAt) - new Date(a.lastOrderAt));
+
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch customers', details: error.message });
+  }
+});
+
+// Restaurant: one customer's full order history here (no date bound)
+orderRouter.get('/customers/:phone', restaurantAuth, async (req, res) => {
+  try {
+    const restaurantId = req.restaurantId;
+    const orders = await prisma.order.findMany({
+      where: { restaurantId, user: { phoneNumber: req.params.phone } },
+      include: ORDER_INCLUDE,
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(orders);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch customer orders', details: error.message });
   }
 });
 

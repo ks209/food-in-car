@@ -145,11 +145,19 @@ export function MenuManagement() {
     } catch { toast.error("Failed to remove category") }
   }
 
+  const handleBulkAvailability = async (categoryId, available) => {
+    try {
+      await axios.patch(`${API}/api/menu/bulk-availability`, { categoryId, available }, { withCredentials: true })
+      toast.success(available ? "Marked all available" : "Marked all unavailable")
+      fetchMenu()
+    } catch { toast.error("Failed to update availability") }
+  }
+
   // ── Reordering within a category group ────────────────────────────────────────
   const reorderGroup = async (categoryKey, orderedItems) => {
     // Optimistic local update
     setMenuItems((prev) => {
-      const others = prev.filter((i) => (i.categoryId || "uncategorized") !== categoryKey)
+      const others = prev.filter((i) => String(i.categoryId ?? "uncategorized") !== categoryKey)
       return [...others, ...orderedItems]
     })
     try {
@@ -241,6 +249,18 @@ export function MenuManagement() {
                 <span className="text-xs text-slate-400">{group.items.length}</span>
               </div>
               <div className="flex items-center gap-1">
+                {group.items.length > 0 && (
+                  <>
+                    <Button variant="ghost" size="sm" className="h-7 text-xs text-slate-500"
+                      onClick={() => handleBulkAvailability(group.id, true)}>
+                      All on
+                    </Button>
+                    <Button variant="ghost" size="sm" className="h-7 text-xs text-slate-500"
+                      onClick={() => handleBulkAvailability(group.id, false)}>
+                      All off
+                    </Button>
+                  </>
+                )}
                 <Button variant="ghost" size="sm" className="h-7 text-xs text-slate-500" onClick={() => openAddItem(group.id)}>
                   <Plus className="h-3.5 w-3.5 mr-1" />Item
                 </Button>

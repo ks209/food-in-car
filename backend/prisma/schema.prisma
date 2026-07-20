@@ -18,6 +18,10 @@ model Restaurant {
   address        String
   phone          String?
   themeColor     String      @default("#f97316")
+  secondaryColor String      @default("#7c3aed")
+  accentColor    String      @default("#f59e0b")
+  fontFamily     String      @default("manrope")
+  cardStyle      String      @default("rounded")
   logoUrl        String?
   coverUrl       String?
   cuisines       String?

@@ -1,29 +1,53 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Search, RefreshCw, Eye, ScanLine } from "lucide-react"
+import { Search, RefreshCw, Eye, ScanLine, Calendar } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { toast } from "sonner"
 import axios from "axios"
 
 import { API } from "@/lib/api"
-import { useOrders } from "@/lib/orders-context"
 import { OrderInvoice } from "@/components/order-invoice"
 import { ORDER_STATUS_COLORS } from "@/lib/status"
 import { StatusDot } from "@/components/ui/status-dot"
+import { todayStr, daysAgoStr, localDateRange } from "@/lib/format"
 
 const STATUS_KEYS = ["all", "PENDING", "PAID", "PREPARING", "READY", "COMPLETED", "CANCELLED"]
 
 export function OrderManagement() {
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
+  const [fromDate, setFromDate] = useState(todayStr)
+  const [toDate, setToDate] = useState(todayStr)
   const [selectedOrder, setSelectedOrder] = useState(null)
-  const { orders, loading, refetch: fetchOrders } = useOrders()
+  const [orders, setOrders] = useState([])
+  const [loading, setLoading] = useState(false)
+
+  // Server-side date filtering — the backend only returns orders in [fromDate, toDate],
+  // so this stays cheap even as order history grows (no more fetching everything client-side).
+  const fetchOrders = async () => {
+    setLoading(true)
+    try {
+      const params = (fromDate && toDate) ? localDateRange(fromDate, toDate) : {}
+      const res = await axios.get(`${API}/api/order`, { params, withCredentials: true })
+      setOrders(res.data)
+    } catch {
+      toast.error("Failed to fetch orders")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchOrders()
+    const t = setInterval(fetchOrders, 2000)
+    return () => clearInterval(t)
+  }, [fromDate, toDate])
 
   const updateOrderStatus = async (orderId, status) => {
     try {
@@ -47,6 +71,13 @@ export function OrderManagement() {
   const statusCounts = Object.fromEntries(
     STATUS_KEYS.map((s) => [s, s === "all" ? orders.length : orders.filter((o) => o.status === s).length])
   )
+
+  const rangeRevenue = orders
+    .filter((o) => ["PAID", "PREPARING", "READY", "COMPLETED"].includes(o.status))
+    .reduce((sum, o) => sum + o.totalAmount, 0)
+
+  const isToday = fromDate === todayStr() && toDate === todayStr()
+  const fmtDay = (s) => new Date(s + "T00:00:00").toLocaleDateString([], { day: "numeric", month: "short" })
 
   return (
     <div className="space-y-5">
@@ -77,16 +108,57 @@ export function OrderManagement() {
         </Button>
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 h-4 w-4" />
-        <Input
-          placeholder="Search by name or order ID…"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-9 bg-white"
-        />
+      {/* Date range + search */}
+      <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+        <div className="flex items-center gap-2">
+          <Calendar className="h-4 w-4 text-slate-400 flex-shrink-0" />
+          <Input
+            type="date"
+            value={fromDate}
+            max={toDate}
+            onChange={(e) => setFromDate(e.target.value)}
+            className="bg-white w-[150px]"
+          />
+          <span className="text-slate-400 text-sm">–</span>
+          <Input
+            type="date"
+            value={toDate}
+            min={fromDate}
+            onChange={(e) => setToDate(e.target.value)}
+            className="bg-white w-[150px]"
+          />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Button variant={isToday ? "secondary" : "outline"} size="sm" className="text-xs"
+            onClick={() => { setFromDate(todayStr()); setToDate(todayStr()) }}>
+            Today
+          </Button>
+          <Button variant="outline" size="sm" className="text-xs"
+            onClick={() => { setFromDate(daysAgoStr(6)); setToDate(todayStr()) }}>
+            Last 7 days
+          </Button>
+          <Button variant="outline" size="sm" className="text-xs"
+            onClick={() => { setFromDate(daysAgoStr(29)); setToDate(todayStr()) }}>
+            Last 30 days
+          </Button>
+        </div>
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 h-4 w-4" />
+          <Input
+            placeholder="Search by name or order ID…"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9 bg-white"
+          />
+        </div>
       </div>
+
+      {/* Range summary */}
+      <p className="text-xs text-slate-400">
+        {isToday ? "Today" : `${fmtDay(fromDate)} – ${fmtDay(toDate)}`}
+        {" · "}{orders.length} order{orders.length === 1 ? "" : "s"}
+        {" · "}₹{rangeRevenue.toLocaleString("en-IN")} revenue
+      </p>
 
       {/* Orders */}
       <Card className="border-0 shadow-sm">
