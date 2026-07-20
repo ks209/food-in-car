@@ -57,6 +57,7 @@ model MenuItem {
   category        Category?         @relation(fields: [categoryId], references: [id])
   categoryId      Int?
   imageUrl        String?
+  position        Int               @default(0)
   optionGroups    OptionGroup[]
   orderItems      OrderItem[]
   menuItemHistory MenuItemHistory[]

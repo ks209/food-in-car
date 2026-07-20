@@ -9,16 +9,12 @@ import {
 } from "recharts"
 import axios from "axios"
 import { API } from "@/lib/api"
+import { CHART_TOOLTIP_STYLE as tooltipStyle, formatCurrency, formatHour } from "@/lib/format"
 
 // Committed orders count toward revenue (exclude pending/cancelled)
 const REVENUE_STATES = ["PAID", "PREPARING", "READY", "COMPLETED"]
 const WINDOW_DAYS = 30
 const CAT_COLORS = ["#f59e0b", "#0ea5e9", "#10b981", "#a855f7", "#ef4444", "#ec4899", "#14b8a6", "#eab308"]
-
-const tooltipStyle = {
-  background: "#1c1c1f", border: "1px solid rgba(255,255,255,0.1)",
-  borderRadius: 10, color: "#fafafa", fontSize: 12,
-}
 
 export function Analytics() {
   const [orders, setOrders] = useState([])
@@ -51,8 +47,8 @@ export function Analytics() {
 
   const kpis = [
     { title: "Orders", value: recent.length, icon: ShoppingBag },
-    { title: "Revenue", value: `₹${revenue.toFixed(0)}`, icon: IndianRupee },
-    { title: "Avg Order Value", value: `₹${aov.toFixed(0)}`, icon: Receipt },
+    { title: "Revenue", value: formatCurrency(revenue), icon: IndianRupee },
+    { title: "Avg Order Value", value: formatCurrency(aov), icon: Receipt },
     { title: "Repeat Customers", value: repeatCustomers, icon: Repeat },
   ]
 
@@ -91,9 +87,10 @@ export function Analytics() {
   // ── Pickup vs In-Car (last 30 days) ──────────────────────────────────────────
   const inCar = sold.filter((o) => o.guestVehicle).length
   const pickup = sold.length - inCar
+  const fulfilmentTotal = inCar + pickup
   const fulfilment = [
-    { name: "In-Car", value: inCar },
-    { name: "Pickup", value: pickup },
+    { name: "In-Car", value: inCar, pct: fulfilmentTotal ? Math.round((inCar / fulfilmentTotal) * 100) : 0 },
+    { name: "Pickup", value: pickup, pct: fulfilmentTotal ? Math.round((pickup / fulfilmentTotal) * 100) : 0 },
   ].filter((d) => d.value > 0)
 
   return (
@@ -135,14 +132,15 @@ export function Analytics() {
               <p className="text-slate-400 text-sm text-center py-16">No sales yet</p>
             ) : (
               <ResponsiveContainer width="100%" height={Math.max(200, topCategories.length * 44)}>
-                <BarChart data={topCategories} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 0 }}>
+                <BarChart data={topCategories} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 18 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" horizontal={false} />
-                  <XAxis type="number" tickLine={false} axisLine={false} fontSize={12} stroke="#71717a" allowDecimals={false} />
+                  <XAxis type="number" tickLine={false} axisLine={false} fontSize={12} stroke="#71717a" allowDecimals={false}
+                    label={{ value: "units sold", position: "insideBottom", offset: -4, fontSize: 11, fill: "#71717a" }} />
                   <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} fontSize={12} stroke="#71717a" width={110} />
                   <Tooltip
                     cursor={{ fill: "rgba(255,255,255,0.04)" }}
                     contentStyle={tooltipStyle}
-                    formatter={(v, _n, p) => [`${v} sold · ₹${p.payload.revenue.toFixed(0)}`, p.payload.name]}
+                    formatter={(v, _n, p) => [`${v} sold · ${formatCurrency(p.payload.revenue)}`, p.payload.name]}
                   />
                   <Bar dataKey="units" radius={[0, 6, 6, 0]} maxBarSize={26}>
                     {topCategories.map((c, i) => <Cell key={c.name} fill={CAT_COLORS[i % CAT_COLORS.length]} />)}
@@ -167,8 +165,11 @@ export function Analytics() {
                     <Cell fill="var(--brand, #f97316)" />
                     <Cell fill="#94a3b8" />
                   </Pie>
-                  <Tooltip contentStyle={tooltipStyle} />
-                  <Legend iconType="circle" iconSize={8} formatter={(v) => <span className="text-xs text-slate-600">{v}</span>} />
+                  <Tooltip contentStyle={tooltipStyle}
+                    formatter={(value, name, entry) => [`${value} orders (${entry.payload.pct}%)`, name]} />
+                  <Legend iconType="circle" iconSize={8} formatter={(v, entry) => (
+                    <span className="text-xs text-slate-600">{v} · {entry.payload.pct}%</span>
+                  )} />
                 </PieChart>
               </ResponsiveContainer>
             )}
@@ -193,7 +194,7 @@ export function Analytics() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-sm font-medium text-slate-800 truncate">{it.name}</span>
-                        <span className="text-xs text-slate-500 flex-shrink-0 ml-2">{it.units} sold · ₹{it.revenue.toFixed(0)}</span>
+                        <span className="text-xs text-slate-500 flex-shrink-0 ml-2">{it.units} sold · {formatCurrency(it.revenue)}</span>
                       </div>
                       <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
                         <div className="h-full brand-bg rounded-full" style={{ width: `${(it.units / topItemMax) * 100}%` }} />
@@ -214,13 +215,14 @@ export function Analytics() {
             <ResponsiveContainer width="100%" height={240}>
               <BarChart data={byHour} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-                <XAxis dataKey="hour" tickLine={false} axisLine={false} fontSize={11} stroke="#71717a" interval={2} />
+                <XAxis dataKey="hour" tickLine={false} axisLine={false} fontSize={11} stroke="#71717a" interval={2}
+                  tickFormatter={formatHour} />
                 <YAxis tickLine={false} axisLine={false} fontSize={12} stroke="#71717a" width={28} allowDecimals={false} />
                 <Tooltip
                   cursor={{ fill: "rgba(255,255,255,0.04)" }}
                   contentStyle={tooltipStyle}
                   formatter={(v) => [`${v} orders`, "Orders"]}
-                  labelFormatter={(h) => `${h}:00 – ${h}:59`}
+                  labelFormatter={(h) => formatHour(h)}
                 />
                 <Bar dataKey="orders" fill="var(--brand, #f97316)" radius={[4, 4, 0, 0]} maxBarSize={24} />
               </BarChart>

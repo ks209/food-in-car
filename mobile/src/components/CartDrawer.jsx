@@ -1,11 +1,10 @@
 import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
-import { Car, ShoppingCart } from "lucide-react"
+import { Car, ShoppingCart, X } from "lucide-react"
 import { useCart } from "../context/CartContext"
 import { useAuth } from "../context/AuthContext"
 import { getDeviceKey } from "../lib/device"
-import { orderApi } from "../api"
-import api from "../api"
+import api, { orderApi } from "../api"
 
 export default function CartDrawer({ open, onClose, restaurant, restaurantId }) {
   const { cart, addItem, decrementItem, clearCart, total, itemCount } = useCart()
@@ -109,8 +108,8 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"0.5rem 1.25rem 1rem" }}>
           <h2 style={{ fontWeight:800, fontSize:"1.2rem" }}>Your Order</h2>
           <button onClick={onClose} style={{ width:32, height:32, borderRadius:"50%", background:"var(--bg)",
-            display:"flex", alignItems:"center", justifyContent:"center", color:"var(--text-secondary)", fontSize:"1rem" }}>
-            ✕
+            display:"flex", alignItems:"center", justifyContent:"center", color:"var(--text-secondary)" }}>
+            <X size={16} strokeWidth={2.25} />
           </button>
         </div>
 

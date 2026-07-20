@@ -7,6 +7,11 @@ menuRouter.post('/create', restaurantAuth, async (req, res) => {
   try {
     const restaurantId = req.restaurantId;
 
+    const maxPosition = await prisma.menuItem.aggregate({
+      where: { restaurantId },
+      _max: { position: true }
+    });
+
     const menuItem = await prisma.menuItem.create({
       data: {
         name: req.body.name,
@@ -14,6 +19,7 @@ menuRouter.post('/create', restaurantAuth, async (req, res) => {
         price: parseFloat(req.body.price),
         available: req.body.available ?? true,
         imageUrl: req.body.imageUrl || null,
+        position: (maxPosition._max.position ?? -1) + 1,
         isActive: true,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -66,7 +72,8 @@ menuRouter.get('/', restaurantAuth, async (req, res) => {
         optionGroups: {
           include: { options: true }
         }
-      }
+      },
+      orderBy: [{ position: 'asc' }, { id: 'asc' }]
     });
 
     res.json(menuItems);
@@ -146,6 +153,38 @@ menuRouter.delete('/:id', restaurantAuth, async (req, res) => {
     res.json({ message: 'Menu item deleted successfully' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete menu item', details: error.message });
+  }
+});
+
+menuRouter.patch('/reorder', restaurantAuth, async (req, res) => {
+  try {
+    const restaurantId = req.restaurantId;
+    const items = req.body.items;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'items array is required' });
+    }
+
+    const ids = items.map(i => parseInt(i.id));
+    const owned = await prisma.menuItem.findMany({
+      where: { id: { in: ids }, restaurantId },
+      select: { id: true }
+    });
+    if (owned.length !== ids.length) {
+      return res.status(403).json({ error: 'Not authorized to reorder one or more of these menu items' });
+    }
+
+    await prisma.$transaction(
+      items.map(i =>
+        prisma.menuItem.update({
+          where: { id: parseInt(i.id) },
+          data: { position: parseInt(i.position) }
+        })
+      )
+    );
+
+    res.json({ message: 'Menu items reordered successfully' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to reorder menu items', details: error.message });
   }
 });
 

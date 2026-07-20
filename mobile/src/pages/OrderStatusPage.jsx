@@ -74,7 +74,7 @@ export default function OrderStatusPage() {
 
   useEffect(() => {
     fetchOrder()
-    const interval = setInterval(fetchOrder, 10000)
+    const interval = setInterval(fetchOrder, 2000)
     return () => clearInterval(interval)
   }, [orderId])
 
@@ -287,7 +287,7 @@ export default function OrderStatusPage() {
 
         {!isDone && !isCancelled && (
           <p style={{ textAlign:"center", color:"var(--muted)", fontSize:"0.75rem" }}>
-            Refreshes automatically every 10 seconds
+            Refreshes automatically every 2 seconds
           </p>
         )}
 
