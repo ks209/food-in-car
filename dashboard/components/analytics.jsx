@@ -46,10 +46,10 @@ export function Analytics() {
   const repeatCustomers = Object.values(orderCountByCustomer).filter((n) => n > 1).length
 
   const kpis = [
-    { title: "Orders", value: recent.length, icon: ShoppingBag },
-    { title: "Revenue", value: formatCurrency(revenue), icon: IndianRupee },
-    { title: "Avg Order Value", value: formatCurrency(aov), icon: Receipt },
-    { title: "Repeat Customers", value: repeatCustomers, icon: Repeat },
+    { title: "Orders", value: recent.length, icon: ShoppingBag, tint: "brand" },
+    { title: "Revenue", value: formatCurrency(revenue), icon: IndianRupee, tint: "brand-secondary" },
+    { title: "Avg Order Value", value: formatCurrency(aov), icon: Receipt, tint: "brand-accent" },
+    { title: "Repeat Customers", value: repeatCustomers, icon: Repeat, tint: "brand" },
   ]
 
   // ── Best-selling categories (last 30 days), by units sold ────────────────────
@@ -107,7 +107,9 @@ export function Analytics() {
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
                 <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{k.title}</p>
-                <k.icon className="h-4 w-4 text-slate-300" />
+                <div className={`p-1.5 rounded-lg ${k.tint}-bg-subtle`}>
+                  <k.icon className={`h-4 w-4 ${k.tint}-text`} />
+                </div>
               </div>
               <p className="text-2xl font-bold text-slate-900 mt-2">{k.value}</p>
             </CardContent>
@@ -210,6 +212,12 @@ export function Analytics() {
           <CardContent>
             <ResponsiveContainer width="100%" height={240}>
               <BarChart data={byHour} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="hourGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--brand-accent, #f59e0b)" stopOpacity={1} />
+                    <stop offset="100%" stopColor="var(--brand, #f97316)" stopOpacity={0.75} />
+                  </linearGradient>
+                </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
                 <XAxis dataKey="hour" tickLine={false} axisLine={false} fontSize={11} stroke="#71717a" interval={2}
                   tickFormatter={formatHour} />
@@ -220,7 +228,7 @@ export function Analytics() {
                   formatter={(v) => [`${v} orders`, "Orders"]}
                   labelFormatter={(h) => formatHour(h)}
                 />
-                <Bar dataKey="orders" fill="var(--brand, #f97316)" radius={[4, 4, 0, 0]} maxBarSize={24} />
+                <Bar dataKey="orders" fill="url(#hourGradient)" radius={[4, 4, 0, 0]} maxBarSize={24} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>

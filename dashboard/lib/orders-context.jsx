@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import axios from "axios"
 import { toast } from "sonner"
 import { API } from "@/lib/api"
+import { todayStr, localDateRange } from "@/lib/format"
 
 const OrdersContext = createContext(null)
 
@@ -30,8 +31,11 @@ function playChime(ctx) {
   })
 }
 
-// Polls orders for the whole dashboard (not just the Orders page) so a new-order
-// toast + sound fires no matter which screen the restaurant is looking at.
+// Polls TODAY's orders for the whole dashboard (not just the Orders page) so a
+// new-order toast + sound fires no matter which screen the restaurant is looking
+// at. Bounded to today server-side — a new order is always created today, so
+// there's no need to keep re-fetching the full order history every 2s just to
+// detect arrivals. The Orders page itself does its own separately-ranged fetch.
 export function OrdersProvider({ children }) {
   const router = useRouter()
   const [orders, setOrders] = useState([])
@@ -39,6 +43,7 @@ export function OrdersProvider({ children }) {
   const [muted, setMuted] = useState(false)
 
   const knownIdsRef = useRef(null) // null until first load — avoids alert burst on mount
+  const dayRef = useRef(todayStr()) // detects midnight rollover so we don't false-alert
   const audioCtxRef = useRef(null)
   const mutedRef = useRef(false)
 
@@ -56,6 +61,12 @@ export function OrdersProvider({ children }) {
           if (Ctx) audioCtxRef.current = new Ctx()
         }
         if (audioCtxRef.current?.state === "suspended") audioCtxRef.current.resume()
+      } catch {}
+      // Piggyback the desktop-notification permission ask on the same first
+      // gesture — browsers require user activation for this call anyway, and
+      // a separate prompt/button would just be one more thing to click.
+      try {
+        if (window.Notification && Notification.permission === "default") Notification.requestPermission()
       } catch {}
     }
     unlock()
@@ -75,22 +86,43 @@ export function OrdersProvider({ children }) {
   const fetchOrders = async () => {
     setLoading(true)
     try {
-      const res = await axios.get(`${API}/api/order`, { withCredentials: true })
+      const today = todayStr()
+      const dayChanged = today !== dayRef.current
+      const { from, to } = localDateRange(today, today)
+      const res = await axios.get(`${API}/api/order`, { params: { from, to }, withCredentials: true })
       const data = res.data
 
       const incomingIds = data.map((o) => o.id)
-      if (knownIdsRef.current === null) {
-        knownIdsRef.current = new Set(incomingIds)
+      if (knownIdsRef.current === null || dayChanged) {
+        knownIdsRef.current = new Set(incomingIds) // first load, or a fresh day — seed, don't alert
       } else {
         const newIds = incomingIds.filter((id) => !knownIdsRef.current.has(id))
         if (newIds.length > 0) {
-          toast(newIds.length === 1 ? `New order #${newIds[0]}` : `${newIds.length} new orders`, {
+          const title = newIds.length === 1 ? `New order #${newIds[0]}` : `${newIds.length} new orders`
+          toast(title, {
             action: { label: "View", onClick: () => router.push("/dashboard/orders") },
           })
-          if (!mutedRef.current) playChime(audioCtxRef.current)
+          if (!mutedRef.current) {
+            playChime(audioCtxRef.current)
+            // Only when the tab is actually backgrounded — toast + chime already
+            // cover the "tab open and focused" case, a desktop notification on
+            // top of those would just be noisy.
+            if (document.hidden && window.Notification?.permission === "granted") {
+              const notif = new Notification(title, {
+                body: "Tap to view in the dashboard",
+                icon: "/carkhanaalogo.png",
+                tag: "new-order",
+              })
+              notif.onclick = () => {
+                window.focus()
+                router.push("/dashboard/orders")
+              }
+            }
+          }
         }
         knownIdsRef.current = new Set(incomingIds)
       }
+      dayRef.current = today
 
       setOrders(data)
     } catch {

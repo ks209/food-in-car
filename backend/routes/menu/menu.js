@@ -156,6 +156,30 @@ menuRouter.delete('/:id', restaurantAuth, async (req, res) => {
   }
 });
 
+// Bulk-toggle every item in a category (or the Uncategorized group, categoryId: null)
+menuRouter.patch('/bulk-availability', restaurantAuth, async (req, res) => {
+  try {
+    const restaurantId = req.restaurantId;
+    const { categoryId, available } = req.body;
+    if (typeof available !== 'boolean') {
+      return res.status(400).json({ error: 'available (boolean) is required' });
+    }
+
+    const result = await prisma.menuItem.updateMany({
+      where: {
+        restaurantId,
+        isActive: true,
+        categoryId: categoryId === null || categoryId === undefined ? null : parseInt(categoryId)
+      },
+      data: { available, updatedAt: new Date() }
+    });
+
+    res.json({ message: 'Availability updated', count: result.count });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update availability', details: error.message });
+  }
+});
+
 menuRouter.patch('/reorder', restaurantAuth, async (req, res) => {
   try {
     const restaurantId = req.restaurantId;
@@ -164,12 +188,12 @@ menuRouter.patch('/reorder', restaurantAuth, async (req, res) => {
       return res.status(400).json({ error: 'items array is required' });
     }
 
-    const ids = items.map(i => parseInt(i.id));
+    const uniqueIds = [...new Set(items.map(i => parseInt(i.id)))];
     const owned = await prisma.menuItem.findMany({
-      where: { id: { in: ids }, restaurantId },
+      where: { id: { in: uniqueIds }, restaurantId },
       select: { id: true }
     });
-    if (owned.length !== ids.length) {
+    if (owned.length !== uniqueIds.length) {
       return res.status(403).json({ error: 'Not authorized to reorder one or more of these menu items' });
     }
 

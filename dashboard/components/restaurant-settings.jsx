@@ -6,25 +6,11 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
-import { Check, Loader2, Palette, Store, Car } from "lucide-react"
+import { Loader2, Store, Car, Paintbrush } from "lucide-react"
+import Link from "next/link"
 import { toast } from "sonner"
 import axios from "axios"
 import { API } from "@/lib/api"
-
-const PRESETS = [
-  "#f97316", // orange
-  "#ef4444", // red
-  "#22c55e", // green
-  "#3b82f6", // blue
-  "#a855f7", // purple
-  "#ec4899", // pink
-  "#14b8a6", // teal
-  "#eab308", // amber
-]
-
-const applyBrand = (hex) => {
-  if (hex) document.documentElement.style.setProperty("--brand", hex)
-}
 
 export function RestaurantSettings() {
   const [form, setForm] = useState(null)
@@ -39,7 +25,6 @@ export function RestaurantSettings() {
           name: r.data.name || "",
           phone: r.data.phone || "",
           address: r.data.address || "",
-          themeColor: r.data.themeColor || "#f97316",
           logoUrl: r.data.logoUrl || "",
           pickupEnabled: r.data.pickupEnabled ?? false,
           username: r.data.username,
@@ -53,11 +38,6 @@ export function RestaurantSettings() {
 
   const setField = (k, v) => setForm((p) => ({ ...p, [k]: v }))
 
-  const setColor = (hex) => {
-    setField("themeColor", hex)
-    applyBrand(hex) // live preview
-  }
-
   const dirty = original && JSON.stringify(form) !== JSON.stringify(original)
 
   const handleSave = async () => {
@@ -69,14 +49,12 @@ export function RestaurantSettings() {
           name: form.name,
           phone: form.phone,
           address: form.address,
-          themeColor: form.themeColor,
           logoUrl: form.logoUrl,
           pickupEnabled: form.pickupEnabled,
         },
         { withCredentials: true }
       )
       setOriginal(form)
-      applyBrand(form.themeColor)
       toast.success("Settings saved")
     } catch {
       toast.error("Failed to save settings")
@@ -85,10 +63,7 @@ export function RestaurantSettings() {
     }
   }
 
-  const handleReset = () => {
-    setForm(original)
-    applyBrand(original.themeColor)
-  }
+  const handleReset = () => setForm(original)
 
   if (!form) {
     return (
@@ -102,11 +77,16 @@ export function RestaurantSettings() {
 
   return (
     <div className="max-w-5xl">
-      <div className="mb-6">
-        <h2 className="text-lg font-semibold tracking-tight">Restaurant settings</h2>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          Update your branding and contact details. Changes apply across your dashboard and customer menu.
-        </p>
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">Restaurant settings</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Update your profile and contact details.
+          </p>
+        </div>
+        <Link href="/dashboard/customize" className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 flex-shrink-0 pt-1">
+          <Paintbrush className="h-3.5 w-3.5" /> Colors, fonts & branding →
+        </Link>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -167,46 +147,6 @@ export function RestaurantSettings() {
             </CardContent>
           </Card>
 
-          <Card className="border-0">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-2">
-                <Palette className="h-4 w-4" /> Brand color
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-wrap gap-2.5">
-                {PRESETS.map((hex) => {
-                  const active = form.themeColor?.toLowerCase() === hex.toLowerCase()
-                  return (
-                    <button
-                      key={hex}
-                      onClick={() => setColor(hex)}
-                      className={`h-9 w-9 rounded-full flex items-center justify-center transition-transform hover:scale-110 ${active ? "ring-2 ring-offset-2 ring-offset-card" : ""}`}
-                      style={{ backgroundColor: hex, "--tw-ring-color": hex }}
-                      title={hex}
-                    >
-                      {active && <Check className="h-4 w-4 text-white" />}
-                    </button>
-                  )
-                })}
-              </div>
-              <div className="flex items-center gap-3">
-                <input
-                  type="color"
-                  value={form.themeColor}
-                  onChange={(e) => setColor(e.target.value)}
-                  className="h-10 w-12 rounded-md bg-transparent border border-border cursor-pointer"
-                />
-                <Input
-                  value={form.themeColor}
-                  onChange={(e) => setColor(e.target.value)}
-                  className="w-36 font-mono uppercase"
-                  maxLength={7}
-                />
-                <span className="text-xs text-muted-foreground">Pick a preset, use the picker, or type a hex.</span>
-              </div>
-            </CardContent>
-          </Card>
         </div>
 
         {/* Live preview */}

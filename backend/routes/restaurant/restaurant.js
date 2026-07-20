@@ -13,7 +13,7 @@ restaurantRouter.get('/me', restaurantAuth, async (req, res) => {
     try {
         const restaurant = await prisma.restaurant.findUnique({
             where: { id: req.restaurantId },
-            select: { id: true, name: true, username: true, domain: true, address: true, phone: true, themeColor: true, logoUrl: true, pickupEnabled: true },
+            select: { id: true, name: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true },
         });
         if (!restaurant) return res.status(404).json({ message: 'Restaurant not found' });
         res.json(restaurant);
@@ -23,21 +23,29 @@ restaurantRouter.get('/me', restaurantAuth, async (req, res) => {
 });
 
 // Restaurant edits its OWN profile/branding from the dashboard settings page.
+const FONT_KEYS = ['manrope', 'inter', 'poppins', 'playfair', 'outfit'];
+const CARD_STYLES = ['rounded', 'sharp'];
+
 restaurantRouter.put('/me', restaurantAuth, async (req, res) => {
-    const { name, phone, address, themeColor, logoUrl, pickupEnabled } = req.body;
+    const { name, phone, address, themeColor, secondaryColor, accentColor, fontFamily, cardStyle, logoUrl, coverUrl, pickupEnabled } = req.body;
     try {
         const data = {};
         if (name !== undefined) data.name = name || null;
         if (phone !== undefined) data.phone = phone || null;
         if (address !== undefined) data.address = address;
         if (themeColor !== undefined) data.themeColor = themeColor || '#f97316';
+        if (secondaryColor !== undefined) data.secondaryColor = secondaryColor || '#7c3aed';
+        if (accentColor !== undefined) data.accentColor = accentColor || '#f59e0b';
+        if (fontFamily !== undefined) data.fontFamily = FONT_KEYS.includes(fontFamily) ? fontFamily : 'manrope';
+        if (cardStyle !== undefined) data.cardStyle = CARD_STYLES.includes(cardStyle) ? cardStyle : 'rounded';
         if (logoUrl !== undefined) data.logoUrl = logoUrl || null;
+        if (coverUrl !== undefined) data.coverUrl = coverUrl || null;
         if (pickupEnabled !== undefined) data.pickupEnabled = !!pickupEnabled;
 
         const updated = await prisma.restaurant.update({
             where: { id: req.restaurantId },
             data,
-            select: { id: true, name: true, username: true, domain: true, address: true, phone: true, themeColor: true, logoUrl: true, pickupEnabled: true },
+            select: { id: true, name: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true },
         });
         res.json(updated);
     } catch (err) {

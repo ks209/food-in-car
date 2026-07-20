@@ -37,10 +37,10 @@ export function DashboardOverview() {
   const inactiveItems = liveItems.filter((m) => !m.available).length
 
   const stats = [
-    { title: "Orders Today", value: todayOrders.length, icon: ShoppingBag },
-    { title: "Revenue Today", value: formatCurrency(revenueToday), icon: IndianRupee },
-    { title: "Active Orders", value: activeOrders, icon: Clock },
-    { title: "Menu Items", value: liveItems.length, icon: ChefHat,
+    { title: "Orders Today", value: todayOrders.length, icon: ShoppingBag, tint: "brand" },
+    { title: "Revenue Today", value: formatCurrency(revenueToday), icon: IndianRupee, tint: "brand-secondary" },
+    { title: "Active Orders", value: activeOrders, icon: Clock, tint: "brand-accent" },
+    { title: "Menu Items", value: liveItems.length, icon: ChefHat, tint: "brand",
       sub: `${activeItems} active · ${inactiveItems} inactive` },
   ]
 
@@ -69,7 +69,9 @@ export function DashboardOverview() {
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
                 <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{stat.title}</p>
-                <stat.icon className="h-4 w-4 text-slate-300" />
+                <div className={`p-1.5 rounded-lg ${stat.tint}-bg-subtle`}>
+                  <stat.icon className={`h-4 w-4 ${stat.tint}-text`} />
+                </div>
               </div>
               <p className="text-2xl font-bold text-slate-900 mt-2">{stat.value}</p>
               {stat.sub && <p className="text-xs text-slate-400 mt-1">{stat.sub}</p>}
@@ -87,6 +89,12 @@ export function DashboardOverview() {
           <CardContent>
             <ResponsiveContainer width="100%" height={240}>
               <BarChart data={revenue15d} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--brand, #f97316)" stopOpacity={1} />
+                    <stop offset="100%" stopColor="var(--brand-secondary, #7c3aed)" stopOpacity={0.75} />
+                  </linearGradient>
+                </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
                 <XAxis dataKey="day" tickLine={false} axisLine={false} fontSize={11} stroke="#71717a"
                   interval="preserveStartEnd" minTickGap={12} />
@@ -94,7 +102,7 @@ export function DashboardOverview() {
                   tickFormatter={(v) => formatCurrency(v)} />
                 <Tooltip formatter={(v) => [formatCurrency(v), "Revenue"]} cursor={{ fill: "rgba(255,255,255,0.04)" }}
                   contentStyle={CHART_TOOLTIP_STYLE} />
-                <Bar dataKey="revenue" fill="var(--brand, #f97316)" radius={[6, 6, 0, 0]} maxBarSize={48} />
+                <Bar dataKey="revenue" fill="url(#revenueGradient)" radius={[6, 6, 0, 0]} maxBarSize={48} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>

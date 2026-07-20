@@ -14,6 +14,8 @@ const READER_ID = "delivery-qr-reader"
 export function DeliveryScan() {
   const scannerRef = useRef(null)
   const busyRef = useRef(false)
+  const startingRef = useRef(false) // guards against a double "Start camera" click racing two scanners
+  const mountedRef = useRef(true)
   const [scanning, setScanning] = useState(false)
   const [manualCode, setManualCode] = useState("")
   const [result, setResult] = useState(null) // { ok, order, message }
@@ -41,9 +43,14 @@ export function DeliveryScan() {
   }
 
   const startCamera = async () => {
+    // A second click while the first start() is still in flight would spin up
+    // two scanners on the same DOM node — html5-qrcode throws in that case.
+    if (startingRef.current || scannerRef.current) return
+    startingRef.current = true
     setResult(null)
     try {
       const { Html5Qrcode } = await import("html5-qrcode")
+      if (!mountedRef.current) return // navigated away while the import was loading
       const scanner = new Html5Qrcode(READER_ID)
       scannerRef.current = scanner
       await scanner.start(
@@ -52,24 +59,42 @@ export function DeliveryScan() {
         (decoded) => completeOrder(decoded),
         () => {} // ignore per-frame decode errors
       )
+      if (!mountedRef.current) {
+        // Unmounted while the camera permission prompt was up — tear down
+        // instead of leaving an orphaned scanner running against a dead node.
+        scanner.stop().then(() => scanner.clear()).catch(() => {})
+        scannerRef.current = null
+        return
+      }
       setScanning(true)
     } catch (err) {
-      toast.error("Unable to access camera — use manual entry below")
-      setScanning(false)
+      scannerRef.current = null
+      if (mountedRef.current) {
+        toast.error("Unable to access camera — use manual entry below")
+        setScanning(false)
+      }
+    } finally {
+      startingRef.current = false
     }
   }
 
   const stopCamera = async () => {
     const scanner = scannerRef.current
+    scannerRef.current = null
     if (scanner) {
       try { await scanner.stop(); await scanner.clear() } catch {}
-      scannerRef.current = null
     }
-    setScanning(false)
+    if (mountedRef.current) setScanning(false)
   }
 
   // Clean up the camera if the component unmounts mid-scan
-  useEffect(() => () => { stopCamera() }, [])
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      stopCamera()
+    }
+  }, [])
 
   return (
     <div className="max-w-md mx-auto space-y-5">

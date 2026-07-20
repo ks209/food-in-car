@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useMemo } from "react"
 import { useParams } from "react-router-dom"
-import { Search, Mic, Star, MapPin, UtensilsCrossed, ShoppingBag, X } from "lucide-react"
+import { Search, Mic, Star, MapPin, UtensilsCrossed, ShoppingBag, X, ArrowUpDown } from "lucide-react"
 import { restaurantApi, categoryApi } from "../api"
 import { useCart } from "../context/CartContext"
 import CartDrawer from "../components/CartDrawer"
@@ -39,6 +39,8 @@ export default function MenuPage() {
   const [error, setError] = useState("")
   const [search, setSearch] = useState("")
   const [listening, setListening] = useState(false)
+  const [vegFilter, setVegFilter] = useState("all") // "all" | "veg" | "nonveg"
+  const [sortBy, setSortBy] = useState("default") // "default" | "price-asc" | "price-desc"
 
   useEffect(() => {
     Promise.all([restaurantApi.get(restaurantId), categoryApi.byRestaurant(restaurantId)])
@@ -81,14 +83,26 @@ export default function MenuPage() {
   )
 
   const displayItems = useMemo(() => {
+    let items
     if (q) {
-      return allItems.filter(
+      items = allItems.filter(
         i => i.name.toLowerCase().includes(q) || i.description?.toLowerCase().includes(q)
       )
+    } else if (activeCategory === ALL_ID) {
+      items = allItems
+    } else {
+      items = categories.find(c => c.id === activeCategory)?.menuItems?.filter(i => i.isActive && i.available) || []
     }
-    if (activeCategory === ALL_ID) return allItems
-    return categories.find(c => c.id === activeCategory)?.menuItems?.filter(i => i.isActive && i.available) || []
-  }, [q, categories, activeCategory, allItems])
+
+    if (vegFilter !== "all") items = items.filter(i => (vegFilter === "veg" ? i.isVeg === true : i.isVeg === false))
+    if (sortBy === "price-asc") items = [...items].sort((a, b) => a.price - b.price)
+    else if (sortBy === "price-desc") items = [...items].sort((a, b) => b.price - a.price)
+
+    return items
+  }, [q, categories, activeCategory, allItems, vegFilter, sortBy])
+
+  const cycleSortBy = () => setSortBy(s => (s === "default" ? "price-asc" : s === "price-asc" ? "price-desc" : "default"))
+  const sortLabel = sortBy === "price-asc" ? "Price: Low to High" : sortBy === "price-desc" ? "Price: High to Low" : "Sort"
 
   if (error) return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100dvh", padding: "2rem", flexDirection: "column", gap: "0.9rem" }}>
@@ -196,6 +210,23 @@ export default function MenuPage() {
               )
             })}
           </div>
+        </div>
+      )}
+
+      {/* ── Veg / sort filters ── */}
+      {!loading && allItems.length > 0 && (
+        <div style={{ display: "flex", gap: "0.45rem", flexWrap: "wrap", padding: "0 1rem 0.6rem" }}>
+          <button onClick={() => setVegFilter(v => (v === "veg" ? "all" : "veg"))}
+            className={`cat-chip ${vegFilter === "veg" ? "active" : ""}`}>
+            <span className="veg-dot veg" /> Veg
+          </button>
+          <button onClick={() => setVegFilter(v => (v === "nonveg" ? "all" : "nonveg"))}
+            className={`cat-chip ${vegFilter === "nonveg" ? "active" : ""}`}>
+            <span className="veg-dot nonveg" /> Non-Veg
+          </button>
+          <button onClick={cycleSortBy} className={`cat-chip ${sortBy !== "default" ? "active" : ""}`}>
+            <ArrowUpDown size={14} strokeWidth={2.4} /> {sortLabel}
+          </button>
         </div>
       )}
 

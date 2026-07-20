@@ -15,9 +15,10 @@ export function RestaurantProvider({ children }) {
       .then((r) => {
         const data = r.data
         setRestaurant(data)
-        if (data?.themeColor) {
-          document.documentElement.style.setProperty("--brand", data.themeColor)
-        }
+        const root = document.documentElement.style
+        if (data?.themeColor) root.setProperty("--brand", data.themeColor)
+        if (data?.secondaryColor) root.setProperty("--brand-secondary", data.secondaryColor)
+        if (data?.accentColor) root.setProperty("--brand-accent", data.accentColor)
       })
       .catch(() => {})
   }, [])

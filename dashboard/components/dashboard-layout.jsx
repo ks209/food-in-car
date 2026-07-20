@@ -1,7 +1,7 @@
 "use client"
 
-import React from "react"
-import { LayoutDashboard, ShoppingBag, Menu, LogOut, ScanLine, Users, Settings, BarChart3, Bell, BellOff } from "lucide-react"
+import React, { useEffect, useState } from "react"
+import { LayoutDashboard, ShoppingBag, Menu, LogOut, ScanLine, Users, Contact, Settings, BarChart3, Bell, BellOff, PanelLeft, X, Paintbrush } from "lucide-react"
 import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
 import axios from "axios"
@@ -17,11 +17,13 @@ const navigation = [
   { name: "Orders", href: "/dashboard/orders", icon: ShoppingBag },
   { name: "Delivery", href: "/dashboard/delivery", icon: ScanLine },
   { name: "Waiters", href: "/dashboard/waiters", icon: Users },
+  { name: "Customers", href: "/dashboard/customers", icon: Contact },
   { name: "Menu", href: "/dashboard/menu", icon: Menu },
+  { name: "Customize", href: "/dashboard/customize", icon: Paintbrush },
   { name: "Settings", href: "/dashboard/settings", icon: Settings },
 ]
 
-function Sidebar() {
+function Sidebar({ open, onClose }) {
   const router = useRouter()
   const pathname = usePathname()
   const restaurant = useRestaurant()
@@ -35,58 +37,71 @@ function Sidebar() {
   }
 
   return (
-    <div className="fixed inset-y-0 left-0 w-60 bg-slate-900 border-r border-slate-800 flex flex-col">
-      {/* Brand */}
-      <div className="flex items-center gap-3 h-16 px-5 border-b border-slate-800">
-        {restaurant?.logoUrl ? (
-          <img
-            src={restaurant.logoUrl}
-            alt={displayName}
-            className="h-8 w-8 rounded-lg object-cover flex-shrink-0"
-          />
-        ) : (
-          <div
-            className="h-8 w-8 rounded-lg flex items-center justify-center text-white font-bold text-sm flex-shrink-0 brand-bg"
-          >
-            {initial}
-          </div>
-        )}
-        <span className="text-white font-semibold text-sm truncate">{displayName}</span>
-      </div>
+    <>
+      {/* Mobile backdrop */}
+      {open && (
+        <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={onClose} />
+      )}
 
-      {/* Nav */}
-      <nav className="flex-1 px-3 py-5 space-y-0.5">
-        {navigation.map((item) => {
-          const isActive = pathname === item.href
-          return (
-            <Link
-              key={item.name}
-              href={item.href}
-              className={`relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                isActive
-                  ? "bg-white/[0.06] text-white"
-                  : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
-              }`}
+      <div className={`fixed inset-y-0 left-0 w-60 sidebar-gradient border-r border-slate-800 flex flex-col z-50 transition-transform duration-200 ${
+        open ? "translate-x-0" : "-translate-x-full"
+      } lg:translate-x-0`}>
+        {/* Brand */}
+        <div className="flex items-center gap-3 h-16 px-5 border-b border-slate-800">
+          {restaurant?.logoUrl ? (
+            <img
+              src={restaurant.logoUrl}
+              alt={displayName}
+              className="h-8 w-8 rounded-lg object-cover flex-shrink-0"
+            />
+          ) : (
+            <div
+              className="h-8 w-8 rounded-lg flex items-center justify-center text-white font-bold text-sm flex-shrink-0 brand-bg"
             >
-              {isActive && <span className="absolute -left-3 top-1.5 bottom-1.5 w-0.5 rounded-r-full brand-bg" />}
-              <item.icon className={`h-4 w-4 flex-shrink-0 ${isActive ? "brand-text" : ""}`} />
-              {item.name}
-            </Link>
-          )
-        })}
-      </nav>
+              {initial}
+            </div>
+          )}
+          <span className="text-white font-semibold text-sm truncate">{displayName}</span>
+          <button onClick={onClose} className="ml-auto text-slate-400 hover:text-white lg:hidden">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
 
-      {/* Logout */}
-      <div className="px-3 pb-5 border-t border-slate-800 pt-4">
-        <button
-          onClick={handleLogout}
-          className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:text-white hover:bg-white/[0.04] transition-colors"
-        >
-          <LogOut className="h-4 w-4 flex-shrink-0" />
-          Sign Out
-        </button>
+        {/* Nav */}
+        <nav className="flex-1 px-3 py-5 space-y-0.5 overflow-y-auto">
+          {navigation.map((item) => {
+            const isActive = pathname === item.href
+            return (
+              <Link
+                key={item.name}
+                href={item.href}
+                onClick={onClose}
+                className={`relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  isActive
+                    ? "bg-white/[0.06] text-white"
+                    : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
+                }`}
+              >
+                {isActive && <span className="absolute -left-3 top-1.5 bottom-1.5 w-0.5 rounded-r-full brand-bg" />}
+                <item.icon className={`h-4 w-4 flex-shrink-0 ${isActive ? "brand-text" : ""}`} />
+                {item.name}
+              </Link>
+            )
+          })}
+        </nav>
+
+        {/* Logout */}
+        <div className="px-3 pb-5 border-t border-slate-800 pt-4">
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:text-white hover:bg-white/[0.04] transition-colors"
+          >
+            <LogOut className="h-4 w-4 flex-shrink-0" />
+            Sign Out
+          </button>
+        </div>
       </div>
-    </div>
+    </>
   )
 }
 
@@ -108,24 +123,35 @@ function AlertToggle() {
 export function DashboardLayout({ children }) {
   const pathname = usePathname()
   const pageTitle = navigation.find((n) => n.href === pathname)?.name ?? "Dashboard"
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  // Close the mobile drawer whenever the route changes
+  useEffect(() => { setSidebarOpen(false) }, [pathname])
 
   return (
     <RestaurantProvider>
       <OrdersProvider>
         <div className="min-h-screen bg-slate-50">
-          <Sidebar />
+          <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-          <div className="ml-60">
+          <div className="lg:ml-60">
             {/* Header */}
-            <header className="bg-background border-b border-border h-16 flex items-center px-8 sticky top-0 z-10">
-              <h1 className="text-base font-semibold text-foreground tracking-tight">{pageTitle}</h1>
-              <div className="ml-auto flex items-center gap-1">
+            <header className="bg-background border-b border-border h-16 flex items-center px-4 sm:px-8 sticky top-0 z-30 gap-2">
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="text-slate-500 hover:text-slate-800 lg:hidden flex-shrink-0"
+                aria-label="Open menu"
+              >
+                <PanelLeft className="h-5 w-5" />
+              </button>
+              <h1 className="text-base font-semibold text-foreground tracking-tight truncate">{pageTitle}</h1>
+              <div className="ml-auto flex items-center gap-1 flex-shrink-0">
                 <AlertToggle />
                 <ThemeToggle />
               </div>
             </header>
 
-            <main key={pathname} className="p-8 anim-fade-up">{children}</main>
+            <main key={pathname} className="p-4 sm:p-8 anim-fade-up overflow-x-hidden">{children}</main>
           </div>
         </div>
       </OrdersProvider>

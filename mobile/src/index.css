@@ -62,6 +62,24 @@ body {
 
 h1, h2, h3 { font-family: var(--font-display); letter-spacing: -0.02em; }
 
+/* Card style — toggled per-restaurant via data-card-style on <html> (see lib/theme.js).
+   Vars cover anything already using them; the explicit selectors below cover the
+   visually-dominant surfaces that hardcode a radius instead. */
+[data-card-style="sharp"] {
+  --radius-sm: 4px; --radius: 4px; --radius-lg: 4px; --radius-xl: 4px;
+}
+[data-card-style="sharp"] .item-card,
+[data-card-style="sharp"] .cat-chip,
+[data-card-style="sharp"] .search-wrap,
+[data-card-style="sharp"] .search-field,
+[data-card-style="sharp"] .btn,
+[data-card-style="sharp"] .add-btn,
+[data-card-style="sharp"] .cart-sheet,
+[data-card-style="sharp"] .item-veg,
+[data-card-style="sharp"] .badge {
+  border-radius: 4px !important;
+}
+
 button { cursor: pointer; border: none; font-family: inherit; background: none; color: inherit; }
 input, textarea, select { font-family: inherit; font-size: 1rem; }
 a { color: inherit; text-decoration: none; }

@@ -91,7 +91,7 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
         style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", zIndex:200, backdropFilter:"blur(3px)" }} />
 
       {/* Sheet */}
-      <div className="anim-fade-up" style={{
+      <div className="anim-fade-up cart-sheet" style={{
         position:"fixed", bottom:0, left:0, right:0, margin:"0 auto",
         width:"min(100%, 480px)", background:"var(--card)",
         borderRadius:"24px 24px 0 0", zIndex:201,

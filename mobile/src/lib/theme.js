@@ -21,18 +21,43 @@ function shade(hex, percent) {
   return `#${toHex(ch(rgb.r))}${toHex(ch(rgb.g))}${toHex(ch(rgb.b))}`
 }
 
-// Apply a restaurant's brand colour as CSS variables on <html>. The accent is used
-// sparingly; tints/shades are derived so surfaces stay soft.
-export function applyTheme(hex) {
-  const root = document.documentElement
-  const valid = hexToRgb(hex) ? hex : DEFAULT_HEX
+// Curated font choices, set via the Customize UI tab in the dashboard. Google
+// Fonts for all of these are preloaded in mobile/index.html.
+export const FONT_MAP = {
+  manrope: "'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+  inter: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+  poppins: "'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+  playfair: "'Playfair Display', Georgia, serif",
+  outfit: "'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+}
+
+function setColorVars(root, varName, hex, fallback) {
+  const valid = hexToRgb(hex) ? hex : fallback
   const rgb = hexToRgb(valid)
-  root.style.setProperty("--primary", valid)
-  // On dark, hover lightens the accent; tints are translucent so they sit on dark surfaces.
-  root.style.setProperty("--primary-dark", shade(valid, 18))
-  root.style.setProperty("--primary-tint", `rgba(${rgb.r},${rgb.g},${rgb.b},0.20)`)
-  root.style.setProperty("--primary-light", `rgba(${rgb.r},${rgb.g},${rgb.b},0.12)`)
-  root.style.setProperty("--primary-rgb", `${rgb.r},${rgb.g},${rgb.b}`)
+  root.style.setProperty(`--${varName}`, valid)
+  root.style.setProperty(`--${varName}-rgb`, `${rgb.r},${rgb.g},${rgb.b}`)
+  return valid
+}
+
+// Apply a restaurant's full theme (colors, font, card style) as CSS variables /
+// attributes on <html>. Tints/shades are derived so surfaces stay soft. Accepts
+// either a restaurant object (preferred — full theme) or a bare hex string
+// (legacy callers / the no-restaurant-in-scope default) for the primary color.
+export function applyTheme(restaurantOrHex) {
+  const root = document.documentElement
+  const r = typeof restaurantOrHex === "string" ? { themeColor: restaurantOrHex } : (restaurantOrHex || {})
+
+  const primary = setColorVars(root, "primary", r.themeColor, DEFAULT_HEX)
+  const primaryRgb = hexToRgb(primary)
+  root.style.setProperty("--primary-dark", shade(primary, 18))
+  root.style.setProperty("--primary-tint", `rgba(${primaryRgb.r},${primaryRgb.g},${primaryRgb.b},0.20)`)
+  root.style.setProperty("--primary-light", `rgba(${primaryRgb.r},${primaryRgb.g},${primaryRgb.b},0.12)`)
+
+  setColorVars(root, "secondary", r.secondaryColor, "#7c3aed")
+  setColorVars(root, "accent", r.accentColor, "#f59e0b")
+
+  root.style.setProperty("--font-display", FONT_MAP[r.fontFamily] || FONT_MAP.manrope)
+  root.setAttribute("data-card-style", r.cardStyle === "sharp" ? "sharp" : "rounded")
 }
 
 // Dedupe restaurant fetches across pages within a session.
@@ -50,9 +75,8 @@ export function useRestaurantTheme(restaurantId) {
     let cancelled = false
     restaurantApi.get(restaurantId)
       .then((r) => {
-        const hex = r.data?.themeColor || DEFAULT_HEX
-        cache.set(restaurantId, hex)
-        if (!cancelled) applyTheme(hex)
+        cache.set(restaurantId, r.data)
+        if (!cancelled) applyTheme(r.data)
       })
       .catch(() => { if (!cancelled) applyTheme(DEFAULT_HEX) })
     return () => { cancelled = true }

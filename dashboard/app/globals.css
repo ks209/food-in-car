@@ -126,7 +126,8 @@
   }
 }
 
-/* Brand color utilities — override per-restaurant via JS */
+/* Brand color utilities — override per-restaurant via JS (RestaurantProvider) */
+:root { --brand-secondary: #7c3aed; --brand-accent: #f59e0b; }
 .brand-bg { background-color: var(--brand) !important; }
 .brand-bg:hover { filter: brightness(0.9); }
 .brand-text { color: var(--brand) !important; }
@@ -135,6 +136,20 @@
 .brand-bg-subtle { background-color: color-mix(in srgb, var(--brand) 16%, transparent) !important; }
 .brand-text-subtle { color: color-mix(in srgb, var(--brand) 80%, #1e293b) !important; }
 .dark .brand-text-subtle { color: color-mix(in srgb, var(--brand) 78%, white) !important; }
+
+.brand-secondary-bg { background-color: var(--brand-secondary) !important; }
+.brand-secondary-text { color: var(--brand-secondary) !important; }
+.brand-secondary-bg-subtle { background-color: color-mix(in srgb, var(--brand-secondary) 16%, transparent) !important; }
+.brand-accent-bg { background-color: var(--brand-accent) !important; }
+.brand-accent-text { color: var(--brand-accent) !important; }
+.brand-accent-bg-subtle { background-color: color-mix(in srgb, var(--brand-accent) 16%, transparent) !important; }
+.brand-gradient { background-image: linear-gradient(135deg, var(--brand), var(--brand-secondary)) !important; }
+.sidebar-gradient {
+  background: linear-gradient(165deg,
+    #0f172a 0%,
+    color-mix(in srgb, var(--brand) 22%, #0f172a) 55%,
+    color-mix(in srgb, var(--brand-secondary) 28%, #0f172a) 100%) !important;
+}
 
 /* ============================================================
    Dark compatibility layer
