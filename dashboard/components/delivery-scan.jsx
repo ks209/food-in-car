@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Camera, CameraOff, QrCode, CheckCircle2, XCircle } from "lucide-react"
@@ -74,12 +74,12 @@ export function DeliveryScan() {
   return (
     <div className="max-w-md mx-auto space-y-5">
       <Card className="border-0 shadow-sm">
-        <CardContent className="p-5 space-y-4">
-          <div className="flex items-center gap-2 text-slate-700">
-            <QrCode className="h-5 w-5 brand-text" />
-            <h2 className="font-semibold text-sm">Scan customer QR</h2>
-          </div>
-
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-2">
+            <QrCode className="h-4 w-4" /> Scan customer QR
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
           {/* Camera viewport */}
           <div
             id={READER_ID}

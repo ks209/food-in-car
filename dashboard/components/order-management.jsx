@@ -1,27 +1,21 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Search, RefreshCw, Eye, ScanLine, Bell, BellOff } from "lucide-react"
+import { Search, RefreshCw, Eye, ScanLine } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { toast } from "sonner"
 import axios from "axios"
 
 import { API } from "@/lib/api"
+import { useOrders } from "@/lib/orders-context"
 import { OrderInvoice } from "@/components/order-invoice"
-
-const STATUS_PILL = {
-  PENDING:    "bg-blue-50 text-blue-700",
-  PAID:       "bg-emerald-50 text-emerald-700",
-  PREPARING:  "bg-amber-50 text-amber-700",
-  READY:      "bg-sky-50 text-sky-700",
-  COMPLETED:  "bg-slate-100 text-slate-600",
-  CANCELLED:  "bg-red-50 text-red-700",
-}
+import { ORDER_STATUS_COLORS } from "@/lib/status"
+import { StatusDot } from "@/components/ui/status-dot"
 
 const STATUS_KEYS = ["all", "PENDING", "PAID", "PREPARING", "READY", "COMPLETED", "CANCELLED"]
 
@@ -29,90 +23,7 @@ export function OrderManagement() {
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [selectedOrder, setSelectedOrder] = useState(null)
-  const [orders, setOrders] = useState([])
-  const [loading, setLoading] = useState(false)
-  const [muted, setMuted] = useState(false)
-
-  const knownIdsRef = useRef(null) // null until first load — avoids alert burst on open
-  const audioCtxRef = useRef(null)
-  const mutedRef = useRef(false)
-
-  // Load mute preference
-  useEffect(() => {
-    const saved = localStorage.getItem("orderAlertsMuted") === "true"
-    setMuted(saved)
-    mutedRef.current = saved
-  }, [])
-
-  const toggleMuted = () => {
-    setMuted((prev) => {
-      const next = !prev
-      mutedRef.current = next
-      localStorage.setItem("orderAlertsMuted", String(next))
-      return next
-    })
-  }
-
-  // Unlock/create the AudioContext on the first user gesture (browser autoplay policy)
-  const unlockAudio = () => {
-    try {
-      if (!audioCtxRef.current) {
-        const Ctx = window.AudioContext || window.webkitAudioContext
-        if (Ctx) audioCtxRef.current = new Ctx()
-      }
-      if (audioCtxRef.current?.state === "suspended") audioCtxRef.current.resume()
-    } catch {}
-  }
-
-  const playBeep = () => {
-    const ctx = audioCtxRef.current
-    if (!ctx || ctx.state !== "running") return // not unlocked yet — stay silent
-    try {
-      const osc = ctx.createOscillator()
-      const gain = ctx.createGain()
-      osc.type = "sine"
-      osc.frequency.value = 880
-      gain.gain.setValueAtTime(0.15, ctx.currentTime)
-      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.15)
-      osc.connect(gain).connect(ctx.destination)
-      osc.start()
-      osc.stop(ctx.currentTime + 0.15)
-    } catch {}
-  }
-
-  const fetchOrders = async () => {
-    setLoading(true)
-    try {
-      const res = await axios.get(`${API}/api/order`, { withCredentials: true })
-      const data = res.data
-
-      // Detect newly-arrived orders by diffing IDs against the last poll
-      const incomingIds = data.map((o) => o.id)
-      if (knownIdsRef.current === null) {
-        knownIdsRef.current = new Set(incomingIds) // first load: seed, don't alert
-      } else {
-        const newIds = incomingIds.filter((id) => !knownIdsRef.current.has(id))
-        if (newIds.length > 0) {
-          toast(newIds.length === 1 ? `New order #${newIds[0]}` : `${newIds.length} new orders`)
-          if (!mutedRef.current) playBeep()
-        }
-        knownIdsRef.current = new Set(incomingIds)
-      }
-
-      setOrders(data)
-    } catch {
-      toast.error("Failed to fetch orders")
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // Auto-refresh so the kitchen view stays live
-  useEffect(() => {
-    fetchOrders()
-    const t = setInterval(fetchOrders, 2000)
-    return () => clearInterval(t)
-  }, [])
+  const { orders, loading, refetch: fetchOrders } = useOrders()
 
   const updateOrderStatus = async (orderId, status) => {
     try {
@@ -157,18 +68,9 @@ export function OrderManagement() {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => { unlockAudio(); toggleMuted() }}
-          className="ml-auto h-8 text-slate-500 hover:text-slate-800"
-          title={muted ? "New-order sound is off" : "New-order sound is on"}
-        >
-          {muted ? <BellOff className="h-3.5 w-3.5" /> : <Bell className="h-3.5 w-3.5" />}
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => { unlockAudio(); fetchOrders() }}
+          onClick={() => fetchOrders()}
           disabled={loading}
-          className="h-8 text-slate-500 hover:text-slate-800"
+          className="ml-auto h-8 text-slate-500 hover:text-slate-800"
         >
           <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${loading ? "animate-spin" : ""}`} />
           Refresh
@@ -194,7 +96,7 @@ export function OrderManagement() {
           ) : (
             <div className="divide-y divide-slate-50">
               {filteredOrders.map((order) => (
-                <div key={order.id} className="px-5 py-4">
+                <div key={order.id} className="px-5 py-4 hover:bg-muted/40 transition-colors">
                   <div className="flex items-start justify-between">
                     <div className="flex items-start gap-4">
                       <span className="text-xs font-mono text-slate-400 pt-0.5 w-10">#{order.id}</span>
@@ -220,9 +122,7 @@ export function OrderManagement() {
 
                     <div className="flex items-center gap-3 flex-shrink-0">
                       <span className="text-sm font-bold text-slate-900">₹{order.totalAmount.toFixed(0)}</span>
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_PILL[order.status] || "bg-slate-100 text-slate-600"}`}>
-                        {order.status}
-                      </span>
+                      <StatusDot color={ORDER_STATUS_COLORS[order.status] || "#94a3b8"} className="w-24">{order.status}</StatusDot>
                       <span className="text-xs text-slate-400">
                         {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                       </span>
@@ -232,7 +132,7 @@ export function OrderManagement() {
                   <div className="flex items-center gap-2 mt-3 ml-14">
                     <Dialog>
                       <DialogTrigger asChild>
-                        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setSelectedOrder(order)}>
+                        <Button variant="outline" size="sm" className="text-xs" onClick={() => setSelectedOrder(order)}>
                           <Eye className="h-3.5 w-3.5 mr-1" />Details
                         </Button>
                       </DialogTrigger>
@@ -287,11 +187,11 @@ export function OrderManagement() {
 
                     {order.status === "PENDING" && (
                       <>
-                        <Button size="sm" className="h-7 text-xs brand-bg text-white"
+                        <Button size="sm" className="text-xs brand-bg text-white"
                           onClick={() => updateOrderStatus(order.id, "PREPARING")}>
                           Start Preparing
                         </Button>
-                        <Button size="sm" variant="outline" className="h-7 text-xs text-red-500 hover:bg-red-50"
+                        <Button size="sm" variant="outline" className="text-xs text-red-500 hover:bg-red-50"
                           onClick={() => updateOrderStatus(order.id, "CANCELLED")}>
                           Cancel
                         </Button>
@@ -299,18 +199,18 @@ export function OrderManagement() {
                     )}
                     {order.status === "PAID" && (
                       <>
-                        <Button size="sm" className="h-7 text-xs brand-bg text-white"
+                        <Button size="sm" className="text-xs brand-bg text-white"
                           onClick={() => updateOrderStatus(order.id, "PREPARING")}>
                           Start Preparing
                         </Button>
-                        <Button size="sm" variant="outline" className="h-7 text-xs text-red-500 hover:bg-red-50"
+                        <Button size="sm" variant="outline" className="text-xs text-red-500 hover:bg-red-50"
                           onClick={() => updateOrderStatus(order.id, "CANCELLED")}>
                           Cancel
                         </Button>
                       </>
                     )}
                     {order.status === "PREPARING" && (
-                      <Button size="sm" className="h-7 text-xs bg-sky-600 hover:bg-sky-700 text-white"
+                      <Button size="sm" className="text-xs bg-sky-600 hover:bg-sky-700 text-white"
                         onClick={() => updateOrderStatus(order.id, "READY")}>
                         Mark Ready
                       </Button>

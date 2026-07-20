@@ -11,22 +11,11 @@ import axios from "axios"
 
 import { API } from "@/lib/api"
 import { CHART_TOOLTIP_STYLE, formatCurrency } from "@/lib/format"
-
-const STATUS_PILL = {
-  PREPARING:  "bg-amber-50 text-amber-700",
-  READY:      "bg-sky-50 text-sky-700",
-  PAID:       "bg-emerald-50 text-emerald-700",
-  COMPLETED:  "bg-slate-100 text-slate-600",
-  CANCELLED:  "bg-red-50 text-red-700",
-  PENDING:    "bg-blue-50 text-blue-700",
-}
+import { ORDER_STATUS_COLORS } from "@/lib/status"
+import { StatusDot } from "@/components/ui/status-dot"
 
 // Revenue counts orders the customer has committed to (not pending/cancelled)
 const REVENUE_STATES = ["PAID", "PREPARING", "READY", "COMPLETED"]
-const STATUS_COLORS = {
-  PENDING: "#3b82f6", PAID: "#10b981", PREPARING: "#f59e0b",
-  READY: "#0ea5e9", COMPLETED: "#64748b", CANCELLED: "#ef4444",
-}
 
 export function DashboardOverview() {
   const [orders, setOrders] = useState([])
@@ -76,18 +65,14 @@ export function DashboardOverview() {
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((stat, i) => (
-          <Card key={stat.title} className="border shadow-sm anim-fade-up" style={{ animationDelay: `${i * 60}ms` }}>
+          <Card key={stat.title} className="border-0 shadow-sm anim-fade-up" style={{ animationDelay: `${i * 60}ms` }}>
             <CardContent className="p-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{stat.title}</p>
-                  <p className="text-2xl font-bold text-slate-900 mt-1">{stat.value}</p>
-                  {stat.sub && <p className="text-xs text-slate-400 mt-1">{stat.sub}</p>}
-                </div>
-                <div className="p-2.5 rounded-xl brand-bg-subtle">
-                  <stat.icon className="h-5 w-5 brand-text" />
-                </div>
+              <div className="flex items-start justify-between">
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{stat.title}</p>
+                <stat.icon className="h-4 w-4 text-slate-300" />
               </div>
+              <p className="text-2xl font-bold text-slate-900 mt-2">{stat.value}</p>
+              {stat.sub && <p className="text-xs text-slate-400 mt-1">{stat.sub}</p>}
             </CardContent>
           </Card>
         ))}
@@ -97,7 +82,7 @@ export function DashboardOverview() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="border-0 shadow-sm lg:col-span-2">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-700 uppercase tracking-wide">Revenue · last 15 days</CardTitle>
+            <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide">Revenue · last 15 days</CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={240}>
@@ -117,7 +102,7 @@ export function DashboardOverview() {
 
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-700 uppercase tracking-wide">Orders by status</CardTitle>
+            <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide">Orders by status</CardTitle>
           </CardHeader>
           <CardContent>
             {byStatus.length === 0 ? (
@@ -126,7 +111,7 @@ export function DashboardOverview() {
               <ResponsiveContainer width="100%" height={240}>
                 <PieChart>
                   <Pie data={byStatus} dataKey="value" nameKey="name" innerRadius={50} outerRadius={80} paddingAngle={2}>
-                    {byStatus.map((s) => <Cell key={s.name} fill={STATUS_COLORS[s.name] || "#cbd5e1"} />)}
+                    {byStatus.map((s) => <Cell key={s.name} fill={ORDER_STATUS_COLORS[s.name] || "#cbd5e1"} />)}
                   </Pie>
                   <Tooltip contentStyle={CHART_TOOLTIP_STYLE}
                     formatter={(value, name, entry) => [`${value} orders (${entry.payload.pct}%)`, name]} />
@@ -143,17 +128,17 @@ export function DashboardOverview() {
       {/* Recent orders */}
       <Card className="border-0 shadow-sm">
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold text-slate-700 uppercase tracking-wide">
+          <CardTitle className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
             Recent Orders
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-0">
           {orders.length === 0 ? (
             <p className="text-slate-400 text-sm text-center py-8">No orders yet</p>
           ) : (
             <div className="divide-y divide-slate-50">
               {orders.slice(0, 8).map((order) => (
-                <div key={order.id} className="flex items-center justify-between py-3">
+                <div key={order.id} className="flex items-center justify-between px-6 py-3 hover:bg-muted/40 transition-colors">
                   <div className="flex items-center gap-4">
                     <span className="text-xs font-mono text-slate-400 w-10">#{order.id}</span>
                     <div>
@@ -169,9 +154,7 @@ export function DashboardOverview() {
                   </div>
                   <div className="flex items-center gap-4">
                     <span className="text-sm font-semibold text-slate-800">₹{order.totalAmount.toFixed(0)}</span>
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_PILL[order.status] || "bg-slate-100 text-slate-600"}`}>
-                      {order.status}
-                    </span>
+                    <StatusDot color={ORDER_STATUS_COLORS[order.status] || "#94a3b8"} className="w-24">{order.status}</StatusDot>
                     <span className="text-xs text-slate-400 w-12 text-right">
                       {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     </span>

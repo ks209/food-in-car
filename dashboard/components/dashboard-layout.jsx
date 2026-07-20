@@ -1,12 +1,14 @@
 "use client"
 
 import React from "react"
-import { LayoutDashboard, ShoppingBag, Menu, LogOut, ScanLine, Users, Settings, BarChart3 } from "lucide-react"
+import { LayoutDashboard, ShoppingBag, Menu, LogOut, ScanLine, Users, Settings, BarChart3, Bell, BellOff } from "lucide-react"
 import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
 import axios from "axios"
 import { RestaurantProvider, useRestaurant } from "@/lib/restaurant-context"
+import { OrdersProvider, useOrders } from "@/lib/orders-context"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { Button } from "@/components/ui/button"
 import { API } from "@/lib/api"
 
 const navigation = [
@@ -60,13 +62,14 @@ function Sidebar() {
             <Link
               key={item.name}
               href={item.href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+              className={`relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                 isActive
-                  ? "brand-bg text-white"
-                  : "text-slate-400 hover:text-white hover:bg-slate-800"
+                  ? "bg-white/[0.06] text-white"
+                  : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
               }`}
             >
-              <item.icon className="h-4 w-4 flex-shrink-0" />
+              {isActive && <span className="absolute -left-3 top-1.5 bottom-1.5 w-0.5 rounded-r-full brand-bg" />}
+              <item.icon className={`h-4 w-4 flex-shrink-0 ${isActive ? "brand-text" : ""}`} />
               {item.name}
             </Link>
           )
@@ -77,7 +80,7 @@ function Sidebar() {
       <div className="px-3 pb-5 border-t border-slate-800 pt-4">
         <button
           onClick={handleLogout}
-          className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+          className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:text-white hover:bg-white/[0.04] transition-colors"
         >
           <LogOut className="h-4 w-4 flex-shrink-0" />
           Sign Out
@@ -87,27 +90,45 @@ function Sidebar() {
   )
 }
 
+function AlertToggle() {
+  const { muted, toggleMuted } = useOrders()
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={toggleMuted}
+      className="h-8 text-slate-500 hover:text-slate-800"
+      title={muted ? "New-order sound is off" : "New-order sound is on"}
+    >
+      {muted ? <BellOff className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
+    </Button>
+  )
+}
+
 export function DashboardLayout({ children }) {
   const pathname = usePathname()
   const pageTitle = navigation.find((n) => n.href === pathname)?.name ?? "Dashboard"
 
   return (
     <RestaurantProvider>
-      <div className="min-h-screen bg-slate-50">
-        <Sidebar />
+      <OrdersProvider>
+        <div className="min-h-screen bg-slate-50">
+          <Sidebar />
 
-        <div className="ml-60">
-          {/* Header */}
-          <header className="bg-background/70 backdrop-blur-md border-b border-border h-16 flex items-center px-8 sticky top-0 z-10">
-            <h1 className="text-base font-semibold text-slate-800 tracking-tight">{pageTitle}</h1>
-            <div className="ml-auto">
-              <ThemeToggle />
-            </div>
-          </header>
+          <div className="ml-60">
+            {/* Header */}
+            <header className="bg-background border-b border-border h-16 flex items-center px-8 sticky top-0 z-10">
+              <h1 className="text-base font-semibold text-foreground tracking-tight">{pageTitle}</h1>
+              <div className="ml-auto flex items-center gap-1">
+                <AlertToggle />
+                <ThemeToggle />
+              </div>
+            </header>
 
-          <main key={pathname} className="p-8 anim-fade-up">{children}</main>
+            <main key={pathname} className="p-8 anim-fade-up">{children}</main>
+          </div>
         </div>
-      </div>
+      </OrdersProvider>
     </RestaurantProvider>
   )
 }

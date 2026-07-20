@@ -103,17 +103,13 @@ export function Analytics() {
       {/* KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {kpis.map((k, i) => (
-          <Card key={k.title} className="border shadow-sm anim-fade-up" style={{ animationDelay: `${i * 60}ms` }}>
+          <Card key={k.title} className="border-0 shadow-sm anim-fade-up" style={{ animationDelay: `${i * 60}ms` }}>
             <CardContent className="p-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{k.title}</p>
-                  <p className="text-2xl font-bold text-slate-900 mt-1">{k.value}</p>
-                </div>
-                <div className="p-2.5 rounded-xl brand-bg-subtle">
-                  <k.icon className="h-5 w-5 brand-text" />
-                </div>
+              <div className="flex items-start justify-between">
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{k.title}</p>
+                <k.icon className="h-4 w-4 text-slate-300" />
               </div>
+              <p className="text-2xl font-bold text-slate-900 mt-2">{k.value}</p>
             </CardContent>
           </Card>
         ))}
@@ -123,7 +119,7 @@ export function Analytics() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="border-0 shadow-sm lg:col-span-2">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-700 uppercase tracking-wide flex items-center gap-2">
+            <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-2">
               <Trophy className="h-4 w-4" /> Best-selling categories · {WINDOW_DAYS} days
             </CardTitle>
           </CardHeader>
@@ -153,7 +149,7 @@ export function Analytics() {
 
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-700 uppercase tracking-wide">Pickup vs In-Car</CardTitle>
+            <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide">Pickup vs In-Car</CardTitle>
           </CardHeader>
           <CardContent>
             {fulfilment.length === 0 ? (
@@ -181,7 +177,7 @@ export function Analytics() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold text-slate-700 uppercase tracking-wide">Top items · {WINDOW_DAYS} days</CardTitle>
+            <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide">Top items · {WINDOW_DAYS} days</CardTitle>
           </CardHeader>
           <CardContent>
             {topItems.length === 0 ? (
@@ -209,7 +205,7 @@ export function Analytics() {
 
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-700 uppercase tracking-wide">Orders by hour · {WINDOW_DAYS} days</CardTitle>
+            <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide">Orders by hour · {WINDOW_DAYS} days</CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={240}>
