@@ -20,6 +20,9 @@ const openSans = Open_Sans({
 export const metadata = {
   title: "Carkhanaa Dashboard",
   description: "Restaurant management dashboard",
+  icons: {
+    icon: "/carkhanaalogo.png",
+  },
 }
 
 export default function RootLayout({ children }

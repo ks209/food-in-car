@@ -110,7 +110,7 @@ export function OrderManagement() {
   // Auto-refresh so the kitchen view stays live
   useEffect(() => {
     fetchOrders()
-    const t = setInterval(fetchOrders, 15000)
+    const t = setInterval(fetchOrders, 2000)
     return () => clearInterval(t)
   }, [])
 
@@ -298,10 +298,16 @@ export function OrderManagement() {
                       </>
                     )}
                     {order.status === "PAID" && (
-                      <Button size="sm" className="h-7 text-xs brand-bg text-white"
-                        onClick={() => updateOrderStatus(order.id, "PREPARING")}>
-                        Start Preparing
-                      </Button>
+                      <>
+                        <Button size="sm" className="h-7 text-xs brand-bg text-white"
+                          onClick={() => updateOrderStatus(order.id, "PREPARING")}>
+                          Start Preparing
+                        </Button>
+                        <Button size="sm" variant="outline" className="h-7 text-xs text-red-500 hover:bg-red-50"
+                          onClick={() => updateOrderStatus(order.id, "CANCELLED")}>
+                          Cancel
+                        </Button>
+                      </>
                     )}
                     {order.status === "PREPARING" && (
                       <Button size="sm" className="h-7 text-xs bg-sky-600 hover:bg-sky-700 text-white"

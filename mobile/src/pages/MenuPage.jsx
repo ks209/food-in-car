@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useMemo } from "react"
 import { useParams } from "react-router-dom"
-import { Search, Mic, Star, MapPin, UtensilsCrossed, ShoppingBag } from "lucide-react"
+import { Search, Mic, Star, MapPin, UtensilsCrossed, ShoppingBag, X } from "lucide-react"
 import { restaurantApi, categoryApi } from "../api"
 import { useCart } from "../context/CartContext"
 import CartDrawer from "../components/CartDrawer"
@@ -165,7 +165,7 @@ export default function MenuPage() {
           <Search className="search-icon" size={19} strokeWidth={2.2} />
           <input placeholder={`Search ${restaurant?.name || "dishes"}…`} value={search} onChange={e => setSearch(e.target.value)} />
           {search ? (
-            <button onClick={() => setSearch("")} style={{ color: "var(--muted)", fontSize: "1.1rem", lineHeight: 1, padding: "0 0.25rem" }}>✕</button>
+            <button onClick={() => setSearch("")} style={{ color: "var(--muted)", lineHeight: 1, padding: "0 0.25rem", display: "flex", alignItems: "center" }}><X size={16} strokeWidth={2.25} /></button>
           ) : (
             <button className="voice-btn" onClick={startVoice} aria-label="Voice search"
               style={listening ? { background: "var(--primary)", color: "#06281d" } : undefined}>

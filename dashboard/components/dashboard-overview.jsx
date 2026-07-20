@@ -10,6 +10,7 @@ import {
 import axios from "axios"
 
 import { API } from "@/lib/api"
+import { CHART_TOOLTIP_STYLE, formatCurrency } from "@/lib/format"
 
 const STATUS_PILL = {
   PREPARING:  "bg-amber-50 text-amber-700",
@@ -48,7 +49,7 @@ export function DashboardOverview() {
 
   const stats = [
     { title: "Orders Today", value: todayOrders.length, icon: ShoppingBag },
-    { title: "Revenue Today", value: `₹${revenueToday.toFixed(0)}`, icon: IndianRupee },
+    { title: "Revenue Today", value: formatCurrency(revenueToday), icon: IndianRupee },
     { title: "Active Orders", value: activeOrders, icon: Clock },
     { title: "Menu Items", value: liveItems.length, icon: ChefHat,
       sub: `${activeItems} active · ${inactiveItems} inactive` },
@@ -68,7 +69,7 @@ export function DashboardOverview() {
   // Orders grouped by status
   const byStatus = Object.entries(
     orders.reduce((acc, o) => { acc[o.status] = (acc[o.status] || 0) + 1; return acc }, {})
-  ).map(([name, value]) => ({ name, value }))
+  ).map(([name, value]) => ({ name, value, pct: orders.length ? Math.round((value / orders.length) * 100) : 0 }))
 
   return (
     <div className="space-y-6">
@@ -104,10 +105,10 @@ export function DashboardOverview() {
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
                 <XAxis dataKey="day" tickLine={false} axisLine={false} fontSize={11} stroke="#71717a"
                   interval="preserveStartEnd" minTickGap={12} />
-                <YAxis tickLine={false} axisLine={false} fontSize={12} stroke="#71717a" width={48}
-                  tickFormatter={(v) => `₹${v}`} />
-                <Tooltip formatter={(v) => [`₹${v}`, "Revenue"]} cursor={{ fill: "rgba(255,255,255,0.04)" }}
-                  contentStyle={{ background: "#1c1c1f", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#fafafa", fontSize: 12 }} />
+                <YAxis tickLine={false} axisLine={false} fontSize={12} stroke="#71717a" width={54}
+                  tickFormatter={(v) => formatCurrency(v)} />
+                <Tooltip formatter={(v) => [formatCurrency(v), "Revenue"]} cursor={{ fill: "rgba(255,255,255,0.04)" }}
+                  contentStyle={CHART_TOOLTIP_STYLE} />
                 <Bar dataKey="revenue" fill="var(--brand, #f97316)" radius={[6, 6, 0, 0]} maxBarSize={48} />
               </BarChart>
             </ResponsiveContainer>
@@ -127,8 +128,11 @@ export function DashboardOverview() {
                   <Pie data={byStatus} dataKey="value" nameKey="name" innerRadius={50} outerRadius={80} paddingAngle={2}>
                     {byStatus.map((s) => <Cell key={s.name} fill={STATUS_COLORS[s.name] || "#cbd5e1"} />)}
                   </Pie>
-                  <Tooltip contentStyle={{ background: "#1c1c1f", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#fafafa", fontSize: 12 }} />
-                  <Legend iconType="circle" iconSize={8} formatter={(v) => <span className="text-xs text-slate-600">{v}</span>} />
+                  <Tooltip contentStyle={CHART_TOOLTIP_STYLE}
+                    formatter={(value, name, entry) => [`${value} orders (${entry.payload.pct}%)`, name]} />
+                  <Legend iconType="circle" iconSize={8} formatter={(v, entry) => (
+                    <span className="text-xs text-slate-600">{v} · {entry.payload.pct}%</span>
+                  )} />
                 </PieChart>
               </ResponsiveContainer>
             )}

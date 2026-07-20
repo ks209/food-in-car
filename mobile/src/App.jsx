@@ -16,10 +16,7 @@ function Landing() {
         <img src="/carkhanaalogo.png" alt="Carkhanaa" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
       </div>
       <h1 style={{ fontSize: "2rem", fontWeight: 800, marginBottom: "0.5rem" }}>Carkhanaa</h1>
-      <p style={{ color: "var(--muted)", marginBottom: "2rem" }}>Order delicious food right from your car</p>
-      <p style={{ color: "var(--muted)", fontSize: "0.9rem" }}>
-        Visit <code style={{ background: "var(--surface-2)", color: "var(--text-secondary)", padding: "0.2rem 0.4rem", borderRadius: 4 }}>/restaurant/:id</code> to browse a restaurant menu
-      </p>
+      <p style={{ color: "var(--muted)", fontSize: "0.95rem" }}>Order delicious food right from your car</p>
     </div>
   )
 }

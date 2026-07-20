@@ -1,7 +1,7 @@
 "use client"
 
 import React from "react"
-import { LayoutDashboard, ShoppingBag, Menu, FolderOpen, LogOut, ScanLine, Users, Settings, BarChart3 } from "lucide-react"
+import { LayoutDashboard, ShoppingBag, Menu, LogOut, ScanLine, Users, Settings, BarChart3 } from "lucide-react"
 import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
 import axios from "axios"
@@ -16,7 +16,6 @@ const navigation = [
   { name: "Delivery", href: "/dashboard/delivery", icon: ScanLine },
   { name: "Waiters", href: "/dashboard/waiters", icon: Users },
   { name: "Menu", href: "/dashboard/menu", icon: Menu },
-  { name: "Categories", href: "/dashboard/categories", icon: FolderOpen },
   { name: "Settings", href: "/dashboard/settings", icon: Settings },
 ]
 

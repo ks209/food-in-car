@@ -7,11 +7,9 @@ const waiterRouter = express.Router();
 
 // Dashboard host used to build waiter scan links. Do NOT fall back to
 // FRONTEND_URL — that's the mobile ordering app (app.carkhanaa.in) which has no
-// /scan route. In production a missing value must fail loudly, not silently
-// point waiters at the wrong domain. Localhost default is dev-only.
-const DASHBOARD_URL =
-  process.env.DASHBOARD_URL ||
-  (process.env.NODE_ENV === 'production' ? null : 'http://localhost:3000');
+// /scan route. Always required (set in backend/.env for local dev too) so a
+// missing value fails loudly instead of silently depending on NODE_ENV.
+const DASHBOARD_URL = process.env.DASHBOARD_URL || null;
 
 // List a restaurant's waiters with how many orders each has delivered
 waiterRouter.get('/', restaurantAuth, async (req, res) => {
