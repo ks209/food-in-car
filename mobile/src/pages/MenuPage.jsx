@@ -59,6 +59,7 @@ export default function MenuPage() {
     setSearch("")
     const el = tabsRef.current?.querySelector(`[data-cat="${id}"]`)
     // "nearest" (not "center") — only scrolls if the tapped chip isn't already
+    
     // fully visible, instead of re-centering the whole row on every tap.
     el?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" })
   }
