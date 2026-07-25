@@ -146,11 +146,11 @@ export function DashboardOverview() {
           ) : (
             <div className="divide-y divide-slate-50">
               {orders.slice(0, 8).map((order) => (
-                <div key={order.id} className="flex items-center justify-between px-6 py-3 hover:bg-muted/40 transition-colors">
-                  <div className="flex items-center gap-4">
-                    <span className="text-xs font-mono text-slate-400 w-10">#{order.id}</span>
-                    <div>
-                      <p className="text-sm font-medium text-slate-800">
+                <div key={order.id} className="flex flex-wrap items-center justify-between gap-y-2 px-4 sm:px-6 py-3 hover:bg-muted/40 transition-colors">
+                  <div className="flex items-center gap-4 min-w-0">
+                    <span className="text-xs font-mono text-slate-400 w-10 flex-shrink-0">#{order.id}</span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-800 truncate">
                         {order.user?.customerName || order.guestName || "Guest"}
                       </p>
                       <p className="text-xs text-slate-400">
@@ -160,7 +160,7 @@ export function DashboardOverview() {
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-4 flex-shrink-0">
                     <span className="text-sm font-semibold text-slate-800">₹{order.totalAmount.toFixed(0)}</span>
                     <StatusDot color={ORDER_STATUS_COLORS[order.status] || "#94a3b8"} className="w-24">{order.status}</StatusDot>
                     <span className="text-xs text-slate-400 w-12 text-right">

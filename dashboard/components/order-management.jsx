@@ -82,7 +82,7 @@ export function OrderManagement() {
   return (
     <div className="space-y-5">
       {/* Status chips */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2 ml-1.5">
         {Object.entries(statusCounts).map(([status, count]) => (
           <button
             key={status}
@@ -110,14 +110,14 @@ export function OrderManagement() {
 
       {/* Date range + search */}
       <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Calendar className="h-4 w-4 text-slate-400 flex-shrink-0" />
           <Input
             type="date"
             value={fromDate}
             max={toDate}
             onChange={(e) => setFromDate(e.target.value)}
-            className="bg-white w-[150px]"
+            className="bg-white w-[132px] sm:w-[150px]"
           />
           <span className="text-slate-400 text-sm">–</span>
           <Input
@@ -125,7 +125,7 @@ export function OrderManagement() {
             value={toDate}
             min={fromDate}
             onChange={(e) => setToDate(e.target.value)}
-            className="bg-white w-[150px]"
+            className="bg-white w-[132px] sm:w-[150px]"
           />
         </div>
         <div className="flex items-center gap-1.5">
@@ -168,12 +168,12 @@ export function OrderManagement() {
           ) : (
             <div className="divide-y divide-slate-50">
               {filteredOrders.map((order) => (
-                <div key={order.id} className="px-5 py-4 hover:bg-muted/40 transition-colors">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start gap-4">
-                      <span className="text-xs font-mono text-slate-400 pt-0.5 w-10">#{order.id}</span>
-                      <div>
-                        <p className="text-sm font-medium text-slate-800">
+                <div key={order.id} className="px-4 sm:px-5 py-4 hover:bg-muted/40 transition-colors">
+                  <div className="flex flex-wrap items-start justify-between gap-y-2">
+                    <div className="flex items-start gap-4 min-w-0">
+                      <span className="text-xs font-mono text-slate-400 pt-0.5 w-10 flex-shrink-0">#{order.id}</span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-800 truncate">
                           {order.user?.customerName || order.guestName || "Guest"}
                         </p>
                         <p className="text-xs text-slate-400">
@@ -201,7 +201,7 @@ export function OrderManagement() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 mt-3 ml-14">
+                  <div className="flex flex-wrap items-center gap-2 mt-3 ml-14">
                     <Dialog>
                       <DialogTrigger asChild>
                         <Button variant="outline" size="sm" className="text-xs" onClick={() => setSelectedOrder(order)}>

@@ -85,9 +85,9 @@ export function CustomerManagement() {
                 <button
                   key={c.id}
                   onClick={() => openCustomer(c)}
-                  className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-muted/40 transition-colors text-left"
+                  className="w-full flex flex-wrap items-center justify-between gap-y-1 px-4 sm:px-5 py-3.5 hover:bg-muted/40 transition-colors text-left"
                 >
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-sm font-medium text-slate-800">{c.customerName}</p>
                     <p className="text-xs text-slate-400">
                       {c.phoneNumber}

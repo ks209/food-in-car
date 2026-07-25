@@ -203,9 +203,9 @@ export function MenuManagement() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-slate-500 text-sm">{menuItems.length} items · {categories.length} categories</p>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" className="h-9 text-sm" onClick={() => { setNewCategory(emptyCategory); setIsAddCategoryOpen(true) }}>
             <FolderPlus className="h-4 w-4 mr-1.5" />Add Category
           </Button>
@@ -222,7 +222,7 @@ export function MenuManagement() {
       </div>
 
       {/* Category filter */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2 ml-1.5">
         {[{ key: "all", name: "All" }, ...allGroups].map((g) => (
           <button
             key={g.key}
@@ -242,13 +242,13 @@ export function MenuManagement() {
       <div className="space-y-8">
         {groups.map((group) => (
           <div key={group.key}>
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex flex-wrap items-center justify-between gap-y-1 mb-3">
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-semibold text-slate-700">{group.name}</h3>
                 {!group.isActive && <StatusDot color="#94a3b8">Inactive</StatusDot>}
                 <span className="text-xs text-slate-400">{group.items.length}</span>
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex flex-wrap items-center gap-1">
                 {group.items.length > 0 && (
                   <>
                     <Button variant="ghost" size="sm" className="h-7 text-xs text-slate-500"
@@ -310,7 +310,7 @@ export function MenuManagement() {
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader><DialogTitle>New Menu Item</DialogTitle></DialogHeader>
           <div className="space-y-4 pt-2">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label className="text-sm">Name</Label>
                 <Input className="mt-1" value={newItem.name} onChange={(e) => setNewItem({ ...newItem, name: e.target.value })} placeholder="Item name" />
@@ -386,7 +386,7 @@ export function MenuManagement() {
           <DialogHeader><DialogTitle>Edit Item</DialogTitle></DialogHeader>
           {selectedItem && (
             <div className="space-y-4 pt-2">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label className="text-sm">Name</Label>
                   <Input className="mt-1" value={selectedItem.name} onChange={(e) => setSelectedItem({ ...selectedItem, name: e.target.value })} />

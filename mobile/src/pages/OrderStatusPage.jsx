@@ -1,9 +1,32 @@
-import { useEffect, useState } from "react"
-import { useParams, Link } from "react-router-dom"
+import { useEffect, useRef, useState } from "react"
+import { useParams, useSearchParams, Link } from "react-router-dom"
 import { QRCodeSVG } from "qrcode.react"
 import { Clock, CreditCard, ChefHat, Package, PartyPopper, XCircle, Bike, StickyNote, Phone, Frown } from "lucide-react"
 import { orderApi } from "../api"
 import { useRestaurantTheme } from "../lib/theme"
+import { useAuth } from "../context/AuthContext"
+
+// Short ascending 3-note chime — same melody the restaurant dashboard uses for
+// its "new order" alert, so the sound reads as one system across the app.
+function playReadyChime(ctx) {
+  if (!ctx || ctx.state !== "running") return
+  const notes = [660, 880, 1046]
+  const noteDur = 0.16
+  const gap = 0.06
+  notes.forEach((freq, i) => {
+    const start = ctx.currentTime + i * (noteDur + gap)
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = "sine"
+    osc.frequency.value = freq
+    gain.gain.setValueAtTime(0, start)
+    gain.gain.linearRampToValueAtTime(0.4, start + 0.012)
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + noteDur)
+    osc.connect(gain).connect(ctx.destination)
+    osc.start(start)
+    osc.stop(start + noteDur + 0.02)
+  })
+}
 
 // Tracker nodes (PAID is folded into "Placed")
 const STEPS = [
@@ -54,19 +77,59 @@ const STATUS_ICON = {
 
 export default function OrderStatusPage() {
   const { orderId, restaurantId } = useParams()
+  const [searchParams] = useSearchParams()
+  const { user } = useAuth()
   useRestaurantTheme(restaurantId)
   const [order, setOrder] = useState(null)
   const [loading, setLoading] = useState(true)
   const [pulse, setPulse] = useState(false)
+  const prevStatusRef = useRef(null)
+  const audioCtxRef = useRef(null)
+
+  // Unlocks the chime and asks for notification permission on the customer's first
+  // tap — browsers require user activation for both, so this piggybacks on it
+  // instead of showing a separate "enable notifications" prompt.
+  useEffect(() => {
+    const unlock = () => {
+      try {
+        if (!audioCtxRef.current) {
+          const Ctx = window.AudioContext || window.webkitAudioContext
+          if (Ctx) audioCtxRef.current = new Ctx()
+        }
+        if (audioCtxRef.current?.state === "suspended") audioCtxRef.current.resume()
+      } catch {}
+      try {
+        if (window.Notification && Notification.permission === "default") Notification.requestPermission()
+      } catch {}
+    }
+    unlock()
+    window.addEventListener("pointerdown", unlock, { once: true })
+    return () => window.removeEventListener("pointerdown", unlock)
+  }, [])
 
   const fetchOrder = () => {
-    orderApi.get(orderId)
+    orderApi.get(orderId, searchParams.get("code"))
       .then(r => {
-        setOrder(prev => {
-          if (prev && prev.status !== r.data.status) setPulse(true)
-          return r.data
-        })
-        setTimeout(() => setPulse(false), 600)
+        const newStatus = r.data.status
+        if (prevStatusRef.current && prevStatusRef.current !== newStatus) {
+          setPulse(true)
+          setTimeout(() => setPulse(false), 600)
+          if (newStatus === "READY") {
+            playReadyChime(audioCtxRef.current)
+            // Only when the tab is actually backgrounded — the pulse + QR card
+            // already cover the "customer is looking at the page" case.
+            if (document.hidden && window.Notification?.permission === "granted") {
+              const notif = new Notification("Your order is ready!", {
+                body: `Order #${r.data.id} — show your QR to collect it.`,
+                icon: "/carkhanaalogo.png",
+                tag: `order-ready-${r.data.id}`,
+              })
+              notif.onclick = () => window.focus()
+            }
+          }
+        }
+        prevStatusRef.current = newStatus
+        setOrder(r.data)
       })
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -283,6 +346,16 @@ export default function OrderStatusPage() {
               <Phone size={15} strokeWidth={2.2} /> {order.restaurant.phone}
             </span>
           </a>
+        )}
+
+        {!user && (
+          <p style={{ textAlign:"center", color:"var(--muted)", fontSize:"0.75rem" }}>
+            Lost this page?{" "}
+            <Link to={`/restaurant/${restaurantId}/login`} style={{ color:"var(--primary)", fontWeight:700 }}>
+              Sign in
+            </Link>{" "}
+            to find your orders anytime.
+          </p>
         )}
 
         {!isDone && !isCancelled && (

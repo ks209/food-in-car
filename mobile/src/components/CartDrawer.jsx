@@ -56,7 +56,7 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
     try {
       const res = await orderApi.create(orderPayload())
       clearCart(); onClose()
-      navigate(`/restaurant/${restaurantId}/order/${res.data.id}`)
+      navigate(`/restaurant/${restaurantId}/order/${res.data.id}?code=${res.data.deliveryCode}`)
     } catch (err) {
       setError(err.response?.data?.error || "Couldn't place order. Try again.")
     } finally { setPlacing(false) }
@@ -74,7 +74,7 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
         window.location.href = res.data.redirectUrl
       } else {
         // Dev mode or no credentials — order is placed, go straight to status page
-        navigate(`/restaurant/${restaurantId}/order/${res.data.orderId}`)
+        navigate(`/restaurant/${restaurantId}/order/${res.data.orderId}?code=${res.data.deliveryCode}`)
       }
     } catch (err) {
       setError(err.response?.data?.error || "Payment initiation failed. Try again.")
