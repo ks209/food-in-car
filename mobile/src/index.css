@@ -242,7 +242,11 @@ a.card:active, .card:active { transform: scale(0.99); }
   padding: 0.15rem 0 0.6rem;
 }
 .cat-scroller {
-  display: flex; gap: 0.45rem; overflow-x: auto; padding: 0.35rem 1rem;
+  display: flex; gap: 0.45rem; overflow-x: auto;
+  /* Extra left inset (vs. the search bar's 1rem) — a solid, bright pill reads as
+     sitting closer to the edge than a muted bordered box at the same offset, so
+     it needs a few more px to look optically aligned, not just numerically aligned. */
+  padding: 0.35rem 1rem 0.35rem 1.25rem;
   scrollbar-width: none; scroll-snap-type: x proximity;
 }
 .cat-scroller::-webkit-scrollbar { display: none; }
