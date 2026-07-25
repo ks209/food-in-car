@@ -82,7 +82,7 @@ export function OrderManagement() {
   return (
     <div className="space-y-5">
       {/* Status chips */}
-      <div className="flex flex-wrap gap-2 ml-1.5">
+      <div className="flex flex-wrap gap-2 ml-3">
         {Object.entries(statusCounts).map(([status, count]) => (
           <button
             key={status}

@@ -222,7 +222,7 @@ export function MenuManagement() {
       </div>
 
       {/* Category filter */}
-      <div className="flex flex-wrap gap-2 ml-1.5">
+      <div className="flex flex-wrap gap-2 ml-3">
         {[{ key: "all", name: "All" }, ...allGroups].map((g) => (
           <button
             key={g.key}
