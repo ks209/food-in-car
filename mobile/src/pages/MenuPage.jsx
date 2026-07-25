@@ -54,6 +54,13 @@ export default function MenuPage() {
       .finally(() => setLoading(false))
   }, [restaurantId])
 
+  // The chip row only mounts once loading finishes (see the `!loading` guard below),
+  // fully formed with every chip already in place. Force it to open at scrollLeft 0
+  // so the "All" chip's left padding is guaranteed visible, no matter what nudged it.
+  useEffect(() => {
+    if (!loading && tabsRef.current) tabsRef.current.scrollLeft = 0
+  }, [loading])
+
   const switchCategory = (id) => {
     setActiveCategory(id)
     setSearch("")
