@@ -218,7 +218,7 @@ export default function MenuPage() {
 
       {/* ── Veg / sort filters ── */}
       {!loading && allItems.length > 0 && (
-        <div style={{ display: "flex", gap: "0.45rem", flexWrap: "wrap", padding: "0 1rem 0.6rem 1.25rem" }}>
+        <div style={{ display: "flex", gap: "0.45rem", flexWrap: "wrap", padding: "0 1rem 0.6rem 1.5rem" }}>
           <button onClick={() => setVegFilter(v => (v === "veg" ? "all" : "veg"))}
             className={`cat-chip ${vegFilter === "veg" ? "active" : ""}`}>
             <span className="veg-dot veg" /> Veg
