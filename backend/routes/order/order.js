@@ -1,4 +1,5 @@
 import express from 'express';
+import jwt from 'jsonwebtoken';
 import prisma from '../../config/prisma.js';
 import restaurantAuth from '../../middlewares/restaurant.auth.js';
 import userAuth from '../../middlewares/user.auth.js';
@@ -169,7 +170,11 @@ orderRouter.get('/customers/:phone', restaurantAuth, async (req, res) => {
   }
 });
 
-// Single order — public for status polling
+// Single order — used for the customer's status-tracking page. No login is required
+// (guest checkout has no session), so instead of trusting the bare numeric id —
+// which is sequential and trivially enumerable — the caller must prove they're
+// entitled to see it: either the order's own deliveryCode (handed to the customer
+// once, at checkout) or a logged-in session that owns the order.
 orderRouter.get('/:id', async (req, res) => {
   try {
     const order = await prisma.order.findUnique({
@@ -180,6 +185,25 @@ orderRouter.get('/:id', async (req, res) => {
       },
     });
     if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    const providedCode = (req.query.code || '').trim().toUpperCase();
+    const codeMatches = order.deliveryCode && providedCode === order.deliveryCode;
+
+    let ownsOrder = false;
+    const token = req.cookies?.userToken;
+    if (!codeMatches && token) {
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 's3cret');
+        ownsOrder = decoded.id === order.userId;
+      } catch {
+        // invalid/expired token — falls through to the 403 below
+      }
+    }
+
+    if (!codeMatches && !ownsOrder) {
+      return res.status(403).json({ error: 'Not authorized to view this order' });
+    }
+
     res.json(order);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch order', details: error.message });

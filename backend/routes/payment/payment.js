@@ -76,7 +76,7 @@ paymentRouter.post('/initiate', async (req, res) => {
     // Dev mode: no PhonePe credentials — skip gateway, go straight to order page
     if (DEV_MODE) {
       console.log('[payment] DEV_MODE — skipping PhonePe, order', order.id, 'placed as PENDING');
-      return res.json({ orderId: order.id, redirectUrl: null, devMode: true });
+      return res.json({ orderId: order.id, deliveryCode: order.deliveryCode, redirectUrl: null, devMode: true });
     }
 
     const merchantTransactionId = `MT${Date.now()}O${order.id}`;
@@ -186,7 +186,15 @@ paymentRouter.get('/redirect', async (req, res) => {
     }
   } catch { /* ignore, still redirect */ }
 
-  res.redirect(`${FRONTEND_URL}/restaurant/${restaurantId}/order/${orderId}`);
+  // Carry the delivery code so the status page (which requires it for guest,
+  // unauthenticated access) can load without an extra auth step.
+  let code = '';
+  try {
+    const o = await prisma.order.findUnique({ where: { id: parseInt(orderId) }, select: { deliveryCode: true } });
+    code = o?.deliveryCode || '';
+  } catch { /* fall through without a code — status page will 403 and show "not found" */ }
+
+  res.redirect(`${FRONTEND_URL}/restaurant/${restaurantId}/order/${orderId}?code=${code}`);
 });
 
 // ── GET /api/payment/status/:orderId ─────────────────────────────────────────

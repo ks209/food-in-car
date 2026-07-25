@@ -232,7 +232,7 @@ export function CustomizeUI() {
       </div>
 
       {/* Save bar */}
-      <div className="sticky bottom-0 mt-6 -mx-8 px-8 py-4 bg-background/80 backdrop-blur-md border-t border-border flex items-center justify-end gap-3">
+      <div className="sticky bottom-0 mt-6 -mx-4 sm:-mx-8 px-4 sm:px-8 py-4 bg-background/80 backdrop-blur-md border-t border-border flex flex-wrap items-center justify-end gap-3">
         {dirty && <span className="text-xs text-muted-foreground mr-auto">You have unsaved changes</span>}
         <Button variant="outline" onClick={handleReset} disabled={!dirty || saving}>
           Reset

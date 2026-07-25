@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useEffect, useState } from "react"
-import { LayoutDashboard, ShoppingBag, Menu, LogOut, ScanLine, Users, Contact, Settings, BarChart3, Bell, BellOff, PanelLeft, X, Paintbrush } from "lucide-react"
+import { LayoutDashboard, ShoppingBag, Menu, LogOut, ScanLine, Users, Contact, Settings, BarChart3, Bell, BellOff, PanelLeft, X, Paintbrush, ChefHat } from "lucide-react"
 import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
 import axios from "axios"
@@ -15,6 +15,7 @@ const navigation = [
   { name: "Overview", href: "/dashboard", icon: LayoutDashboard },
   { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
   { name: "Orders", href: "/dashboard/orders", icon: ShoppingBag },
+  { name: "Kitchen", href: "/dashboard/kitchen", icon: ChefHat },
   { name: "Delivery", href: "/dashboard/delivery", icon: ScanLine },
   { name: "Waiters", href: "/dashboard/waiters", icon: Users },
   { name: "Customers", href: "/dashboard/customers", icon: Contact },

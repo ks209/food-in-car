@@ -9,27 +9,31 @@ import { todayStr, localDateRange } from "@/lib/format"
 
 const OrdersContext = createContext(null)
 
-// Short ascending 3-note chime — louder and more attention-grabbing than a single beep,
-// since this now has to be noticed from any page in the dashboard, not just Orders.
-function playChime(ctx) {
+// Plays a short sequence of notes through the shared (already-unlocked) AudioContext.
+function playTone(ctx, notes, { type = "sine", noteDur = 0.16, gap = 0.06, volume = 0.4 } = {}) {
   if (!ctx || ctx.state !== "running") return
-  const notes = [660, 880, 1046]
-  const noteDur = 0.16
-  const gap = 0.06
   notes.forEach((freq, i) => {
     const start = ctx.currentTime + i * (noteDur + gap)
     const osc = ctx.createOscillator()
     const gain = ctx.createGain()
-    osc.type = "sine"
+    osc.type = type
     osc.frequency.value = freq
     gain.gain.setValueAtTime(0, start)
-    gain.gain.linearRampToValueAtTime(0.4, start + 0.012)
+    gain.gain.linearRampToValueAtTime(volume, start + 0.012)
     gain.gain.exponentialRampToValueAtTime(0.0001, start + noteDur)
     osc.connect(gain).connect(ctx.destination)
     osc.start(start)
     osc.stop(start + noteDur + 0.02)
   })
 }
+
+// Ascending 3-note chime — louder and more attention-grabbing than a single beep,
+// since this now has to be noticed from any page in the dashboard, not just Orders.
+const playChime = (ctx) => playTone(ctx, [660, 880, 1046])
+
+// Two short, lower, harsher beeps — deliberately distinct from the new-order chime
+// so a kitchen-display SLA breach doesn't get mistaken for "new order arrived".
+const playAlertTone = (ctx) => playTone(ctx, [440, 440], { type: "square", noteDur: 0.11, gap: 0.09, volume: 0.25 })
 
 // Polls TODAY's orders for the whole dashboard (not just the Orders page) so a
 // new-order toast + sound fires no matter which screen the restaurant is looking
@@ -138,8 +142,12 @@ export function OrdersProvider({ children }) {
     return () => clearInterval(t)
   }, [])
 
+  // Shared with the Kitchen Display: one alert respects the same mute toggle and
+  // unlocked AudioContext as the new-order chime, instead of each page managing its own.
+  const playSlaAlert = () => { if (!mutedRef.current) playAlertTone(audioCtxRef.current) }
+
   return (
-    <OrdersContext.Provider value={{ orders, loading, muted, toggleMuted, refetch: fetchOrders }}>
+    <OrdersContext.Provider value={{ orders, loading, muted, toggleMuted, refetch: fetchOrders, playSlaAlert }}>
       {children}
     </OrdersContext.Provider>
   )

@@ -27,7 +27,8 @@ export const menuApi = {
 export const orderApi = {
   create: (data) => api.post("/api/order/create", data),
   mine: () => api.get("/api/order/mine"),
-  get: (id) => api.get(`/api/order/${id}`),
+  // code proves ownership for guest (unauthenticated) access — see order.js GET /:id
+  get: (id, code) => api.get(`/api/order/${id}`, code ? { params: { code } } : undefined),
 }
 
 export default api

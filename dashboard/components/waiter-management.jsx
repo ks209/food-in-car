@@ -105,8 +105,8 @@ export function WaiterManagement() {
           ) : (
             <div className="divide-y divide-slate-50">
               {waiters.map((w) => (
-                <div key={w.id} className="flex items-center justify-between px-5 py-4 hover:bg-muted/40 transition-colors">
-                  <div>
+                <div key={w.id} className="flex flex-wrap items-center justify-between gap-y-2 px-4 sm:px-5 py-4 hover:bg-muted/40 transition-colors">
+                  <div className="min-w-0">
                     <p className="text-sm font-medium text-slate-800 flex items-center gap-2">
                       {w.name}
                       {!w.isActive && <StatusDot color="#94a3b8">Inactive</StatusDot>}
@@ -115,7 +115,7 @@ export function WaiterManagement() {
                       {w.phone ? `${w.phone} · ` : ""}{w.deliveredCount} delivered
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Button size="sm" variant="outline" className="text-xs" disabled={!w.isActive}
                       onClick={() => generateToken(w)}>
                       <QrCode className="h-3.5 w-3.5 mr-1" /> Scan link

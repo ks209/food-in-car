@@ -227,6 +227,15 @@
 .anim-fade    { animation: fin-fade 0.4s ease both; }
 .anim-scale   { animation: fin-scale 0.3s cubic-bezier(0.16, 1, 0.3, 1) both; }
 
+/* Kitchen Display — soft pulsing ring on an order that has breached the SLA
+   critical threshold. A visual cue in addition to the red timer color, not
+   instead of it (color alone shouldn't be the only signal). */
+@keyframes kds-critical-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35); }
+  50%      { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+}
+.kds-critical-pulse { animation: kds-critical-pulse 1.6s ease-in-out infinite; }
+
 /* Card hover (shadcn Card root) — a subtle border/shadow change reads calmer in a
    dense dashboard than a lift/translate, which feels more like a marketing page. */
 [data-slot="card"] {
@@ -250,11 +259,12 @@ button, a { transition: color 0.15s ease, background-color 0.15s ease, border-co
 .dark *::-webkit-scrollbar-thumb { background: oklch(1 0 0 / 12%); border-radius: 9999px; border: 2px solid transparent; background-clip: content-box; }
 .dark *::-webkit-scrollbar-thumb:hover { background: oklch(1 0 0 / 22%); border: 2px solid transparent; background-clip: content-box; }
 
-/* Print: isolate the invoice so only the bill prints */
+/* Print: isolate a single element (invoice, a report) so only it prints */
 @media print {
   body * { visibility: hidden; }
-  .invoice-print-area, .invoice-print-area * { visibility: visible; }
-  .invoice-print-area {
+  .invoice-print-area, .invoice-print-area *,
+  .analytics-print-area, .analytics-print-area * { visibility: visible; }
+  .invoice-print-area, .analytics-print-area {
     position: fixed; left: 0; top: 0; width: 100%;
     padding: 24px; background: white; color: black;
   }
