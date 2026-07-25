@@ -117,6 +117,14 @@
   --font-serif: var(--font-work-sans);
 }
 
+/* Reserve the vertical scrollbar's width up front. Without this, a page that
+   loads short (no scrollbar) and then grows past the viewport once data
+   arrives (scrollbar appears) reflows ~15px narrower, visibly shifting every
+   left-aligned element — the filter chips, cards, everything — left. */
+html {
+  scrollbar-gutter: stable;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
