@@ -247,7 +247,7 @@ a.card:active, .card:active { transform: scale(0.99); }
      sitting closer to the edge than a muted bordered box at the same offset, so
      it needs a few more px to look optically aligned, not just numerically aligned. */
   padding: 0.35rem 1rem 0.35rem 2rem;
-  scrollbar-width: none; scroll-snap-type: x proximity;
+  scrollbar-width: none;
 }
 .cat-scroller::-webkit-scrollbar { display: none; }
 .cat-chip {
@@ -255,7 +255,7 @@ a.card:active, .card:active { transform: scale(0.99); }
   padding: 0.5rem 0.95rem; border-radius: 12px; white-space: nowrap;
   font-size: 0.85rem; font-weight: 700; letter-spacing: -0.01em;
   background: var(--card); color: var(--text-secondary);
-  border: 1px solid var(--border); scroll-snap-align: start;
+  border: 1px solid var(--border);
   transition: color 0.18s, background 0.18s, border-color 0.18s, transform 0.12s, box-shadow 0.18s;
 }
 .cat-chip:active { transform: scale(0.96); }
