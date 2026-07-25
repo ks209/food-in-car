@@ -58,7 +58,9 @@ export default function MenuPage() {
     setActiveCategory(id)
     setSearch("")
     const el = tabsRef.current?.querySelector(`[data-cat="${id}"]`)
-    el?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" })
+    // "nearest" (not "center") — only scrolls if the tapped chip isn't already
+    // fully visible, instead of re-centering the whole row on every tap.
+    el?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" })
   }
 
   // Voice search via the Web Speech API (graceful no-op if unsupported)
