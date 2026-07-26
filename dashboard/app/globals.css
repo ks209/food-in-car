@@ -278,6 +278,16 @@ button, a { transition: color 0.15s ease, background-color 0.15s ease, border-co
    underneath — 3 near-blank pages with the receipt centered on each. */
 .invoice-print-area { display: none; }
 
+/* The browser's own "Default" print margin (e.g. Chrome reserves a chunky
+   margin on a small A5 sheet) leaves less usable page height than it looks
+   like on screen — enough that even a short, single-item receipt can spill
+   a sliver onto an otherwise-blank second page. Setting our own tight margin
+   here is what actually gets read; Chrome's "Margins: Default" print-dialog
+   option uses the page's own @page margin when one is specified. */
+@page {
+  margin: 8mm;
+}
+
 @media print {
   /* Hide every other top-level node under <body> — the whole app, plus the
      dialog's own Radix portal — so nothing else contributes layout height.
