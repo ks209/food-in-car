@@ -24,7 +24,7 @@ function itemsLine(order) {
 }
 
 export function KitchenDisplay() {
-  const { orders, refetch, playSlaAlert } = useOrders()
+  const { orders, refetch, playSlaAlert, patchOrder } = useOrders()
   const [now, setNow] = useState(() => Date.now())
   const alertedIdsRef = useRef(new Set()) // order ids we've already sounded the SLA alarm for
 
@@ -36,11 +36,15 @@ export function KitchenDisplay() {
   }, [])
 
   const updateStatus = async (orderId, status) => {
+    // Optimistic — same reasoning as order-management.jsx: don't leave the old
+    // status showing for the PUT + next-poll round trip.
+    patchOrder(orderId, { status })
     try {
       await axios.put(`${API}/api/order/${orderId}/status`, { status }, { withCredentials: true })
       toast.success(status === "PREPARING" ? "Order started" : "Order marked ready")
       refetch()
     } catch {
+      patchOrder(orderId, { status: orders.find((o) => o.id === orderId)?.status })
       toast.error("Failed to update order")
     }
   }

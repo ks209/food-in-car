@@ -235,6 +235,7 @@ orderRouter.post('/create', async (req, res) => {
         deviceKey: deviceKey || null,
         deliveryInstructions: deliveryInstructions || '',
         status: 'PENDING',
+        paymentMethod: 'COD',
         orderStatusHistory: { create: { status: 'PENDING', updatedBy: 'customer' } },
         orderItems: {
           create: items.map(i => ({

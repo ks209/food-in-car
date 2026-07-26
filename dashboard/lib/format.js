@@ -7,6 +7,8 @@ export function formatCurrency(value) {
   return `₹${Math.round(value).toLocaleString("en-IN")}`
 }
 
+export const PAYMENT_METHOD_LABELS = { COD: "Cash on Delivery", PHONEPE: "PhonePe" }
+
 const HOUR_LABELS = Array.from({ length: 24 }, (_, h) => {
   const period = h < 12 ? "AM" : "PM"
   const hour12 = h % 12 === 0 ? 12 : h % 12

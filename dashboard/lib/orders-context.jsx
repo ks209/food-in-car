@@ -146,8 +146,15 @@ export function OrdersProvider({ children }) {
   // unlocked AudioContext as the new-order chime, instead of each page managing its own.
   const playSlaAlert = () => { if (!mutedRef.current) playAlertTone(audioCtxRef.current) }
 
+  // Optimistic single-order patch — lets a consumer (Kitchen Display) reflect a
+  // status change immediately on click instead of waiting out the PUT + next poll,
+  // which otherwise leaves the old status visible for a beat.
+  const patchOrder = (orderId, patch) => {
+    setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, ...patch } : o)))
+  }
+
   return (
-    <OrdersContext.Provider value={{ orders, loading, muted, toggleMuted, refetch: fetchOrders, playSlaAlert }}>
+    <OrdersContext.Provider value={{ orders, loading, muted, toggleMuted, refetch: fetchOrders, playSlaAlert, patchOrder }}>
       {children}
     </OrdersContext.Provider>
   )
