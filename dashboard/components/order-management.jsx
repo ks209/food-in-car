@@ -15,7 +15,7 @@ import { API } from "@/lib/api"
 import { OrderInvoice } from "@/components/order-invoice"
 import { ORDER_STATUS_COLORS } from "@/lib/status"
 import { StatusDot } from "@/components/ui/status-dot"
-import { todayStr, daysAgoStr, localDateRange } from "@/lib/format"
+import { todayStr, daysAgoStr, localDateRange, PAYMENT_METHOD_LABELS } from "@/lib/format"
 
 const STATUS_KEYS = ["all", "PENDING", "PAID", "PREPARING", "READY", "COMPLETED", "CANCELLED"]
 
@@ -50,11 +50,16 @@ export function OrderManagement() {
   }, [fromDate, toDate])
 
   const updateOrderStatus = async (orderId, status) => {
+    // Optimistic — flip the status locally right away so the badge/buttons don't
+    // sit on the old status for the round trip; fetchOrders() reconciles after.
+    const previous = orders
+    setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status } : o)))
     try {
       await axios.put(`${API}/api/order/${orderId}/status`, { status }, { withCredentials: true })
       toast.success(`Order marked ${status.toLowerCase()}`)
       fetchOrders()
     } catch {
+      setOrders(previous)
       toast.error("Failed to update status")
     }
   }
@@ -180,6 +185,10 @@ export function OrderManagement() {
                           {order.guestVehicle
                             ? order.guestVehicle
                             : <span className="text-amber-600 font-medium">Pickup</span>}
+                          {" · "}
+                          <span className={order.paymentMethod === "PHONEPE" ? "text-violet-600 font-medium" : "text-slate-500 font-medium"}>
+                            {order.paymentMethod === "PHONEPE" ? "PhonePe" : "COD"}
+                          </span>
                         </p>
                         <p className="text-xs text-slate-400 mt-1">
                           {order.orderItems?.map((i) => `${i.quantity}× ${i.name}`).join(", ") || "—"}
@@ -218,6 +227,9 @@ export function OrderManagement() {
                               {selectedOrder.user?.phoneNumber && <p className="text-sm text-slate-500">{selectedOrder.user.phoneNumber}</p>}
                               <p className="text-sm text-slate-500">
                                 {selectedOrder.guestVehicle ? `Vehicle: ${selectedOrder.guestVehicle}` : "Pickup order"}
+                              </p>
+                              <p className="text-sm text-slate-500">
+                                Payment: {PAYMENT_METHOD_LABELS[selectedOrder.paymentMethod] || "Cash on Delivery"}
                               </p>
                             </div>
                             {selectedOrder.waiter?.name && (

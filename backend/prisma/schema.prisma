@@ -104,6 +104,7 @@ model Order {
   guestVehicle         String?
   totalAmount          Float
   status               OrderStatus
+  paymentMethod        PaymentMethod        @default(COD)
   deliveryCode         String?              @unique
   deviceKey            String?
   deliveryInstructions String
@@ -165,6 +166,11 @@ enum OrderStatus {
   READY
   COMPLETED
   CANCELLED
+}
+
+enum PaymentMethod {
+  COD
+  PHONEPE
 }
 
 model MerchantTransaction {

@@ -4,29 +4,12 @@ import crypto from 'crypto';
 import prisma from '../../config/prisma.js';
 import { genDeliveryCode } from '../../utils/deliveryCode.js';
 import { resolveCustomerByPhone } from '../../utils/customer.js';
+import { MERCHANT_ID, SALT_KEY, DEV_MODE, BASE, xVerifyForPay, reconcileTransaction } from '../../utils/phonepe.js';
 
 const paymentRouter = express.Router();
 
-const MERCHANT_ID   = process.env.PHONEPE_MERCHANT_ID;
-const SALT_KEY      = process.env.PHONEPE_SALT_KEY;
-const SALT_INDEX    = process.env.PHONEPE_SALT_INDEX    || '1';
-const IS_SANDBOX    = process.env.PHONEPE_IS_SANDBOX !== 'false';
-const DEV_MODE      = process.env.PHONEPE_DEV_MODE === 'true' || !MERCHANT_ID || !SALT_KEY;
-const FRONTEND_URL  = process.env.FRONTEND_URL  || 'http://localhost:5174';
-const BACKEND_URL   = process.env.BACKEND_URL   || 'http://localhost:5000';
-
-const BASE = IS_SANDBOX
-  ? 'https://api-preprod.phonepe.com/apis/pg-sandbox'
-  : 'https://api.phonepe.com/apis/hermes';
-
-function xVerifyForPay(base64Payload) {
-  return crypto.createHash('sha256').update(base64Payload + '/pg/v1/pay' + SALT_KEY).digest('hex')
-    + '###' + SALT_INDEX;
-}
-function xVerifyForStatus(endpoint) {
-  return crypto.createHash('sha256').update(endpoint + SALT_KEY).digest('hex')
-    + '###' + SALT_INDEX;
-}
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5174';
+const BACKEND_URL  = process.env.BACKEND_URL  || 'http://localhost:5000';
 
 async function createOrder(req, { restaurantId, items, totalAmount, deliveryInstructions, guestName, guestVehicle, mobileNumber, deviceKey }) {
   // Vehicle is optional: absent means pickup.
@@ -43,6 +26,7 @@ async function createOrder(req, { restaurantId, items, totalAmount, deliveryInst
       deviceKey: deviceKey || null,
       deliveryInstructions: deliveryInstructions || '',
       status: 'PENDING',
+      paymentMethod: 'PHONEPE',
       orderStatusHistory: { create: { status: 'PENDING', updatedBy: 'customer' } },
       orderItems: {
         create: items.map(i => ({
@@ -162,27 +146,8 @@ paymentRouter.get('/redirect', async (req, res) => {
       where: { orderId: parseInt(orderId) },
       orderBy: { id: 'desc' },
     });
-
     if (txn && txn.status !== 'COMPLETED') {
-      const endpoint = `/pg/v1/status/${MERCHANT_ID}/${txn.txnId}`;
-      try {
-        const statusRes = await axios.get(`${BASE}${endpoint}`, {
-          headers: {
-            'Content-Type': 'application/json',
-            'X-VERIFY': xVerifyForStatus(endpoint),
-            'X-MERCHANT-ID': MERCHANT_ID,
-            accept: 'application/json',
-          },
-        });
-        const paid = statusRes.data?.success && statusRes.data?.data?.state === 'COMPLETED';
-        if (paid) {
-          await prisma.merchantTransaction.updateMany({ where: { txnId: txn.txnId }, data: { status: 'COMPLETED' } });
-          await prisma.order.update({
-            where: { id: parseInt(orderId) },
-            data: { status: 'PAID', orderStatusHistory: { create: { status: 'PAID', updatedBy: 'phonepe' } } },
-          });
-        }
-      } catch { /* status check failed — order stays PENDING, user can see that */ }
+      await reconcileTransaction(txn).catch(() => {}); // status check failed — order stays PENDING, user can see that
     }
   } catch { /* ignore, still redirect */ }
 
@@ -208,27 +173,8 @@ paymentRouter.get('/status/:orderId', async (req, res) => {
     });
     if (!txn) return res.json({ status: 'NO_TRANSACTION' });
 
-    const endpoint = `/pg/v1/status/${MERCHANT_ID}/${txn.txnId}`;
-    const statusRes = await axios.get(`${BASE}${endpoint}`, {
-      headers: {
-        'Content-Type': 'application/json',
-        'X-VERIFY': xVerifyForStatus(endpoint),
-        'X-MERCHANT-ID': MERCHANT_ID,
-        accept: 'application/json',
-      },
-    });
-
-    const data = statusRes.data;
-    const paid = data?.success && data?.data?.state === 'COMPLETED';
-    if (paid && txn.status !== 'COMPLETED') {
-      await prisma.merchantTransaction.updateMany({ where: { txnId: txn.txnId }, data: { status: 'COMPLETED' } });
-      await prisma.order.update({
-        where: { id: orderId },
-        data: { status: 'PAID', orderStatusHistory: { create: { status: 'PAID', updatedBy: 'phonepe' } } },
-      });
-    }
-
-    res.json({ txnId: txn.txnId, state: data?.data?.state, localStatus: txn.status, paid });
+    const { state, paid } = await reconcileTransaction(txn);
+    res.json({ txnId: txn.txnId, state, localStatus: paid ? 'COMPLETED' : txn.status, paid });
   } catch (err) {
     res.status(500).json({ error: 'Status check failed', details: err?.response?.data?.message || err.message });
   }

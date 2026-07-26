@@ -12,6 +12,7 @@ import supportRouter from './routes/support/support.js';
 import categoryRouter from './routes/menu/category.js';
 import userRouter from './routes/user/user.js';
 import waiterRouter from './routes/waiter/waiter.js';
+import { startPendingOrderVerification } from './jobs/verifyPendingOrders.js';
 
 
 
@@ -73,3 +74,5 @@ app.get('/', async(req,res)=> res.send("Food Odering App"))
 
 const PORT  = process.env.PORT || 5000;
 app.listen(PORT, ()=> console.log(`server is running on port ${PORT}`))
+
+startPendingOrderVerification();

@@ -5,7 +5,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ShoppingBag, IndianRupee, Clock, ChefHat } from "lucide-react"
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
-  PieChart, Pie, Cell, Legend,
 } from "recharts"
 import axios from "axios"
 
@@ -55,11 +54,6 @@ export function DashboardOverview() {
     return { day: d.toLocaleDateString([], { day: "numeric", month: "short" }), revenue }
   })
 
-  // Orders grouped by status
-  const byStatus = Object.entries(
-    orders.reduce((acc, o) => { acc[o.status] = (acc[o.status] || 0) + 1; return acc }, {})
-  ).map(([name, value]) => ({ name, value, pct: orders.length ? Math.round((value / orders.length) * 100) : 0 }))
-
   return (
     <div className="space-y-6">
       {/* Stats */}
@@ -80,58 +74,32 @@ export function DashboardOverview() {
         ))}
       </div>
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Card className="border-0 shadow-sm lg:col-span-2">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide">Revenue · last 15 days</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={revenue15d} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--brand, #f97316)" stopOpacity={1} />
-                    <stop offset="100%" stopColor="var(--brand-secondary, #7c3aed)" stopOpacity={0.75} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-                <XAxis dataKey="day" tickLine={false} axisLine={false} fontSize={11} stroke="#71717a"
-                  interval="preserveStartEnd" minTickGap={12} />
-                <YAxis tickLine={false} axisLine={false} fontSize={12} stroke="#71717a" width={54}
-                  tickFormatter={(v) => formatCurrency(v)} />
-                <Tooltip formatter={(v) => [formatCurrency(v), "Revenue"]} cursor={{ fill: "rgba(255,255,255,0.04)" }}
-                  contentStyle={CHART_TOOLTIP_STYLE} />
-                <Bar dataKey="revenue" fill="url(#revenueGradient)" radius={[6, 6, 0, 0]} maxBarSize={48} />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide">Orders by status</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {byStatus.length === 0 ? (
-              <p className="text-slate-400 text-sm text-center py-16">No orders yet</p>
-            ) : (
-              <ResponsiveContainer width="100%" height={240}>
-                <PieChart>
-                  <Pie data={byStatus} dataKey="value" nameKey="name" innerRadius={50} outerRadius={80} paddingAngle={2}>
-                    {byStatus.map((s) => <Cell key={s.name} fill={ORDER_STATUS_COLORS[s.name] || "#cbd5e1"} />)}
-                  </Pie>
-                  <Tooltip contentStyle={CHART_TOOLTIP_STYLE}
-                    formatter={(value, name, entry) => [`${value} orders (${entry.payload.pct}%)`, name]} />
-                  <Legend iconType="circle" iconSize={8} formatter={(v, entry) => (
-                    <span className="text-xs text-slate-600">{v} · {entry.payload.pct}%</span>
-                  )} />
-                </PieChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+      {/* Revenue chart */}
+      <Card className="border-0 shadow-sm">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide">Revenue · last 15 days</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={revenue15d} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
+              <defs>
+                <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--brand, #f97316)" stopOpacity={1} />
+                  <stop offset="100%" stopColor="var(--brand-secondary, #7c3aed)" stopOpacity={0.75} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+              <XAxis dataKey="day" tickLine={false} axisLine={false} fontSize={11} stroke="#71717a"
+                interval="preserveStartEnd" minTickGap={12} />
+              <YAxis tickLine={false} axisLine={false} fontSize={12} stroke="#71717a" width={54}
+                tickFormatter={(v) => formatCurrency(v)} />
+              <Tooltip formatter={(v) => [formatCurrency(v), "Revenue"]} cursor={{ fill: "rgba(255,255,255,0.04)" }}
+                contentStyle={CHART_TOOLTIP_STYLE} />
+              <Bar dataKey="revenue" fill="url(#revenueGradient)" radius={[6, 6, 0, 0]} maxBarSize={48} />
+            </BarChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
 
       {/* Recent orders */}
       <Card className="border-0 shadow-sm">
