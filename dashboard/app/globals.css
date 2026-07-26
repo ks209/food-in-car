@@ -267,49 +267,30 @@ button, a { transition: color 0.15s ease, background-color 0.15s ease, border-co
 .dark *::-webkit-scrollbar-thumb { background: oklch(1 0 0 / 12%); border-radius: 9999px; border: 2px solid transparent; background-clip: content-box; }
 .dark *::-webkit-scrollbar-thumb:hover { background: oklch(1 0 0 / 22%); border: 2px solid transparent; background-clip: content-box; }
 
-/* Print: isolate a single element (invoice, a report) so only it prints */
+/* Print: the invoice (order-invoice.jsx) portals a plain, unstyled-by-dialog
+   copy of the bill straight onto <body> while its dialog is open — kept
+   hidden on screen, shown only for print. Isolating it this way (rather than
+   printing the copy inside the dialog) matters: Radix's DialogContent is
+   `position: fixed` with a CSS transform, and a transformed ancestor becomes
+   the containing block for fixed/absolute descendants, which made the old
+   in-dialog print target re-center on every page the browser laid out for
+   the (still fully present, merely `visibility: hidden`) dashboard page
+   underneath — 3 near-blank pages with the receipt centered on each. */
+.invoice-print-area { display: none; }
+
 @media print {
-  body * { visibility: hidden; }
-  .invoice-print-area, .invoice-print-area *,
-  .analytics-print-area, .analytics-print-area * { visibility: visible; }
+  /* Hide every other top-level node under <body> — the whole app, plus the
+     dialog's own Radix portal — so nothing else contributes layout height.
+     (`visibility: hidden` alone would've kept that height and reintroduced
+     the blank-page problem; `display: none` removes it entirely.) */
+  body > *:not(.invoice-print-area) { display: none !important; }
 
-  /* Reports print in light theme regardless of the on-screen theme. Without
-     this, the dark surface/text variables (which the Card component and the
-     dark-compat utility remaps above both read from) leave near-black cards
-     with near-white text sitting on the white printed page. Same specificity
-     as the `.dark { ... }` blocks above, so being last in source order is
-     what makes these win — only while printing. */
-  .dark {
-    --background: oklch(1 0 0); --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0); --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0); --popover-foreground: oklch(0.145 0 0);
-    --border: oklch(0.922 0 0); --muted: oklch(0.97 0 0); --muted-foreground: oklch(0.556 0 0);
-    --d-bg: oklch(1 0 0); --d-card: oklch(1 0 0); --d-2: oklch(0.97 0 0); --d-border: oklch(0.922 0 0);
-    --t-900: oklch(0.145 0 0); --t-800: oklch(0.2 0 0); --t-700: oklch(0.32 0 0);
-    --t-600: oklch(0.42 0 0); --t-500: oklch(0.52 0 0); --t-400: oklch(0.62 0 0);
-  }
-
-  /* `position: fixed` is only painted on the first printed page — any content
-     past one page's height is silently dropped, which is why a multi-page
-     report (analytics) used to cut off. `absolute` participates in
-     pagination normally instead. (No visual change for the invoice: it
-     already renders inside a transformed dialog, which was already acting as
-     the containing block for its `fixed` element too.) */
   .invoice-print-area {
-    position: absolute; left: 50%; top: 0; transform: translateX(-50%);
+    display: block;
+    margin: 0 auto;
     width: 100%; max-width: 340px;
     padding: 20px; background: white;
   }
-  /* Analytics report — a full-width page. */
-  .analytics-print-area {
-    position: absolute; left: 0; top: 0; width: 100%;
-    padding: 24px; background: white; color: black;
-  }
-  .analytics-print-area [data-slot="card"] {
-    box-shadow: none !important;
-    break-inside: avoid; page-break-inside: avoid;
-  }
-  .analytics-print-area .recharts-cartesian-grid line { stroke: #e2e8f0 !important; }
 
   .no-print { display: none !important; }
 }
