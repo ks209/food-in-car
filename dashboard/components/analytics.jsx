@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { ShoppingBag, IndianRupee, Receipt, Repeat, Trophy, Timer, AlertTriangle, Download, Printer } from "lucide-react"
+import { ShoppingBag, IndianRupee, Receipt, Repeat, Trophy, Timer, AlertTriangle, Download } from "lucide-react"
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
   PieChart, Pie, Cell, Legend, ReferenceLine,
@@ -175,18 +175,15 @@ export function Analytics() {
           <h2 className="text-lg font-semibold tracking-tight text-slate-800">Analytics</h2>
           <p className="text-sm text-muted-foreground mt-0.5">Key trends from the last {WINDOW_DAYS} days.</p>
         </div>
-        <div className="flex items-center gap-2 no-print">
+        <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" className="text-xs"
             onClick={() => downloadCsv(`analytics-${todayStr()}.csv`, exportSections)}>
             <Download className="h-3.5 w-3.5 mr-1.5" /> Export CSV
           </Button>
-          <Button variant="outline" size="sm" className="text-xs" onClick={() => window.print()}>
-            <Printer className="h-3.5 w-3.5 mr-1.5" /> Print / Save as PDF
-          </Button>
         </div>
       </div>
 
-      <div className="analytics-print-area space-y-6">
+      <div className="space-y-6">
 
       {/* KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
