@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import prisma from '../../config/prisma.js';
 import { genDeliveryCode } from '../../utils/deliveryCode.js';
 import { resolveCustomerByPhone } from '../../utils/customer.js';
+import { nextDailyOrderNumber } from '../../utils/dailyOrderNumber.js';
 import { MERCHANT_ID, SALT_KEY, DEV_MODE, BASE, xVerifyForPay, reconcileTransaction } from '../../utils/phonepe.js';
 
 const paymentRouter = express.Router();
@@ -15,10 +16,12 @@ async function createOrder(req, { restaurantId, items, totalAmount, deliveryInst
   // Vehicle is optional: absent means pickup.
   const vehicle = guestVehicle && guestVehicle.trim() ? guestVehicle.trim().toUpperCase() : null;
   const customer = await resolveCustomerByPhone(mobileNumber, guestName, vehicle);
+  const dailyOrderNumber = await nextDailyOrderNumber(parseInt(restaurantId));
   return prisma.order.create({
     data: {
       restaurantId: parseInt(restaurantId),
       userId: customer.id,
+      dailyOrderNumber,
       guestName,
       guestVehicle: vehicle,
       totalAmount: parseFloat(totalAmount),
@@ -55,6 +58,10 @@ paymentRouter.post('/initiate', async (req, res) => {
   }
 
   try {
+    const restaurant = await prisma.restaurant.findUnique({ where: { id: parseInt(restaurantId) } });
+    if (!restaurant || !restaurant.isActive) return res.status(404).json({ error: 'Restaurant not found' });
+    if (!restaurant.isOpen) return res.status(400).json({ error: 'Restaurant is currently closed' });
+
     const order = await createOrder(req, { restaurantId, items, totalAmount, deliveryInstructions, guestName, guestVehicle, mobileNumber, deviceKey });
 
     // Dev mode: no PhonePe credentials — skip gateway, go straight to order page

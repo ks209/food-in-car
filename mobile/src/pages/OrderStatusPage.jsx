@@ -59,6 +59,7 @@ const STATUS_LABELS = {
   DELIVERED: "Completed!",
   COMPLETED: "Completed!",
   CANCELLED: "Cancelled",
+  NOT_FULFILLED: "Not Fulfilled",
 }
 const STATUS_DESC = {
   PENDING: "We've received your order and it's in the queue.",
@@ -69,10 +70,12 @@ const STATUS_DESC = {
   DELIVERED: "Delivered & completed. Enjoy your meal!",
   COMPLETED: "Delivered & completed. Enjoy your meal!",
   CANCELLED: "This order was cancelled.",
+  NOT_FULFILLED: "This order could not be fulfilled.",
 }
 const STATUS_ICON = {
   PENDING: Clock, PAID: CreditCard, PROCESSING: ChefHat, PREPARING: ChefHat,
   READY: Package, DELIVERED: PartyPopper, COMPLETED: PartyPopper, CANCELLED: XCircle,
+  NOT_FULFILLED: XCircle,
 }
 
 export default function OrderStatusPage() {
@@ -120,7 +123,7 @@ export default function OrderStatusPage() {
             // already cover the "customer is looking at the page" case.
             if (document.hidden && window.Notification?.permission === "granted") {
               const notif = new Notification("Your order is ready!", {
-                body: `Order #${r.data.id} — show your QR to collect it.`,
+                body: `Order #${r.data.dailyOrderNumber ?? r.data.id} — show your QR to collect it.`,
                 icon: "/carkhanaalogo.png",
                 tag: `order-ready-${r.data.id}`,
               })
@@ -156,7 +159,7 @@ export default function OrderStatusPage() {
     </div>
   )
 
-  const isCancelled = order.status === "CANCELLED"
+  const isCancelled = order.status === "CANCELLED" || order.status === "NOT_FULFILLED"
   const isReady = order.status === "READY"
   const isDone = order.status === "COMPLETED" || order.status === "DELIVERED"
   const currentStepIdx = stepIndex(order.status)
@@ -203,7 +206,7 @@ export default function OrderStatusPage() {
           </p>
           <div style={{ marginTop:"0.75rem", display:"inline-flex", background:"rgba(0,0,0,0.2)",
             borderRadius:999, padding:"0.25rem 0.75rem" }}>
-            <span style={{ color:"white", fontSize:"0.82rem", fontWeight:600 }}>Order #{order.id}</span>
+            <span style={{ color:"white", fontSize:"0.82rem", fontWeight:600 }}>Order #{order.dailyOrderNumber ?? order.id}</span>
           </div>
         </div>
       </div>

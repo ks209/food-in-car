@@ -12,13 +12,23 @@ import { API } from "@/lib/api"
 
 const PRESETS = ["#f97316", "#ef4444", "#22c55e", "#3b82f6", "#a855f7", "#ec4899", "#14b8a6", "#eab308"]
 
+// Deliberately distinct registers — no two entries should look alike at a
+// glance. ("Outfit" used to sit here alongside Manrope; dropped for being
+// nearly indistinguishable from it.)
 const FONTS = [
   { key: "manrope", label: "Manrope", stack: "'Manrope', sans-serif" },
   { key: "inter", label: "Inter", stack: "'Inter', sans-serif" },
   { key: "poppins", label: "Poppins", stack: "'Poppins', sans-serif" },
   { key: "playfair", label: "Playfair", stack: "'Playfair Display', serif" },
-  { key: "outfit", label: "Outfit", stack: "'Outfit', sans-serif" },
+  { key: "spacegrotesk", label: "Space Grotesk", stack: "'Space Grotesk', sans-serif" },
+  { key: "fraunces", label: "Fraunces", stack: "'Fraunces', serif" },
 ]
+
+// React 19 hoists <link> tags rendered anywhere in the tree into <head> (deduped
+// by href) — scoping the Google Fonts request to this page instead of loading
+// it site-wide from the root layout for a preview only this page uses.
+const FONTS_STYLESHEET_HREF =
+  "https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=Poppins:wght@400;500;600;700;800&family=Playfair+Display:wght@500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=Fraunces:wght@500;600;700&display=swap"
 
 function ColorPicker({ label, value, onChange }) {
   return (
@@ -94,11 +104,25 @@ export function CustomizeUI() {
 
   const handleReset = () => setForm(original)
 
+  // Hoisted into <head> by React 19; requested once whether or not `form` has
+  // loaded yet, so the "Aa" cards below render in their real typeface from the
+  // first paint instead of a system-font fallback.
+  const fontLinks = (
+    <>
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+      <link rel="stylesheet" href={FONTS_STYLESHEET_HREF} />
+    </>
+  )
+
   if (!form) {
     return (
-      <div className="flex items-center justify-center py-24 text-muted-foreground">
-        <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading…
-      </div>
+      <>
+        {fontLinks}
+        <div className="flex items-center justify-center py-24 text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading…
+        </div>
+      </>
     )
   }
 
@@ -107,6 +131,7 @@ export function CustomizeUI() {
 
   return (
     <div className="max-w-5xl">
+      {fontLinks}
       <div className="mb-6">
         <h2 className="text-lg font-semibold tracking-tight">Customize your UI</h2>
         <p className="text-sm text-muted-foreground mt-0.5">

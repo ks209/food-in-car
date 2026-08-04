@@ -14,6 +14,7 @@ const PILL = {
   DELIVERED:  { bg:"rgba(34,197,94,0.16)", color:"#4ade80", label:"Completed" },
   COMPLETED:  { bg:"rgba(34,197,94,0.16)", color:"#4ade80", label:"Completed" },
   CANCELLED:  { bg:"rgba(239,68,68,0.16)", color:"#f87171", label:"Cancelled" },
+  NOT_FULFILLED: { bg:"rgba(168,85,247,0.16)", color:"#c084fc", label:"Not Fulfilled" },
 }
 
 function StatusPill({ status }) {
@@ -77,7 +78,7 @@ export default function OrdersPage() {
             <Link key={o.id} to={`/restaurant/${restaurantId}/order/${o.id}`}
               className="card anim-fade-up" style={{ padding:"1rem 1.1rem", display:"block", animationDelay: `${Math.min(i, 8) * 45}ms` }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"0.5rem" }}>
-                <span style={{ fontWeight:700, fontSize:"0.92rem" }}>Order #{o.id}</span>
+                <span style={{ fontWeight:700, fontSize:"0.92rem" }}>Order #{o.dailyOrderNumber ?? o.id}</span>
                 <StatusPill status={o.status} />
               </div>
               <p style={{ fontSize:"0.8rem", color:"var(--muted)", marginBottom:"0.5rem",

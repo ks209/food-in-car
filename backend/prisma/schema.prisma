@@ -28,11 +28,14 @@ model Restaurant {
   rating         Float?
   ratingCount    Int?
   pickupEnabled  Boolean     @default(false)
+  deliveryEnabled Boolean    @default(true)
+  isOpen         Boolean     @default(true)
   refreshToken   String?
   menu           MenuItem[]
   orders         Order[]
   category       Category[]
   waiters        Waiter[]
+  dailyCounters  DailyCounter[]
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
   isActive       Boolean
@@ -100,6 +103,8 @@ model Order {
   userId               Int?
   waiter               Waiter?              @relation(fields: [waiterId], references: [id])
   waiterId             Int?
+  dailyOrderNumber     Int?
+  idempotencyKey       String?              @unique
   guestName            String?
   guestVehicle         String?
   totalAmount          Float
@@ -166,6 +171,19 @@ enum OrderStatus {
   READY
   COMPLETED
   CANCELLED
+  NOT_FULFILLED
+}
+
+// Per-restaurant, per-calendar-day counter backing Order.dailyOrderNumber.
+// `date` is a "YYYY-MM-DD" key (IST) — incremented atomically on order creation.
+model DailyCounter {
+  id           Int        @id @default(autoincrement())
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  restaurantId Int
+  date         String
+  lastNumber   Int        @default(0)
+
+  @@unique([restaurantId, date])
 }
 
 enum PaymentMethod {
@@ -215,6 +233,7 @@ model Waiter {
   name         String
   phone        String?
   isActive     Boolean    @default(true)
+  deletedAt    DateTime?
   orders       Order[]
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt

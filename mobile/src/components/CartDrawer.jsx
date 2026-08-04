@@ -29,10 +29,20 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
 
   const isPhonePe = restaurant?.paymentGateway?.toUpperCase() === "PHONEPE"
   const phoneValid = /^\d{10}$/.test(phone.trim())
-  // Pickup is only an option if the restaurant enabled it; otherwise vehicle is mandatory.
+  // Fulfilment mode: pickup-only forces pickup, delivery-only forces car, both shows a toggle.
   const pickupAllowed = !!restaurant?.pickupEnabled
-  const needsVehicle = !pickupAllowed || orderType === "car"
+  const deliveryAllowed = restaurant?.deliveryEnabled ?? true
+  const showFulfilmentToggle = pickupAllowed && deliveryAllowed
+  const needsVehicle = deliveryAllowed && (!pickupAllowed || orderType === "car")
   const canOrder = name.trim() && phoneValid && cart.length > 0 && (!needsVehicle || vehicle.trim())
+
+  // Snap orderType to whichever single mode is actually allowed once the
+  // restaurant's fulfilment settings load (defaults to "car" before that).
+  useEffect(() => {
+    if (!restaurant) return
+    if (pickupAllowed && !deliveryAllowed) setOrderType("pickup")
+    else if (!pickupAllowed && deliveryAllowed) setOrderType("car")
+  }, [restaurant, pickupAllowed, deliveryAllowed])
 
   const orderPayload = () => ({
     restaurantId: parseInt(restaurantId),
@@ -158,8 +168,8 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
                   <Car size={15} strokeWidth={2.2} /> Your Details
                 </p>
                 <div style={{ display:"flex", flexDirection:"column", gap:"0.65rem" }}>
-                  {/* Order type: only shown if the restaurant allows pickup */}
-                  {pickupAllowed && (
+                  {/* Order type: only shown if the restaurant allows both pickup and delivery */}
+                  {showFulfilmentToggle && (
                     <div className="field">
                       <label>How would you like it?</label>
                       <div style={{ display:"flex", gap:"0.5rem" }}>

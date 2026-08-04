@@ -65,8 +65,14 @@ menuRouter.get('/', restaurantAuth, async (req, res) => {
   try {
     const restaurantId = req.restaurantId;
 
+    // Soft-deleted items (isActive: false, set by DELETE /:id below) must never
+    // reach the dashboard's Menu page — they were showing up there as ghost "Off"
+    // rows the restaurant had already deleted, which is exactly what made the
+    // per-category "All on"/"All off" bulk toggle look broken: it correctly skips
+    // deleted items (see /bulk-availability), but a still-listed "Off" row that
+    // "All on" doesn't touch just reads as the button not working.
     const menuItems = await prisma.menuItem.findMany({
-      where: { restaurantId },
+      where: { restaurantId, isActive: true },
       include: {
         category: true,
         optionGroups: {

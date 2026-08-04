@@ -135,7 +135,7 @@ export function KitchenDisplay() {
               queued.map((order) => (
                 <div key={order.id} className="rounded-lg border border-slate-200 p-3 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono text-slate-400">#{order.id}</span>
+                    <span className="text-xs font-mono text-slate-400">#{order.dailyOrderNumber ?? order.id}</span>
                     <span className="text-xs text-slate-400">
                       {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     </span>
@@ -176,7 +176,7 @@ export function KitchenDisplay() {
                     isCritical ? "border-red-300 kds-critical-pulse" : "border-slate-200"
                   }`}>
                     <div className="flex items-center justify-between">
-                      <span className="text-sm font-mono text-slate-500">#{order.id}</span>
+                      <span className="text-sm font-mono text-slate-500">#{order.dailyOrderNumber ?? order.id}</span>
                       <StatusDot color={urgency} className="font-mono">{elapsedLabel(elapsedMs)}</StatusDot>
                     </div>
                     <div>
@@ -213,7 +213,7 @@ export function KitchenDisplay() {
               ready.map((order) => (
                 <div key={order.id} className="rounded-lg border border-slate-200 p-3 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono text-slate-400">#{order.id}</span>
+                    <span className="text-xs font-mono text-slate-400">#{order.dailyOrderNumber ?? order.id}</span>
                     <span className="text-xs text-sky-600 inline-flex items-center gap-1 font-medium">
                       <ScanLine className="h-3 w-3" /> Awaiting scan
                     </span>

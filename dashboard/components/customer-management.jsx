@@ -2,31 +2,52 @@
 
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Search, Contact, Car, Loader2 } from "lucide-react"
+import { Search, Contact, Car, Loader2, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "sonner"
 import axios from "axios"
 
 import { API } from "@/lib/api"
 import { formatCurrency } from "@/lib/format"
-import { ORDER_STATUS_COLORS } from "@/lib/status"
+import { ORDER_STATUS_COLORS, ORDER_STATUS_LABELS } from "@/lib/status"
 import { StatusDot } from "@/components/ui/status-dot"
+
+const SORT_OPTIONS = [
+  { value: "lastOrderAt", label: "Last order" },
+  { value: "totalSpent", label: "Total spent" },
+  { value: "orderCount", label: "Order count" },
+  { value: "name", label: "Name" },
+]
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 
 export function CustomerManagement() {
   const [searchTerm, setSearchTerm] = useState("")
+  const [debouncedSearch, setDebouncedSearch] = useState("")
   const [customers, setCustomers] = useState([])
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
+
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+  const [sortBy, setSortBy] = useState("lastOrderAt")
+  const [sortDir, setSortDir] = useState("desc")
 
   const [selectedCustomer, setSelectedCustomer] = useState(null)
   const [customerOrders, setCustomerOrders] = useState([])
   const [loadingOrders, setLoadingOrders] = useState(false)
 
-  const fetchCustomers = async (search) => {
+  const fetchCustomers = async () => {
     setLoading(true)
     try {
-      const res = await axios.get(`${API}/api/order/customers`, { params: { search }, withCredentials: true })
-      setCustomers(res.data)
+      const res = await axios.get(`${API}/api/order/customers`, {
+        params: { search: debouncedSearch, page, pageSize, sortBy, sortDir },
+        withCredentials: true,
+      })
+      setCustomers(res.data.customers)
+      setTotal(res.data.total)
     } catch {
       toast.error("Failed to fetch customers")
     } finally {
@@ -34,10 +55,21 @@ export function CustomerManagement() {
     }
   }
 
+  // Debounce the search box; a new search always jumps back to page 1 (a stale
+  // page number past the new, smaller result set would just render empty).
   useEffect(() => {
-    const t = setTimeout(() => fetchCustomers(searchTerm), 300)
+    const t = setTimeout(() => { setDebouncedSearch(searchTerm); setPage(1) }, 300)
     return () => clearTimeout(t)
   }, [searchTerm])
+
+  useEffect(() => { fetchCustomers() }, [page, pageSize, sortBy, sortDir, debouncedSearch])
+
+  const toggleSort = (key) => {
+    if (sortBy === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"))
+    else { setSortBy(key); setSortDir("desc") }
+  }
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
 
   const openCustomer = async (customer) => {
     setSelectedCustomer(customer)
@@ -54,17 +86,30 @@ export function CustomerManagement() {
 
   return (
     <div className="space-y-5">
-      <p className="text-slate-500 text-sm">{customers.length} customer{customers.length === 1 ? "" : "s"}</p>
+      <p className="text-slate-500 text-sm">{total} customer{total === 1 ? "" : "s"}</p>
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 h-4 w-4" />
-        <Input
-          placeholder="Search by name or phone number…"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-9 bg-white"
-        />
+      {/* Search + sort */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 h-4 w-4" />
+          <Input
+            placeholder="Search by name or phone number…"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9 bg-white"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <Select value={sortBy} onValueChange={(v) => { setSortBy(v); setSortDir("desc") }}>
+            <SelectTrigger className="w-[150px] bg-white"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {SORT_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Button variant="outline" size="icon" className="flex-shrink-0" onClick={() => toggleSort(sortBy)} title={sortDir === "asc" ? "Ascending" : "Descending"}>
+            <ArrowUpDown className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       {/* List */}
@@ -112,6 +157,34 @@ export function CustomerManagement() {
         </CardContent>
       </Card>
 
+      {/* Pagination */}
+      {total > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-500">
+          <div className="flex items-center gap-2">
+            <span>Rows per page</span>
+            <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(parseInt(v)); setPage(1) }}>
+              <SelectTrigger className="w-[80px] h-8 bg-white"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {PAGE_SIZE_OPTIONS.map((n) => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-3">
+            <span>
+              {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} of {total}
+            </span>
+            <div className="flex items-center gap-1">
+              <Button variant="outline" size="icon" className="h-8 w-8" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button variant="outline" size="icon" className="h-8 w-8" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Customer detail dialog */}
       <Dialog open={!!selectedCustomer} onOpenChange={(open) => { if (!open) { setSelectedCustomer(null); setCustomerOrders([]) } }}>
         <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
@@ -140,8 +213,8 @@ export function CustomerManagement() {
                   {customerOrders.map((order) => (
                     <div key={order.id} className="px-6 py-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-mono text-slate-400">#{order.id}</span>
-                        <StatusDot color={ORDER_STATUS_COLORS[order.status] || "#94a3b8"}>{order.status}</StatusDot>
+                        <span className="text-xs font-mono text-slate-400">#{order.dailyOrderNumber ?? order.id}</span>
+                        <StatusDot color={ORDER_STATUS_COLORS[order.status] || "#94a3b8"}>{ORDER_STATUS_LABELS[order.status] || order.status}</StatusDot>
                         <span className="text-sm font-semibold text-slate-800">{formatCurrency(order.totalAmount)}</span>
                       </div>
                       <p className="text-xs text-slate-400 mt-1">

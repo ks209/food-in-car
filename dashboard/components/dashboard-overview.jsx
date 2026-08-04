@@ -10,11 +10,11 @@ import axios from "axios"
 
 import { API } from "@/lib/api"
 import { CHART_TOOLTIP_STYLE, formatCurrency } from "@/lib/format"
-import { ORDER_STATUS_COLORS } from "@/lib/status"
+import { ORDER_STATUS_COLORS, ORDER_STATUS_LABELS } from "@/lib/status"
 import { StatusDot } from "@/components/ui/status-dot"
 
-// Revenue counts orders the customer has committed to (not pending/cancelled)
-const REVENUE_STATES = ["PAID", "PREPARING", "READY", "COMPLETED"]
+// Only COMPLETED orders are real revenue — cancelled/not-fulfilled/in-flight orders don't count
+const REVENUE_STATES = ["COMPLETED"]
 
 export function DashboardOverview() {
   const [orders, setOrders] = useState([])
@@ -116,7 +116,7 @@ export function DashboardOverview() {
               {orders.slice(0, 8).map((order) => (
                 <div key={order.id} className="flex flex-wrap items-center justify-between gap-y-2 px-4 sm:px-6 py-3 hover:bg-muted/40 transition-colors">
                   <div className="flex items-center gap-4 min-w-0">
-                    <span className="text-xs font-mono text-slate-400 w-10 flex-shrink-0">#{order.id}</span>
+                    <span className="text-xs font-mono text-slate-400 w-10 flex-shrink-0">#{order.dailyOrderNumber ?? order.id}</span>
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-slate-800 truncate">
                         {order.user?.customerName || order.guestName || "Guest"}
@@ -130,7 +130,7 @@ export function DashboardOverview() {
                   </div>
                   <div className="flex items-center gap-4 flex-shrink-0">
                     <span className="text-sm font-semibold text-slate-800">₹{order.totalAmount.toFixed(0)}</span>
-                    <StatusDot color={ORDER_STATUS_COLORS[order.status] || "#94a3b8"} className="w-24">{order.status}</StatusDot>
+                    <StatusDot color={ORDER_STATUS_COLORS[order.status] || "#94a3b8"} className="w-24">{ORDER_STATUS_LABELS[order.status] || order.status}</StatusDot>
                     <span className="text-xs text-slate-400 w-12 text-right">
                       {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     </span>

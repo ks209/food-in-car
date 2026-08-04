@@ -22,13 +22,16 @@ function shade(hex, percent) {
 }
 
 // Curated font choices, set via the Customize UI tab in the dashboard. Google
-// Fonts for all of these are preloaded in mobile/index.html.
+// Fonts for all of these are preloaded in mobile/index.html. Kept deliberately
+// distinct from each other (no two entries sharing the same visual register) —
+// "outfit" was dropped for being nearly indistinguishable from "manrope".
 export const FONT_MAP = {
   manrope: "'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
   inter: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
   poppins: "'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
   playfair: "'Playfair Display', Georgia, serif",
-  outfit: "'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+  spacegrotesk: "'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+  fraunces: "'Fraunces', Georgia, serif",
 }
 
 function setColorVars(root, varName, hex, fallback) {

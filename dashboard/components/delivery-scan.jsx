@@ -151,7 +151,7 @@ export function DeliveryScan() {
             {result.ok ? (
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-emerald-700 font-semibold">
-                  <CheckCircle2 className="h-5 w-5" /> Order #{result.order.id} delivered
+                  <CheckCircle2 className="h-5 w-5" /> Order #{result.order.dailyOrderNumber ?? result.order.id} delivered
                 </div>
                 <p className="text-sm text-slate-600">
                   {result.order.user?.customerName || result.order.guestName || "Guest"}

@@ -183,6 +183,18 @@ export default function MenuPage() {
         </div>
       </div>
 
+      {/* ── Closed banner ── */}
+      {restaurant?.isOpen === false && (
+        <div style={{ margin: "0 1rem 1rem", padding: "1.1rem", borderRadius: 16,
+          background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)",
+          display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: "0.35rem" }}>
+          <p style={{ fontWeight: 800, color: "var(--error)", fontSize: "1rem" }}>Restaurant is currently closed.</p>
+          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>Please check back later.</p>
+        </div>
+      )}
+
+      {restaurant?.isOpen !== false && <>
+
       {/* ── Sticky search ── */}
       <div className="search-sticky">
         <div className="search-field">
@@ -291,6 +303,8 @@ export default function MenuPage() {
       )}
 
       <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} restaurant={restaurant} restaurantId={restaurantId} />
+
+      </>}
     </div>
   )
 }

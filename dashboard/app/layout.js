@@ -20,9 +20,16 @@ const openSans = Open_Sans({
 export const metadata = {
   title: "Carkhanaa Dashboard",
   description: "Restaurant management dashboard",
-  icons: {
-    icon: "/carkhanaalogo.png",
-  },
+  // Favicon/apple-touch-icon come from the app/icon.png + app/apple-icon.png
+  // file convention (auto-detected by Next.js) — no explicit `icons` entry
+  // needed here, and adding one would just create a second, competing
+  // <link rel="icon"> tag.
+  manifest: "/manifest.json",
+  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Carkhanaa" },
+}
+
+export const viewport = {
+  themeColor: "#f97316",
 }
 
 export default function RootLayout({ children }
