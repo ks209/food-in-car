@@ -508,9 +508,8 @@ export function Analytics() {
         </Card>
       </div>
 
-      {/* Top items + Orders by hour + Avg prep by hour — the last two share an hour
-          axis so a spike in volume can be read against a spike in prep time. */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      {/* Top items + Orders by hour */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide">Top items</CardTitle>
@@ -571,32 +570,6 @@ export function Analytics() {
           </CardContent>
         </Card>
 
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide">Avg prep time by hour</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={byHourPrep} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-                <XAxis dataKey="hour" tickLine={false} axisLine={false} fontSize={11} stroke="#71717a" interval={2}
-                  tickFormatter={formatHour} />
-                <YAxis tickLine={false} axisLine={false} fontSize={12} stroke="#71717a" width={28} allowDecimals={false}
-                  tickFormatter={(v) => `${v}m`} />
-                <Tooltip
-                  cursor={{ fill: "rgba(255,255,255,0.04)" }}
-                  contentStyle={tooltipStyle}
-                  wrapperStyle={{ zIndex: 50 }}
-                  formatter={(v, _n, p) => v == null ? ["No orders", "Avg prep"] : [`${v.toFixed(1)}m avg · ${p.payload.orders} order${p.payload.orders === 1 ? "" : "s"}`, "Avg prep"]}
-                  labelFormatter={(h) => formatHour(h)}
-                />
-                <Bar dataKey="avgMin" radius={[4, 4, 0, 0]} maxBarSize={24}>
-                  {byHourPrep.map((h) => <Cell key={h.hour} fill={slaColor(h.avgMin ?? 0)} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Prep-time trends — which categories/items blow past the kitchen SLA */}

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
-import { Loader2, Store, Car, Paintbrush, Power } from "lucide-react"
+import { Loader2, Store, Car, Paintbrush, Power, AlertCircle } from "lucide-react"
 import Link from "next/link"
 import { toast } from "sonner"
 import axios from "axios"
@@ -17,6 +17,7 @@ export function RestaurantSettings() {
   const [form, setForm] = useState(null)
   const [original, setOriginal] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [savingKey, setSavingKey] = useState(null)
 
   useEffect(() => {
     axios
@@ -43,6 +44,38 @@ export function RestaurantSettings() {
 
   const dirty = original && JSON.stringify(form) !== JSON.stringify(original)
 
+  // Warn on browser refresh/close/back with unsaved profile-field edits — the
+  // toggles below no longer need this (they save the instant you flip them).
+  useEffect(() => {
+    const handler = (e) => { if (dirty) { e.preventDefault(); e.returnValue = "" } }
+    window.addEventListener("beforeunload", handler)
+    return () => window.removeEventListener("beforeunload", handler)
+  }, [dirty])
+
+  // Switches (Shop status, Fulfilment) read as instant on/off actions to a user,
+  // not form fields — stashing the flip behind a separate "Save changes" button
+  // is exactly what led to changes going unsaved. These save themselves the
+  // moment you flip them, with an optimistic update + rollback on failure.
+  const saveInstant = async (key, value, successMessage) => {
+    const previous = original[key]
+    setField(key, value)
+    setSavingKey(key)
+    try {
+      const res = await axios.put(`${API}/api/restaurant/me`, { [key]: value }, { withCredentials: true })
+      const confirmed = res.data[key]
+      setForm((f) => ({ ...f, [key]: confirmed }))
+      setOriginal((o) => ({ ...o, [key]: confirmed }))
+      toast.success(successMessage)
+    } catch (err) {
+      setField(key, previous)
+      toast.error(err?.response?.data?.message || "Failed to update")
+    } finally {
+      setSavingKey(null)
+    }
+  }
+
+  // Shop status + fulfilment save themselves instantly (see saveInstant) — this
+  // bar is only ever for the profile text fields now.
   const handleSave = async () => {
     setSaving(true)
     try {
@@ -53,13 +86,10 @@ export function RestaurantSettings() {
           phone: form.phone,
           address: form.address,
           logoUrl: form.logoUrl,
-          pickupEnabled: form.pickupEnabled,
-          deliveryEnabled: form.deliveryEnabled,
-          isOpen: form.isOpen,
         },
         { withCredentials: true }
       )
-      setOriginal(form)
+      setOriginal((o) => ({ ...o, name: form.name, phone: form.phone, address: form.address, logoUrl: form.logoUrl }))
       toast.success("Settings saved")
     } catch (err) {
       toast.error(err?.response?.data?.message || "Failed to save settings")
@@ -143,11 +173,14 @@ export function RestaurantSettings() {
                     When closed, customers see “Restaurant is currently closed” and can’t place new orders. The dashboard stays accessible so you can finish existing orders.
                   </p>
                 </div>
-                <Switch
-                  checked={form.isOpen}
-                  onCheckedChange={(v) => setField("isOpen", v)}
-                  className="mt-0.5 flex-shrink-0"
-                />
+                <div className="flex items-center gap-2 flex-shrink-0 mt-0.5">
+                  {savingKey === "isOpen" && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+                  <Switch
+                    checked={form.isOpen}
+                    onCheckedChange={(v) => saveInstant("isOpen", v, v ? "Shop is now open for orders" : "Shop is now closed")}
+                    disabled={savingKey === "isOpen"}
+                  />
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -166,12 +199,14 @@ export function RestaurantSettings() {
                     Customers can choose “Pickup” and skip the vehicle number.
                   </p>
                 </div>
-                <Switch
-                  checked={form.pickupEnabled}
-                  onCheckedChange={(v) => setField("pickupEnabled", v)}
-                  disabled={form.pickupEnabled && !form.deliveryEnabled}
-                  className="mt-0.5 flex-shrink-0"
-                />
+                <div className="flex items-center gap-2 flex-shrink-0 mt-0.5">
+                  {savingKey === "pickupEnabled" && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+                  <Switch
+                    checked={form.pickupEnabled}
+                    onCheckedChange={(v) => saveInstant("pickupEnabled", v, v ? "Pickup enabled" : "Pickup disabled")}
+                    disabled={savingKey === "pickupEnabled" || (form.pickupEnabled && !form.deliveryEnabled)}
+                  />
+                </div>
               </div>
               <div className="flex items-start justify-between gap-4">
                 <div className="space-y-0.5">
@@ -180,12 +215,14 @@ export function RestaurantSettings() {
                     Customers can order to their parked car with a vehicle number.
                   </p>
                 </div>
-                <Switch
-                  checked={form.deliveryEnabled}
-                  onCheckedChange={(v) => setField("deliveryEnabled", v)}
-                  disabled={form.deliveryEnabled && !form.pickupEnabled}
-                  className="mt-0.5 flex-shrink-0"
-                />
+                <div className="flex items-center gap-2 flex-shrink-0 mt-0.5">
+                  {savingKey === "deliveryEnabled" && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+                  <Switch
+                    checked={form.deliveryEnabled}
+                    onCheckedChange={(v) => saveInstant("deliveryEnabled", v, v ? "Delivery in car enabled" : "Delivery in car disabled")}
+                    disabled={savingKey === "deliveryEnabled" || (form.deliveryEnabled && !form.pickupEnabled)}
+                  />
+                </div>
               </div>
               {!form.pickupEnabled && !form.deliveryEnabled && (
                 <p className="text-xs text-red-500">At least one fulfilment option must stay enabled.</p>
@@ -235,16 +272,25 @@ export function RestaurantSettings() {
         </div>
       </div>
 
-      {/* Save bar */}
-      <div className="sticky bottom-0 mt-6 -mx-4 sm:-mx-8 px-4 sm:px-8 py-4 bg-background/80 backdrop-blur-md border-t border-border flex flex-wrap items-center justify-end gap-3">
-        {dirty && <span className="text-xs text-muted-foreground mr-auto">You have unsaved changes</span>}
-        <Button variant="outline" onClick={handleReset} disabled={!dirty || saving}>
-          Reset
-        </Button>
-        <Button className="brand-bg text-white min-w-28" onClick={handleSave} disabled={!dirty || saving}>
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save changes"}
-        </Button>
-      </div>
+      {/* Save bar — only ever covers the Profile text fields now (Shop status /
+          Fulfilment save themselves). Only rendered at all once dirty, and
+          visually loud (amber, icon, non-muted copy) instead of a thin muted
+          line — that quiet default was exactly why edits kept going unsaved. */}
+      {dirty && (
+        <div className="sticky bottom-4 mt-6 mx-auto max-w-2xl px-4 py-3 rounded-xl bg-amber-500 text-amber-950 shadow-lg shadow-amber-500/20 flex flex-wrap items-center justify-between gap-3 anim-fade-up">
+          <span className="text-sm font-medium inline-flex items-center gap-1.5">
+            <AlertCircle className="h-4 w-4 flex-shrink-0" /> You have unsaved profile changes
+          </span>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" className="bg-transparent border-amber-950/30 text-amber-950 hover:bg-amber-600/20" onClick={handleReset} disabled={saving}>
+              Discard
+            </Button>
+            <Button size="sm" className="bg-amber-950 text-white hover:bg-amber-900 min-w-28" onClick={handleSave} disabled={saving}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save changes"}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

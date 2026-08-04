@@ -4,6 +4,7 @@ import { Car, ShoppingCart, X } from "lucide-react"
 import { useCart } from "../context/CartContext"
 import { useAuth } from "../context/AuthContext"
 import { getDeviceKey } from "../lib/device"
+import { saveActiveOrder } from "../lib/activeOrder"
 import api, { orderApi } from "../api"
 
 export default function CartDrawer({ open, onClose, restaurant, restaurantId }) {
@@ -65,6 +66,7 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
     setPlacing(true); setError("")
     try {
       const res = await orderApi.create(orderPayload())
+      saveActiveOrder({ restaurantId, orderId: res.data.id, code: res.data.deliveryCode })
       clearCart(); onClose()
       navigate(`/restaurant/${restaurantId}/order/${res.data.id}?code=${res.data.deliveryCode}`)
     } catch (err) {
@@ -78,6 +80,7 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
     setPlacing(true); setError("")
     try {
       const res = await api.post("/api/payment/initiate", orderPayload())
+      saveActiveOrder({ restaurantId, orderId: res.data.orderId, code: res.data.deliveryCode })
       clearCart(); onClose()
       if (res.data.redirectUrl) {
         // Real PhonePe: leave the React app and go to PhonePe payment page
