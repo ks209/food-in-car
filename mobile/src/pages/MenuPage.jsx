@@ -6,6 +6,7 @@ import { useCart } from "../context/CartContext"
 import CartDrawer from "../components/CartDrawer"
 import MenuItemCard from "../components/MenuItemCard"
 import AccountMenu from "../components/AccountMenu"
+import ActiveOrderBanner from "../components/ActiveOrderBanner"
 import { useRestaurantTheme } from "../lib/theme"
 
 // Mandatory synthetic category shown first — aggregates every item across categories.
@@ -131,7 +132,7 @@ export default function MenuPage() {
       {/* ── Hero ── */}
       <div className="hero">
         {/* topbar lives outside the clipped cover so the profile dropdown isn't cut off */}
-        <div className="hero-topbar"><AccountMenu /></div>
+        <div className="hero-topbar"><ActiveOrderBanner /><AccountMenu /></div>
 
         <div className="hero-cover">
           {restaurant?.coverUrl && <img src={restaurant.coverUrl} alt="" />}

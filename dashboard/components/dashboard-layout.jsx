@@ -46,11 +46,11 @@ function Sidebar({ open, onClose }) {
         <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={onClose} />
       )}
 
-      <div className={`fixed inset-y-0 left-0 w-60 sidebar-gradient border-r border-slate-800 flex flex-col z-50 transition-transform duration-200 ${
+      <div className={`fixed inset-y-0 left-0 w-60 sidebar-gradient border-r sidebar-border flex flex-col z-50 transition-transform duration-200 ${
         open ? "translate-x-0" : "-translate-x-full"
       } lg:translate-x-0`}>
         {/* Brand */}
-        <div className="flex items-center gap-3 h-16 px-5 border-b border-slate-800">
+        <div className="flex items-center gap-3 h-16 px-5 border-b sidebar-border">
           {restaurant?.logoUrl ? (
             <img
               src={restaurant.logoUrl}
@@ -65,7 +65,7 @@ function Sidebar({ open, onClose }) {
             </div>
           )}
           <span className="text-white font-semibold text-sm truncate">{displayName}</span>
-          <button onClick={onClose} className="ml-auto text-slate-400 hover:text-white lg:hidden">
+          <button onClick={onClose} className="ml-auto sidebar-link lg:hidden">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -82,7 +82,7 @@ function Sidebar({ open, onClose }) {
                 className={`relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                   isActive
                     ? "bg-white/[0.06] text-white"
-                    : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
+                    : "sidebar-link hover:bg-white/[0.04]"
                 }`}
               >
                 {isActive && <span className="absolute -left-3 top-1.5 bottom-1.5 w-0.5 rounded-r-full brand-bg" />}
@@ -94,10 +94,10 @@ function Sidebar({ open, onClose }) {
         </nav>
 
         {/* Logout */}
-        <div className="px-3 pb-5 border-t border-slate-800 pt-4">
+        <div className="px-3 pb-5 border-t sidebar-border pt-4">
           <button
             onClick={handleLogout}
-            className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:text-white hover:bg-white/[0.04] transition-colors"
+            className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium sidebar-link hover:bg-white/[0.04] transition-colors"
           >
             <LogOut className="h-4 w-4 flex-shrink-0" />
             Sign Out

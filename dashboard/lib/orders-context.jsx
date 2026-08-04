@@ -100,9 +100,11 @@ export function OrdersProvider({ children }) {
       if (knownIdsRef.current === null || dayChanged) {
         knownIdsRef.current = new Set(incomingIds) // first load, or a fresh day — seed, don't alert
       } else {
-        const newIds = incomingIds.filter((id) => !knownIdsRef.current.has(id))
-        if (newIds.length > 0) {
-          const title = newIds.length === 1 ? `New order #${newIds[0]}` : `${newIds.length} new orders`
+        const newOrders = data.filter((o) => !knownIdsRef.current.has(o.id))
+        if (newOrders.length > 0) {
+          const title = newOrders.length === 1
+            ? `New order #${newOrders[0].dailyOrderNumber ?? newOrders[0].id}`
+            : `${newOrders.length} new orders`
           toast(title, {
             action: { label: "View", onClick: () => router.push("/dashboard/orders") },
           })

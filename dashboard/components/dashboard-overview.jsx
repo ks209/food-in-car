@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { ShoppingBag, IndianRupee, Clock, ChefHat } from "lucide-react"
+import { ShoppingBag, IndianRupee, Clock, ChefHat, ArrowUp, ArrowDown, Minus } from "lucide-react"
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
 } from "recharts"
 import axios from "axios"
+import Link from "next/link"
 
 import { API } from "@/lib/api"
 import { CHART_TOOLTIP_STYLE, formatCurrency } from "@/lib/format"
@@ -15,6 +16,55 @@ import { StatusDot } from "@/components/ui/status-dot"
 
 // Only COMPLETED orders are real revenue — cancelled/not-fulfilled/in-flight orders don't count
 const REVENUE_STATES = ["COMPLETED"]
+const ACTIVE_STATES = ["PENDING", "PAID", "PREPARING", "READY"]
+const DAY_MS = 24 * 60 * 60 * 1000
+const RECENT_ORDERS_LIMIT = 12
+
+// The status an order had at a given point in time, reconstructed from its
+// history — lets "Active Orders" compare against a real snapshot of yesterday
+// instead of just today's raw counts (which wouldn't mean much for a live gauge).
+function statusAt(order, timestamp) {
+  const history = [...(order.orderStatusHistory || [])].sort((a, b) => new Date(a.updatedAt) - new Date(b.updatedAt))
+  let status = null
+  for (const h of history) {
+    if (new Date(h.updatedAt).getTime() > timestamp) break
+    status = h.status
+  }
+  return status
+}
+
+// null = nothing to compare (both zero); Infinity = went from zero to something ("New")
+function pctChange(current, previous) {
+  if (previous === 0) return current === 0 ? null : Infinity
+  return ((current - previous) / previous) * 100
+}
+
+function ChangeBadge({ current, previous }) {
+  const change = pctChange(current, previous)
+  if (change === null) return null
+  if (change === Infinity) {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-xs font-semibold text-emerald-600">
+        <ArrowUp className="h-3 w-3" /> New
+      </span>
+    )
+  }
+  const rounded = Math.round(change)
+  if (rounded === 0) {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-xs font-semibold text-slate-400">
+        <Minus className="h-3 w-3" /> 0%
+      </span>
+    )
+  }
+  const positive = rounded > 0
+  const Icon = positive ? ArrowUp : ArrowDown
+  return (
+    <span className={`inline-flex items-center gap-0.5 text-xs font-semibold ${positive ? "text-emerald-600" : "text-red-500"}`}>
+      <Icon className="h-3 w-3" /> {Math.abs(rounded)}%
+    </span>
+  )
+}
 
 export function DashboardOverview() {
   const [orders, setOrders] = useState([])
@@ -25,22 +75,39 @@ export function DashboardOverview() {
     axios.get(`${API}/api/menu/`, { withCredentials: true }).then((r) => setMenuItems(r.data)).catch(() => {})
   }, [])
 
+  const now = Date.now()
+  const yesterdayMoment = now - DAY_MS
+
   const today = new Date().toDateString()
+  const yesterdayStr = new Date(yesterdayMoment).toDateString()
+
   const todayOrders = orders.filter((o) => new Date(o.createdAt).toDateString() === today)
+  const yesterdayOrders = orders.filter((o) => new Date(o.createdAt).toDateString() === yesterdayStr)
+
   const revenueToday = todayOrders.filter((o) => REVENUE_STATES.includes(o.status)).reduce((sum, o) => sum + o.totalAmount, 0)
-  const activeOrders = orders.filter((o) => ["PENDING", "PAID", "PREPARING", "READY"].includes(o.status)).length
+  const revenueYesterday = yesterdayOrders.filter((o) => REVENUE_STATES.includes(o.status)).reduce((sum, o) => sum + o.totalAmount, 0)
+
+  const activeOrders = orders.filter((o) => ACTIVE_STATES.includes(o.status)).length
+  // Orders that existed yesterday at this same moment, and were active then
+  const activeOrdersYesterday = orders.filter((o) => {
+    if (new Date(o.createdAt).getTime() > yesterdayMoment) return false
+    return ACTIVE_STATES.includes(statusAt(o, yesterdayMoment))
+  }).length
 
   // Exclude soft-deleted items (isActive === false); split the rest by availability
   const liveItems = menuItems.filter((m) => m.isActive !== false)
   const activeItems = liveItems.filter((m) => m.available).length
   const inactiveItems = liveItems.filter((m) => !m.available).length
+  // Approximation (no deletion history to work from): items already on the
+  // menu by this time yesterday, of what's currently live.
+  const liveItemsYesterday = liveItems.filter((m) => new Date(m.createdAt).getTime() <= yesterdayMoment).length
 
   const stats = [
-    { title: "Orders Today", value: todayOrders.length, icon: ShoppingBag, tint: "brand" },
-    { title: "Revenue Today", value: formatCurrency(revenueToday), icon: IndianRupee, tint: "brand-secondary" },
-    { title: "Active Orders", value: activeOrders, icon: Clock, tint: "brand-accent" },
+    { title: "Orders Today", value: todayOrders.length, icon: ShoppingBag, tint: "brand", current: todayOrders.length, previous: yesterdayOrders.length },
+    { title: "Revenue Today", value: formatCurrency(revenueToday), icon: IndianRupee, tint: "brand-secondary", current: revenueToday, previous: revenueYesterday },
+    { title: "Active Orders", value: activeOrders, icon: Clock, tint: "brand-accent", current: activeOrders, previous: activeOrdersYesterday },
     { title: "Menu Items", value: liveItems.length, icon: ChefHat, tint: "brand",
-      sub: `${activeItems} active · ${inactiveItems} inactive` },
+      sub: `${activeItems} active · ${inactiveItems} inactive`, current: liveItems.length, previous: liveItemsYesterday },
   ]
 
   // Revenue for the last 15 days (committed orders), oldest → newest
@@ -67,8 +134,11 @@ export function DashboardOverview() {
                   <stat.icon className={`h-4 w-4 ${stat.tint}-text`} />
                 </div>
               </div>
-              <p className="text-2xl font-bold text-slate-900 mt-2">{stat.value}</p>
-              {stat.sub && <p className="text-xs text-slate-400 mt-1">{stat.sub}</p>}
+              <div className="flex items-baseline gap-2 mt-2">
+                <p className="text-2xl font-bold text-slate-900">{stat.value}</p>
+                <ChangeBadge current={stat.current} previous={stat.previous} />
+              </div>
+              <p className="text-xs text-slate-400 mt-1">{stat.sub || "vs. yesterday"}</p>
             </CardContent>
           </Card>
         ))}
@@ -101,39 +171,46 @@ export function DashboardOverview() {
         </CardContent>
       </Card>
 
-      {/* Recent orders */}
+      {/* Recent orders — a compact, wrapping card grid instead of a tall row
+          list, so the most recent orders are visible at a glance with no
+          scrolling; the rest are one click away on the full Orders page. */}
       <Card className="border-0 shadow-sm">
-        <CardHeader className="pb-3">
+        <CardHeader className="pb-3 flex items-center justify-between">
           <CardTitle className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
             Recent Orders
           </CardTitle>
+          {orders.length > RECENT_ORDERS_LIMIT && (
+            <Link href="/dashboard/orders" className="text-xs font-medium text-slate-400 hover:text-slate-700">
+              View all →
+            </Link>
+          )}
         </CardHeader>
-        <CardContent className="px-0">
+        <CardContent>
           {orders.length === 0 ? (
             <p className="text-slate-400 text-sm text-center py-8">No orders yet</p>
           ) : (
-            <div className="divide-y divide-slate-50">
-              {orders.slice(0, 8).map((order) => (
-                <div key={order.id} className="flex flex-wrap items-center justify-between gap-y-2 px-4 sm:px-6 py-3 hover:bg-muted/40 transition-colors">
-                  <div className="flex items-center gap-4 min-w-0">
-                    <span className="text-xs font-mono text-slate-400 w-10 flex-shrink-0">#{order.dailyOrderNumber ?? order.id}</span>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-slate-800 truncate">
-                        {order.user?.customerName || order.guestName || "Guest"}
-                      </p>
-                      <p className="text-xs text-slate-400">
-                        {order.guestVehicle
-                          ? order.guestVehicle
-                          : <span className="text-amber-600 font-medium">Pickup</span>}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 flex-shrink-0">
-                    <span className="text-sm font-semibold text-slate-800">₹{order.totalAmount.toFixed(0)}</span>
-                    <StatusDot color={ORDER_STATUS_COLORS[order.status] || "#94a3b8"} className="w-24">{ORDER_STATUS_LABELS[order.status] || order.status}</StatusDot>
-                    <span className="text-xs text-slate-400 w-12 text-right">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+              {orders.slice(0, RECENT_ORDERS_LIMIT).map((order) => (
+                <div key={order.id} className="rounded-lg border border-slate-100 p-3 hover:border-slate-200 hover:bg-muted/40 transition-colors min-w-0">
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <span className="text-xs font-mono text-slate-400 flex-shrink-0">#{order.dailyOrderNumber ?? order.id}</span>
+                    <span className="text-xs text-slate-400 flex-shrink-0">
                       {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     </span>
+                  </div>
+                  <p className="text-sm font-medium text-slate-800 truncate">
+                    {order.user?.customerName || order.guestName || "Guest"}
+                  </p>
+                  <p className="text-xs text-slate-400 truncate mb-2">
+                    {order.guestVehicle
+                      ? order.guestVehicle
+                      : <span className="text-amber-600 font-medium">Pickup</span>}
+                  </p>
+                  <div className="flex items-center justify-between gap-2">
+                    <StatusDot color={ORDER_STATUS_COLORS[order.status] || "#94a3b8"} className="min-w-0">
+                      {ORDER_STATUS_LABELS[order.status] || order.status}
+                    </StatusDot>
+                    <span className="text-sm font-semibold text-slate-800 flex-shrink-0">₹{order.totalAmount.toFixed(0)}</span>
                   </div>
                 </div>
               ))}

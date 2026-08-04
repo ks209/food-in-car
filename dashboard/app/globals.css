@@ -159,6 +159,18 @@ html {
     color-mix(in srgb, var(--brand-secondary) 28%, #0f172a) 100%) !important;
 }
 
+/* The sidebar is permanently dark-styled regardless of the app-wide light/dark
+   toggle (it's always painted with .sidebar-gradient above). It must stay
+   independent of the dark-mode compat layer further down, which remaps
+   light-authored body utilities like text-slate-400/border-slate-800 — those
+   share class names with what the sidebar itself uses, and the compat layer's
+   `!important` was winning even over :hover, so hovering a nav link silently
+   did nothing in dark mode (text stayed at the dim inactive gray instead of
+   turning white). Dedicated classes here sidestep the collision entirely. */
+.sidebar-link { color: oklch(0.72 0 0); }
+.sidebar-link:hover { color: #ffffff; }
+.sidebar-border { border-color: oklch(1 0 0 / 10%); }
+
 /* ============================================================
    Dark compatibility layer
    The pages were authored with light Tailwind utilities
@@ -292,6 +304,14 @@ button, a { transition: color 0.15s ease, background-color 0.15s ease, border-co
 }
 
 @media print {
+  /* The invoice card itself is always painted white/ink (order-invoice.jsx
+     hardcodes those colors on purpose). But it's narrower than the page and
+     centered, so the margins around it show whatever <body> is painted —
+     which in dark mode is `bg-background`, near-black. Force the page itself
+     white so printing in dark mode doesn't leave a dark surround/background
+     behind the (correctly white) bill. */
+  html, body { background: #fff !important; }
+
   /* Hide every other top-level node under <body> — the whole app, plus the
      dialog's own Radix portal — so nothing else contributes layout height.
      (`visibility: hidden` alone would've kept that height and reintroduced
