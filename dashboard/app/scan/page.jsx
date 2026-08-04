@@ -143,7 +143,7 @@ function ScanInner() {
           <div className={`rounded-xl p-4 text-sm ${result.ok ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-700"}`}>
             {result.ok ? (
               <div className="space-y-1">
-                <p className="font-semibold">✓ Order #{result.order.id} delivered</p>
+                <p className="font-semibold">✓ Order #{result.order.dailyOrderNumber ?? result.order.id} delivered</p>
                 <p className="text-slate-600">
                   {result.order.user?.customerName || result.order.guestName || "Guest"}
                   {` · ${result.order.guestVehicle || "Pickup"}`}

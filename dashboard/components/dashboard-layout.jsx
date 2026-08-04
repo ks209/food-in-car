@@ -1,12 +1,13 @@
 "use client"
 
 import React, { useEffect, useState } from "react"
-import { LayoutDashboard, ShoppingBag, Menu, LogOut, ScanLine, Users, Contact, Settings, BarChart3, Bell, BellOff, PanelLeft, X, Paintbrush, ChefHat } from "lucide-react"
+import { LayoutDashboard, ShoppingBag, Menu, LogOut, ScanLine, Users, Contact, Settings, BarChart3, Bell, BellOff, PanelLeft, X, Paintbrush, ChefHat, Receipt, WifiOff, RefreshCw } from "lucide-react"
 import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
 import axios from "axios"
 import { RestaurantProvider, useRestaurant } from "@/lib/restaurant-context"
 import { OrdersProvider, useOrders } from "@/lib/orders-context"
+import { BillingProvider, useBilling } from "@/lib/billing-context"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Button } from "@/components/ui/button"
 import { API } from "@/lib/api"
@@ -15,6 +16,7 @@ const navigation = [
   { name: "Overview", href: "/dashboard", icon: LayoutDashboard },
   { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
   { name: "Orders", href: "/dashboard/orders", icon: ShoppingBag },
+  { name: "Billing", href: "/dashboard/billing", icon: Receipt },
   { name: "Kitchen", href: "/dashboard/kitchen", icon: ChefHat },
   { name: "Delivery", href: "/dashboard/delivery", icon: ScanLine },
   { name: "Waiters", href: "/dashboard/waiters", icon: Users },
@@ -106,6 +108,25 @@ function Sidebar({ open, onClose }) {
   )
 }
 
+function BillingSyncBadge() {
+  const billing = useBilling()
+  if (!billing) return null
+  const { online, pendingCount, failedCount } = billing
+  if (online && pendingCount === 0 && failedCount === 0) return null
+  return (
+    <Link
+      href="/dashboard/billing"
+      className={`hidden sm:inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${
+        !online ? "bg-slate-100 text-slate-500" : failedCount > 0 ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"
+      }`}
+      title={!online ? "You're offline — bills are being saved locally" : "Bills waiting to sync"}
+    >
+      {!online ? <WifiOff className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />}
+      {!online ? "Offline" : failedCount > 0 ? `${failedCount} sync failed` : `${pendingCount} pending sync`}
+    </Link>
+  )
+}
+
 function AlertToggle() {
   const { muted, toggleMuted } = useOrders()
   return (
@@ -132,29 +153,32 @@ export function DashboardLayout({ children }) {
   return (
     <RestaurantProvider>
       <OrdersProvider>
-        <div className="min-h-screen bg-slate-50">
-          <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+        <BillingProvider>
+          <div className="min-h-screen bg-slate-50">
+            <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-          <div className="lg:ml-60">
-            {/* Header */}
-            <header className="bg-background border-b border-border h-16 flex items-center px-4 sm:px-8 sticky top-0 z-30 gap-2">
-              <button
-                onClick={() => setSidebarOpen(true)}
-                className="text-slate-500 hover:text-slate-800 lg:hidden flex-shrink-0"
-                aria-label="Open menu"
-              >
-                <PanelLeft className="h-5 w-5" />
-              </button>
-              <h1 className="text-base font-semibold text-foreground tracking-tight truncate">{pageTitle}</h1>
-              <div className="ml-auto flex items-center gap-1 flex-shrink-0">
-                <AlertToggle />
-                <ThemeToggle />
-              </div>
-            </header>
+            <div className="lg:ml-60">
+              {/* Header */}
+              <header className="bg-background border-b border-border h-16 flex items-center px-4 sm:px-8 sticky top-0 z-30 gap-2">
+                <button
+                  onClick={() => setSidebarOpen(true)}
+                  className="text-slate-500 hover:text-slate-800 lg:hidden flex-shrink-0"
+                  aria-label="Open menu"
+                >
+                  <PanelLeft className="h-5 w-5" />
+                </button>
+                <h1 className="text-base font-semibold text-foreground tracking-tight truncate">{pageTitle}</h1>
+                <div className="ml-auto flex items-center gap-2 flex-shrink-0">
+                  <BillingSyncBadge />
+                  <AlertToggle />
+                  <ThemeToggle />
+                </div>
+              </header>
 
-            <main key={pathname} className="p-4 sm:p-8 anim-fade-up overflow-x-hidden">{children}</main>
+              <main key={pathname} className="p-4 sm:p-8 anim-fade-up overflow-x-hidden">{children}</main>
+            </div>
           </div>
-        </div>
+        </BillingProvider>
       </OrdersProvider>
     </RestaurantProvider>
   )

@@ -13,11 +13,11 @@ import axios from "axios"
 
 import { API } from "@/lib/api"
 import { OrderInvoice } from "@/components/order-invoice"
-import { ORDER_STATUS_COLORS } from "@/lib/status"
+import { ORDER_STATUS_COLORS, ORDER_STATUS_LABELS } from "@/lib/status"
 import { StatusDot } from "@/components/ui/status-dot"
 import { todayStr, daysAgoStr, localDateRange, PAYMENT_METHOD_LABELS } from "@/lib/format"
 
-const STATUS_KEYS = ["all", "PENDING", "PAID", "PREPARING", "READY", "COMPLETED", "CANCELLED"]
+const STATUS_KEYS = ["all", "PENDING", "PAID", "PREPARING", "READY", "COMPLETED", "CANCELLED", "NOT_FULFILLED"]
 
 export function OrderManagement() {
   const [searchTerm, setSearchTerm] = useState("")
@@ -68,7 +68,8 @@ export function OrderManagement() {
     const matchesSearch =
       order.user?.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       order.guestName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.id.toString().includes(searchTerm)
+      order.id.toString().includes(searchTerm) ||
+      order.dailyOrderNumber?.toString().includes(searchTerm)
     const matchesStatus = statusFilter === "all" || order.status === statusFilter
     return matchesSearch && matchesStatus
   })
@@ -78,7 +79,7 @@ export function OrderManagement() {
   )
 
   const rangeRevenue = orders
-    .filter((o) => ["PAID", "PREPARING", "READY", "COMPLETED"].includes(o.status))
+    .filter((o) => o.status === "COMPLETED")
     .reduce((sum, o) => sum + o.totalAmount, 0)
 
   const isToday = fromDate === todayStr() && toDate === todayStr()
@@ -98,7 +99,7 @@ export function OrderManagement() {
                 : "bg-white border border-slate-200 text-slate-600 hover:border-slate-400"
             }`}
           >
-            {status === "all" ? "All" : status} · {count}
+            {status === "all" ? "All" : ORDER_STATUS_LABELS[status] || status} · {count}
           </button>
         ))}
         <Button
@@ -176,7 +177,7 @@ export function OrderManagement() {
                 <div key={order.id} className="px-4 sm:px-5 py-4 hover:bg-muted/40 transition-colors">
                   <div className="flex flex-wrap items-start justify-between gap-y-2">
                     <div className="flex items-start gap-4 min-w-0">
-                      <span className="text-xs font-mono text-slate-400 pt-0.5 w-10 flex-shrink-0">#{order.id}</span>
+                      <span className="text-xs font-mono text-slate-400 pt-0.5 w-10 flex-shrink-0">#{order.dailyOrderNumber ?? order.id}</span>
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-slate-800 truncate">
                           {order.user?.customerName || order.guestName || "Guest"}
@@ -203,7 +204,7 @@ export function OrderManagement() {
 
                     <div className="flex items-center gap-3 flex-shrink-0">
                       <span className="text-sm font-bold text-slate-900">₹{order.totalAmount.toFixed(0)}</span>
-                      <StatusDot color={ORDER_STATUS_COLORS[order.status] || "#94a3b8"} className="w-24">{order.status}</StatusDot>
+                      <StatusDot color={ORDER_STATUS_COLORS[order.status] || "#94a3b8"} className="w-24">{ORDER_STATUS_LABELS[order.status] || order.status}</StatusDot>
                       <span className="text-xs text-slate-400">
                         {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                       </span>
@@ -218,7 +219,7 @@ export function OrderManagement() {
                         </Button>
                       </DialogTrigger>
                       <DialogContent className="max-w-md">
-                        <DialogHeader><DialogTitle>Order #{selectedOrder?.id}</DialogTitle></DialogHeader>
+                        <DialogHeader><DialogTitle>Order #{selectedOrder?.dailyOrderNumber ?? selectedOrder?.id}</DialogTitle></DialogHeader>
                         {selectedOrder && (
                           <div className="space-y-4 pt-1">
                             <div>
@@ -269,19 +270,7 @@ export function OrderManagement() {
                       </DialogContent>
                     </Dialog>
 
-                    {order.status === "PENDING" && (
-                      <>
-                        <Button size="sm" className="text-xs brand-bg text-white"
-                          onClick={() => updateOrderStatus(order.id, "PREPARING")}>
-                          Start Preparing
-                        </Button>
-                        <Button size="sm" variant="outline" className="text-xs text-red-500 hover:bg-red-50"
-                          onClick={() => updateOrderStatus(order.id, "CANCELLED")}>
-                          Cancel
-                        </Button>
-                      </>
-                    )}
-                    {order.status === "PAID" && (
+                    {(order.status === "PENDING" || order.status === "PAID") && (
                       <>
                         <Button size="sm" className="text-xs brand-bg text-white"
                           onClick={() => updateOrderStatus(order.id, "PREPARING")}>
@@ -300,9 +289,15 @@ export function OrderManagement() {
                       </Button>
                     )}
                     {order.status === "READY" && (
-                      <span className="text-xs text-sky-600 font-medium inline-flex items-center gap-1">
+                      <span className="text-xs text-sky-600 font-medium inline-flex items-center gap-1 mr-1">
                         <ScanLine className="h-3.5 w-3.5" /> Awaiting delivery scan
                       </span>
+                    )}
+                    {(order.status === "PENDING" || order.status === "PAID" || order.status === "PREPARING" || order.status === "READY") && (
+                      <Button size="sm" variant="outline" className="text-xs text-purple-600 hover:bg-purple-50"
+                        onClick={() => updateOrderStatus(order.id, "NOT_FULFILLED")}>
+                        Not Fulfilled
+                      </Button>
                     )}
 
                     <OrderInvoice order={order} />

@@ -17,8 +17,8 @@ export default function LoginPage() {
         <div className="pointer-events-none absolute bottom-0 right-0 h-72 w-72 rounded-full blur-3xl opacity-20 brand-bg" />
 
         <div className="flex items-center gap-3 relative anim-fade-up">
-          <img src="/carkhanaalogo.png" alt="Carkhanaa" className="h-9 w-9 rounded-xl object-cover" />
-          <span className="text-white font-semibold text-lg tracking-tight">Carkhanaa</span>
+          <img src="/carkhanaalogo.png" alt="Carkhanaa" className="h-12 w-12 rounded-xl object-cover" />
+          <span className="text-white font-semibold text-xl tracking-tight">Carkhanaa</span>
         </div>
 
         <div className="relative anim-fade-up" style={{ animationDelay: "0.08s" }}>
@@ -50,13 +50,22 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* Right panel */}
-      <div className="flex-1 flex items-center justify-center p-8 bg-background">
+      {/* Right panel — top-anchored on mobile (centering leaves a huge dead gap
+          on a full-height phone screen once the left marketing panel is
+          hidden); centered once the two-column desktop layout kicks in. */}
+      <div className="flex-1 flex items-start lg:items-center justify-center pt-20 lg:pt-8 p-8 bg-background">
         <div className="w-full max-w-sm anim-fade-up" style={{ animationDelay: "0.1s" }}>
-          {/* Mobile logo */}
-          <div className="flex items-center gap-2 mb-10 lg:hidden">
-            <img src="/carkhanaalogo.png" alt="Carkhanaa" className="h-8 w-8 rounded-lg object-cover" />
-            <span className="font-semibold text-foreground">Carkhanaa</span>
+          {/* Mobile logo + tagline — the left panel (and its marketing copy) is
+              desktop-only, so the essentials get a compact stand-in here rather
+              than disappearing on phones entirely. */}
+          <div className="mb-10 lg:hidden">
+            <div className="flex items-center gap-2.5">
+              <img src="/carkhanaalogo.png" alt="Carkhanaa" className="h-10 w-10 rounded-xl object-cover" />
+              <span className="font-semibold text-foreground text-lg">Carkhanaa</span>
+            </div>
+            <p className="text-muted-foreground text-sm mt-3">
+              Great food experiences start with <span className="brand-text font-medium">great management.</span>
+            </p>
           </div>
 
           <h1 className="text-2xl font-bold text-foreground mb-1 tracking-tight">Welcome back</h1>

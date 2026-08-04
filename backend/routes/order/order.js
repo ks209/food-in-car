@@ -6,6 +6,7 @@ import userAuth from '../../middlewares/user.auth.js';
 import scanAuth from '../../middlewares/scan.auth.js';
 import { genDeliveryCode } from '../../utils/deliveryCode.js';
 import { resolveCustomerByPhone } from '../../utils/customer.js';
+import { nextDailyOrderNumber } from '../../utils/dailyOrderNumber.js';
 
 const orderRouter = express.Router();
 
@@ -17,7 +18,11 @@ const ORDER_INCLUDE = {
   orderStatusHistory: { orderBy: { updatedAt: 'desc' } },
 };
 
-const VALID_STATUSES = ['PENDING', 'PAID', 'PREPARING', 'READY', 'COMPLETED', 'CANCELLED'];
+const VALID_STATUSES = ['PENDING', 'PAID', 'PREPARING', 'READY', 'COMPLETED', 'CANCELLED', 'NOT_FULFILLED'];
+
+// Only a COMPLETED order is real, counted revenue — everything else (including
+// in-flight PAID/PREPARING/READY) is excluded until it actually finishes.
+const REVENUE_STATES = ['COMPLETED'];
 
 // Restaurant: their orders, optionally bounded by ?from=&to= (ISO timestamps).
 // Callers pass local day boundaries already converted to UTC — this route does no
@@ -110,46 +115,66 @@ orderRouter.put('/scan', scanAuth, async (req, res) => {
   }
 });
 
-// Restaurant: distinct customers who've ordered here, optionally filtered by
-// ?search= (matches phone or name). Registered before the public GET /:id
-// below — Express matches routes in registration order, and /:id would
-// otherwise swallow /customers (treating "customers" as the id param).
+// Whitelisted sort columns for /customers — never interpolate req.query directly
+// into SQL; only these literal fragments (picked by key) ever reach the query.
+const CUSTOMER_SORT_COLUMNS = {
+  name: 'u."customerName"',
+  totalSpent: '"totalSpent"',
+  orderCount: '"orderCount"',
+  lastOrderAt: '"lastOrderAt"',
+};
+
+// Restaurant: distinct customers who've ordered here, paginated + sorted +
+// optionally filtered by ?search= (matches phone or name). Aggregates
+// (orderCount/totalSpent/lastOrderAt) are computed in the DB via GROUP BY so
+// sorting/paginating doesn't require pulling every order row into Node.
+// Registered before the public GET /:id below — Express matches routes in
+// registration order, and /:id would otherwise swallow /customers.
 orderRouter.get('/customers', restaurantAuth, async (req, res) => {
   try {
     const restaurantId = req.restaurantId;
     const search = (req.query.search || '').trim();
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const pageSize = Math.min(100, Math.max(5, parseInt(req.query.pageSize) || 20));
+    const offset = (page - 1) * pageSize;
 
-    const customers = await prisma.user.findMany({
-      where: {
-        orders: { some: { restaurantId } },
-        ...(search
-          ? { OR: [
-              { phoneNumber: { contains: search } },
-              { customerName: { contains: search, mode: 'insensitive' } },
-            ] }
-          : {}),
-      },
-      select: {
-        id: true,
-        customerName: true,
-        phoneNumber: true,
-        vehicles: { select: { vehicleNo: true } },
-        orders: {
-          where: { restaurantId },
-          select: { totalAmount: true, status: true, createdAt: true },
-        },
-      },
-    });
+    const sortColumn = CUSTOMER_SORT_COLUMNS[req.query.sortBy] || CUSTOMER_SORT_COLUMNS.lastOrderAt;
+    const sortDir = req.query.sortDir === 'asc' ? 'ASC' : 'DESC';
 
-    const REVENUE_STATES = ['PAID', 'PREPARING', 'READY', 'COMPLETED'];
-    const result = customers.map(({ orders, ...c }) => ({
-      ...c,
-      orderCount: orders.length,
-      totalSpent: orders.filter(o => REVENUE_STATES.includes(o.status)).reduce((s, o) => s + o.totalAmount, 0),
-      lastOrderAt: orders.reduce((max, o) => (o.createdAt > max ? o.createdAt : max), orders[0]?.createdAt || null),
-    })).sort((a, b) => new Date(b.lastOrderAt) - new Date(a.lastOrderAt));
+    const rows = await prisma.$queryRawUnsafe(
+      `
+      SELECT u.id, u."customerName", u."phoneNumber",
+        COUNT(o.id)::int AS "orderCount",
+        COALESCE(SUM(CASE WHEN o.status = 'COMPLETED' THEN o."totalAmount" ELSE 0 END), 0)::float AS "totalSpent",
+        MAX(o."createdAt") AS "lastOrderAt",
+        COUNT(*) OVER()::int AS "totalCount"
+      FROM "User" u
+      JOIN "Order" o ON o."userId" = u.id AND o."restaurantId" = $1
+      WHERE ($2 = '' OR u."phoneNumber" ILIKE '%' || $2 || '%' OR u."customerName" ILIKE '%' || $2 || '%')
+      GROUP BY u.id, u."customerName", u."phoneNumber"
+      ORDER BY ${sortColumn} ${sortDir} NULLS LAST
+      LIMIT $3 OFFSET $4
+      `,
+      restaurantId, search, pageSize, offset
+    );
 
-    res.json(result);
+    const total = rows[0]?.totalCount ?? 0;
+    const userIds = rows.map(r => r.id);
+    const vehicles = userIds.length
+      ? await prisma.userVehicle.findMany({ where: { userId: { in: userIds } }, select: { userId: true, vehicleNo: true } })
+      : [];
+    const vehiclesByUser = new Map();
+    for (const v of vehicles) {
+      if (!vehiclesByUser.has(v.userId)) vehiclesByUser.set(v.userId, []);
+      vehiclesByUser.get(v.userId).push({ vehicleNo: v.vehicleNo });
+    }
+
+    const customers = rows.map(({ totalCount, ...r }) => ({
+      ...r,
+      vehicles: vehiclesByUser.get(r.id) || [],
+    }));
+
+    res.json({ customers, total, page, pageSize });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch customers', details: error.message });
   }
@@ -218,16 +243,22 @@ orderRouter.post('/create', async (req, res) => {
       return res.status(400).json({ error: 'Name, phone number and items are required' });
     }
 
+    const restaurant = await prisma.restaurant.findUnique({ where: { id: parseInt(restaurantId) } });
+    if (!restaurant || !restaurant.isActive) return res.status(404).json({ error: 'Restaurant not found' });
+    if (!restaurant.isOpen) return res.status(400).json({ error: 'Restaurant is currently closed' });
+
     // Vehicle is optional: absent means the customer chose pickup.
     const vehicle = guestVehicle && guestVehicle.trim() ? guestVehicle.trim().toUpperCase() : null;
 
     // Auto-create or find the customer by phone number; remember their vehicle (if any)
     const customer = await resolveCustomerByPhone(mobileNumber, guestName, vehicle);
+    const dailyOrderNumber = await nextDailyOrderNumber(parseInt(restaurantId));
 
     const order = await prisma.order.create({
       data: {
         restaurantId: parseInt(restaurantId),
         userId: customer.id,
+        dailyOrderNumber,
         guestName,
         guestVehicle: vehicle,
         totalAmount: parseFloat(totalAmount),
@@ -259,6 +290,87 @@ orderRouter.post('/create', async (req, res) => {
     res.status(201).json(order);
   } catch (error) {
     res.status(500).json({ error: 'Failed to create order', details: error.message });
+  }
+});
+
+// Restaurant: create a walk-in bill from the offline-capable dashboard POS.
+// Unlike /create (guest checkout), this is authenticated as the restaurant and the
+// customer's phone is optional — a dine-in bill doesn't need one. The bill is
+// considered settled the moment it's rung up, so it's created straight into
+// COMPLETED (no kitchen/delivery pipeline).
+//
+// `idempotencyKey` (client-generated, one per locally-queued bill) makes this safe
+// to retry: the offline queue may re-POST a bill whose first attempt actually
+// succeeded but whose response never made it back to the browser (tab closed,
+// connection dropped mid-request). On a repeat, we return the original order
+// instead of billing twice.
+orderRouter.post('/pos', restaurantAuth, async (req, res) => {
+  try {
+    const { items, totalAmount, guestName, guestVehicle, mobileNumber, paymentMethod, idempotencyKey } = req.body;
+    if (!items?.length || !totalAmount) {
+      return res.status(400).json({ error: 'Items and total are required' });
+    }
+    if (!idempotencyKey) {
+      return res.status(400).json({ error: 'idempotencyKey is required' });
+    }
+
+    const existing = await prisma.order.findUnique({ where: { idempotencyKey }, include: ORDER_INCLUDE });
+    if (existing) {
+      if (existing.restaurantId !== req.restaurantId) return res.status(409).json({ error: 'idempotencyKey already used by another restaurant' });
+      return res.status(200).json(existing);
+    }
+
+    const vehicle = guestVehicle && guestVehicle.trim() ? guestVehicle.trim().toUpperCase() : null;
+
+    let userId = null;
+    if (mobileNumber && mobileNumber.trim()) {
+      const customer = await resolveCustomerByPhone(mobileNumber.trim(), guestName || 'Walk-in Customer', vehicle);
+      userId = customer.id;
+    }
+
+    const dailyOrderNumber = await nextDailyOrderNumber(req.restaurantId);
+
+    const order = await prisma.order.create({
+      data: {
+        restaurantId: req.restaurantId,
+        userId,
+        dailyOrderNumber,
+        idempotencyKey,
+        guestName: (guestName || '').trim() || 'Walk-in Customer',
+        guestVehicle: vehicle,
+        totalAmount: parseFloat(totalAmount),
+        deliveryCode: genDeliveryCode(),
+        deliveryInstructions: '',
+        status: 'COMPLETED',
+        paymentMethod: paymentMethod === 'PHONEPE' ? 'PHONEPE' : 'COD',
+        orderStatusHistory: { create: { status: 'COMPLETED', updatedBy: 'restaurant (POS)' } },
+        orderItems: {
+          create: items.map(i => ({
+            menuItemId: i.id || null,
+            name: i.name,
+            unitPrice: i.price,
+            finalPrice: i.price,
+            quantity: i.quantity || 1,
+            options: {
+              create: (i.selectedOptions || []).map(o => ({
+                name: o.name,
+                priceDelta: o.priceDelta || 0,
+              })),
+            },
+          })),
+        },
+      },
+      include: ORDER_INCLUDE,
+    });
+
+    res.status(201).json(order);
+  } catch (error) {
+    // Unique-constraint race on idempotencyKey — a concurrent retry beat us to it.
+    if (error.code === 'P2002') {
+      const existing = await prisma.order.findUnique({ where: { idempotencyKey: req.body.idempotencyKey }, include: ORDER_INCLUDE });
+      if (existing) return res.status(200).json(existing);
+    }
+    res.status(500).json({ error: 'Failed to create bill', details: error.message });
   }
 });
 

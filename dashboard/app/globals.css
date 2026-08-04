@@ -203,7 +203,10 @@ html {
 .dark .border-slate-300,
 .dark .border-slate-800 { border-color: var(--d-border) !important; }
 .dark .hover\:border-slate-400:hover { border-color: oklch(1 0 0 / 22%) !important; }
-.dark .divide-slate-50 > :not([hidden]) ~ :not([hidden]) { border-color: var(--d-border) !important; }
+/* Tailwind v4 compiles `divide-slate-50` to `:where(.divide-slate-50>:not(:last-child))`
+   (v3 used `:not([hidden]) ~ :not([hidden])`) — match that shape, or this
+   never overrides and the light slate-50 divider shows through on dark bg. */
+.dark .divide-slate-50 > :not(:last-child) { border-color: var(--d-border) !important; }
 
 /* Status chips — light tints become translucent glows */
 .dark .bg-amber-50   { background-color: oklch(0.77 0.15 75 / 14%) !important; }

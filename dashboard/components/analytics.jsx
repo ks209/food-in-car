@@ -2,61 +2,133 @@
 
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { ShoppingBag, IndianRupee, Receipt, Repeat, Trophy, Timer, AlertTriangle, Download } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Input } from "@/components/ui/input"
+import {
+  ShoppingBag, IndianRupee, Receipt, Repeat, Trophy, Timer, AlertTriangle, Download,
+  Calendar, CheckCircle2, XCircle, Info, CalendarDays,
+} from "lucide-react"
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
   PieChart, Pie, Cell, Legend, ReferenceLine,
 } from "recharts"
 import axios from "axios"
 import { API } from "@/lib/api"
-import { CHART_TOOLTIP_STYLE as tooltipStyle, formatCurrency, formatHour, toLocalDateStr, todayStr } from "@/lib/format"
+import { CHART_TOOLTIP_STYLE as tooltipStyle, formatCurrency, formatHour, toLocalDateStr, todayStr, daysAgoStr, localDateRange } from "@/lib/format"
 import { CHART_CATEGORY_COLORS } from "@/lib/chart-colors"
-import { SLA_WARN_MIN, SLA_CRIT_MIN, slaColor, prepMinutes } from "@/lib/sla"
+import { SLA_WARN_MIN, SLA_CRIT_MIN, slaColor, prepMinutes, totalMinutes } from "@/lib/sla"
+import { ORDER_STATUS_LABELS } from "@/lib/status"
 import { StatusDot } from "@/components/ui/status-dot"
 import { Button } from "@/components/ui/button"
 import { downloadCsv } from "@/lib/export"
 
-// Committed orders count toward revenue (exclude pending/cancelled)
-const REVENUE_STATES = ["PAID", "PREPARING", "READY", "COMPLETED"]
-const WINDOW_DAYS = 30
+// Only COMPLETED orders are real revenue — cancelled/not-fulfilled/in-flight orders don't count
+const REVENUE_STATES = ["COMPLETED"]
+const NON_SALE_STATES = ["CANCELLED", "NOT_FULFILLED"]
+const STATUS_FILTER_OPTIONS = ["PENDING", "PAID", "PREPARING", "READY", "COMPLETED", "CANCELLED", "NOT_FULFILLED"]
+
+const customerKey = (o) => o.user?.id ?? o.guestName ?? o.id
 
 export function Analytics() {
   const [orders, setOrders] = useState([])
   const [menu, setMenu] = useState([])
+  const [waiters, setWaiters] = useState([])
+  const [loading, setLoading] = useState(false)
 
+  // ── Filters (slicers) ─────────────────────────────────────────────────────────
+  const [fromDate, setFromDate] = useState(() => daysAgoStr(29))
+  const [toDate, setToDate] = useState(todayStr)
+  const [orderType, setOrderType] = useState("all") // all | pickup | delivery
+  const [payment, setPayment] = useState("all") // all | COD | PHONEPE
+  const [status, setStatus] = useState("all") // all | <OrderStatus>
+  const [waiterId, setWaiterId] = useState("all")
+  const [customerType, setCustomerType] = useState("all") // all | new | repeat
+
+  const fetchOrders = async () => {
+    setLoading(true)
+    try {
+      const params = localDateRange(fromDate, toDate)
+      const res = await axios.get(`${API}/api/order`, { params, withCredentials: true })
+      setOrders(res.data)
+    } catch {
+      // stay quiet — charts just render empty
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { fetchOrders() }, [fromDate, toDate])
   useEffect(() => {
-    axios.get(`${API}/api/order`, { withCredentials: true }).then((r) => setOrders(r.data)).catch(() => {})
     axios.get(`${API}/api/menu/`, { withCredentials: true }).then((r) => setMenu(r.data)).catch(() => {})
+    axios.get(`${API}/api/waiter`, { withCredentials: true }).then((r) => setWaiters(r.data)).catch(() => {})
   }, [])
 
-  const cutoff = Date.now() - WINDOW_DAYS * 24 * 60 * 60 * 1000
-  const recent = orders.filter((o) => new Date(o.createdAt).getTime() >= cutoff)
-  // What actually sold — drop cancelled orders from item/category tallies
-  const sold = recent.filter((o) => o.status !== "CANCELLED")
+  const windowDays = Math.max(1, Math.round((new Date(toDate) - new Date(fromDate)) / 86400000) + 1)
+
+  // "Repeat" is based on purchase history across the whole date-range fetch —
+  // filtering by other dimensions shouldn't change who counts as a repeat
+  // customer, only which of their orders show up.
+  const orderCountByCustomerFull = {}
+  orders.forEach((o) => { const k = customerKey(o); orderCountByCustomerFull[k] = (orderCountByCustomerFull[k] || 0) + 1 })
+  const isRepeatCustomer = (o) => orderCountByCustomerFull[customerKey(o)] > 1
+
+  // ── Apply slicers ────────────────────────────────────────────────────────────
+  const filtered = orders.filter((o) => {
+    if (orderType !== "all") {
+      const isPickup = !o.guestVehicle
+      if (orderType === "pickup" && !isPickup) return false
+      if (orderType === "delivery" && isPickup) return false
+    }
+    if (payment !== "all" && o.paymentMethod !== payment) return false
+    if (status !== "all" && o.status !== status) return false
+    if (waiterId !== "all" && String(o.waiter?.id) !== waiterId) return false
+    if (customerType !== "all") {
+      const repeat = isRepeatCustomer(o)
+      if (customerType === "repeat" && !repeat) return false
+      if (customerType === "new" && repeat) return false
+    }
+    return true
+  })
+  // What actually sold — drop cancelled/not-fulfilled orders from item/category tallies
+  const sold = filtered.filter((o) => !NON_SALE_STATES.includes(o.status))
 
   // menuItemId -> category name
   const catByItem = new Map(menu.map((m) => [m.id, m.category?.name || "Uncategorized"]))
 
-  // ── KPIs (last 30 days) ──────────────────────────────────────────────────────
-  const committed = recent.filter((o) => REVENUE_STATES.includes(o.status))
+  // ── KPIs ─────────────────────────────────────────────────────────────────────
+  const committed = filtered.filter((o) => REVENUE_STATES.includes(o.status))
   const revenue = committed.reduce((s, o) => s + o.totalAmount, 0)
   const aov = committed.length ? revenue / committed.length : 0
 
-  const orderCountByCustomer = recent.reduce((acc, o) => {
-    const key = o.user?.id ?? o.guestName ?? o.id
-    acc[key] = (acc[key] || 0) + 1
-    return acc
-  }, {})
+  const cancelled = filtered.filter((o) => o.status === "CANCELLED" || o.status === "NOT_FULFILLED").length
+  const resolved = filtered.filter((o) => ["COMPLETED", "CANCELLED", "NOT_FULFILLED"].includes(o.status)).length
+  const completionRate = resolved ? Math.round((committed.length / resolved) * 100) : null
+  const cancellationRate = resolved ? Math.round((cancelled / resolved) * 100) : null
+
+  const orderCountByCustomer = {}
+  filtered.forEach((o) => { const k = customerKey(o); orderCountByCustomer[k] = (orderCountByCustomer[k] || 0) + 1 })
+  const distinctCustomers = Object.keys(orderCountByCustomer).length
   const repeatCustomers = Object.values(orderCountByCustomer).filter((n) => n > 1).length
+  const returningPct = distinctCustomers ? Math.round((repeatCustomers / distinctCustomers) * 100) : 0
+  const ordersFromRepeat = filtered.filter((o) => orderCountByCustomer[customerKey(o)] > 1).length
+
+  const peakHourCounts = Array.from({ length: 24 }, () => 0)
+  filtered.forEach((o) => { peakHourCounts[new Date(o.createdAt).getHours()] += 1 })
+  const peakHour = peakHourCounts.some((c) => c > 0) ? peakHourCounts.indexOf(Math.max(...peakHourCounts)) : null
 
   const kpis = [
-    { title: "Orders", value: recent.length, icon: ShoppingBag, tint: "brand" },
+    { title: "Orders", value: filtered.length, icon: ShoppingBag, tint: "brand" },
     { title: "Revenue", value: formatCurrency(revenue), icon: IndianRupee, tint: "brand-secondary" },
     { title: "Avg Order Value", value: formatCurrency(aov), icon: Receipt, tint: "brand-accent" },
-    { title: "Repeat Customers", value: repeatCustomers, icon: Repeat, tint: "brand" },
+    {
+      title: "Repeat Customers", value: `${repeatCustomers} (${returningPct}%)`, icon: Repeat, tint: "brand",
+      tooltip: `${repeatCustomers} of ${distinctCustomers} customers placed more than one order in this range (${returningPct}% returning) · those customers placed ${ordersFromRepeat} of the ${filtered.length} orders shown.`,
+    },
+    { title: "Completion Rate", value: completionRate !== null ? `${completionRate}%` : "—", icon: CheckCircle2, tint: "brand-secondary" },
+    { title: "Cancellation Rate", value: cancellationRate !== null ? `${cancellationRate}%` : "—", icon: XCircle, tint: "brand-accent" },
   ]
 
-  // ── Best-selling categories (last 30 days), by units sold ────────────────────
+  // ── Best-selling categories, by units sold ───────────────────────────────────
   const catAgg = {}
   sold.forEach((o) =>
     (o.orderItems || []).forEach((it) => {
@@ -70,7 +142,7 @@ export function Analytics() {
   )
   const topCategories = Object.values(catAgg).sort((a, b) => b.units - a.units).slice(0, 8)
 
-  // ── Top-selling items (last 30 days), by units sold ──────────────────────────
+  // ── Top-selling items, by units sold ─────────────────────────────────────────
   const itemAgg = {}
   sold.forEach((o) =>
     (o.orderItems || []).forEach((it) => {
@@ -84,11 +156,24 @@ export function Analytics() {
   const topItems = Object.values(itemAgg).sort((a, b) => b.units - a.units).slice(0, 6)
   const topItemMax = topItems[0]?.units || 1
 
-  // ── Orders by hour of day (last 30 days) ─────────────────────────────────────
+  // ── Orders by hour of day ─────────────────────────────────────────────────────
   const byHour = Array.from({ length: 24 }, (_, h) => ({ hour: `${h}`, orders: 0 }))
-  recent.forEach((o) => { byHour[new Date(o.createdAt).getHours()].orders += 1 })
+  filtered.forEach((o) => { byHour[new Date(o.createdAt).getHours()].orders += 1 })
 
-  // ── Pickup vs In-Car (last 30 days) ──────────────────────────────────────────
+  // ── Orders — daily trend, zero-filled for days with no orders ────────────────
+  const dailyOrders = Array.from({ length: windowDays }, (_, i) => {
+    const d = new Date(`${fromDate}T00:00:00`)
+    d.setDate(d.getDate() + i)
+    const key = toLocalDateStr(d)
+    const dayOrders = filtered.filter((o) => toLocalDateStr(new Date(o.createdAt)) === key)
+    return {
+      day: d.toLocaleDateString([], { day: "numeric", month: "short" }),
+      orders: dayOrders.length,
+      revenue: dayOrders.filter((o) => REVENUE_STATES.includes(o.status)).reduce((s, o) => s + o.totalAmount, 0),
+    }
+  })
+
+  // ── Pickup vs In-Car ──────────────────────────────────────────────────────────
   const inCar = sold.filter((o) => o.guestVehicle).length
   const pickup = sold.length - inCar
   const fulfilmentTotal = inCar + pickup
@@ -97,19 +182,24 @@ export function Analytics() {
     { name: "Pickup", value: pickup, pct: fulfilmentTotal ? Math.round((pickup / fulfilmentTotal) * 100) : 0 },
   ].filter((d) => d.value > 0)
 
-  // ── Prep-time trends (last 30 days) — which categories/items blow past SLA ──
-  // Only orders that actually reached READY have a PREPARING→READY duration to measure.
-  const timed = recent
-    .map((o) => ({ order: o, mins: prepMinutes(o) }))
-    .filter((t) => t.mins !== null)
+  // ── Prep time & total order time ─────────────────────────────────────────────
+  // Prep = PREPARING→READY (kitchen only). Total = created→COMPLETED (the
+  // customer's actual wait). Only orders that reached the relevant milestone
+  // contribute a sample.
+  const timed = filtered
+    .map((o) => ({ order: o, mins: prepMinutes(o), totalMins: totalMinutes(o) }))
+    .filter((t) => t.mins !== null || t.totalMins !== null)
+  const prepSamples = timed.filter((t) => t.mins !== null)
+  const totalSamples = timed.filter((t) => t.totalMins !== null)
 
-  const avgPrepAll = timed.length ? timed.reduce((s, t) => s + t.mins, 0) / timed.length : null
-  const breached = timed.filter((t) => t.mins >= SLA_CRIT_MIN)
+  const avgPrepAll = prepSamples.length ? prepSamples.reduce((s, t) => s + t.mins, 0) / prepSamples.length : null
+  const avgTotalAll = totalSamples.length ? totalSamples.reduce((s, t) => s + t.totalMins, 0) / totalSamples.length : null
+  const breached = prepSamples.filter((t) => t.mins >= SLA_CRIT_MIN)
 
   const avg = (samples) => samples.reduce((s, v) => s + v, 0) / samples.length
 
   const catPrepAgg = {}
-  timed.forEach(({ order, mins }) => {
+  prepSamples.forEach(({ order, mins }) => {
     const cats = new Set((order.orderItems || []).map((it) => catByItem.get(it.menuItemId) || "Uncategorized"))
     cats.forEach((cat) => {
       if (!catPrepAgg[cat]) catPrepAgg[cat] = []
@@ -122,7 +212,7 @@ export function Analytics() {
     .slice(0, 8)
 
   const itemPrepAgg = {}
-  timed.forEach(({ order, mins }) => {
+  prepSamples.forEach(({ order, mins }) => {
     const names = new Set((order.orderItems || []).map((it) => it.name || "Item"))
     names.forEach((name) => {
       if (!itemPrepAgg[name]) itemPrepAgg[name] = []
@@ -134,23 +224,26 @@ export function Analytics() {
     .sort((a, b) => b.avgMin - a.avgMin)
     .slice(0, 6)
 
-  // Daily avg prep time, oldest → newest — is SLA compliance improving or slipping?
-  const dailyPrepTrend = Array.from({ length: WINDOW_DAYS }, (_, i) => {
-    const d = new Date()
-    d.setDate(d.getDate() - (WINDOW_DAYS - 1 - i))
+  // Daily avg prep + total time, oldest → newest — is SLA compliance improving?
+  const dailyPrepTrend = Array.from({ length: windowDays }, (_, i) => {
+    const d = new Date(`${fromDate}T00:00:00`)
+    d.setDate(d.getDate() + i)
     const key = toLocalDateStr(d)
-    const samples = timed.filter((t) => toLocalDateStr(new Date(t.order.createdAt)) === key).map((t) => t.mins)
+    const prepDay = prepSamples.filter((t) => toLocalDateStr(new Date(t.order.createdAt)) === key).map((t) => t.mins)
+    const totalDay = totalSamples.filter((t) => toLocalDateStr(new Date(t.order.createdAt)) === key).map((t) => t.totalMins)
     return {
       day: d.toLocaleDateString([], { day: "numeric", month: "short" }),
-      avgMin: samples.length ? avg(samples) : null,
-      breached: samples.filter((m) => m >= SLA_CRIT_MIN).length,
+      avgMin: prepDay.length ? avg(prepDay) : null,
+      avgTotalMin: totalDay.length ? avg(totalDay) : null,
+      breached: prepDay.filter((m) => m >= SLA_CRIT_MIN).length,
     }
   })
 
-  // Avg prep time by order-placed hour — lines up against "Orders by hour" to
-  // show whether SLA breaches cluster at rush times.
+  // Avg prep time by order-placed hour, based only on orders that actually
+  // reached READY — lines up against "Orders by hour" to show whether SLA
+  // breaches cluster at rush times.
   const hourPrepSamples = Array.from({ length: 24 }, () => [])
-  timed.forEach((t) => hourPrepSamples[new Date(t.order.createdAt).getHours()].push(t.mins))
+  prepSamples.forEach((t) => hourPrepSamples[new Date(t.order.createdAt).getHours()].push(t.mins))
   const byHourPrep = hourPrepSamples.map((samples, h) => ({
     hour: `${h}`,
     avgMin: samples.length ? avg(samples) : null,
@@ -159,21 +252,24 @@ export function Analytics() {
 
   const exportSections = [
     { title: "KPIs", rows: [["Metric", "Value"], ...kpis.map((k) => [k.title, String(k.value)])] },
+    { title: "Orders by day", rows: [["Date", "Orders", "Revenue"], ...dailyOrders.map((d) => [d.day, d.orders, d.revenue.toFixed(2)])] },
     { title: "Best-selling categories", rows: [["Category", "Units sold", "Revenue"], ...topCategories.map((c) => [c.name, c.units, c.revenue.toFixed(2)])] },
     { title: "Top items", rows: [["Item", "Units sold", "Revenue"], ...topItems.map((i) => [i.name, i.units, i.revenue.toFixed(2)])] },
     { title: "Orders by hour", rows: [["Hour", "Orders"], ...byHour.map((h) => [formatHour(h.hour), h.orders])] },
-    { title: "Daily prep-time trend", rows: [["Date", "Avg prep (min)", "Orders over SLA"], ...dailyPrepTrend.map((d) => [d.day, d.avgMin != null ? d.avgMin.toFixed(1) : "", d.breached])] },
+    { title: "Daily prep + total time trend", rows: [["Date", "Avg prep (min)", "Avg total (min)", "Orders over SLA"], ...dailyPrepTrend.map((d) => [d.day, d.avgMin != null ? d.avgMin.toFixed(1) : "", d.avgTotalMin != null ? d.avgTotalMin.toFixed(1) : "", d.breached])] },
     { title: "Prep time by hour", rows: [["Hour", "Avg prep (min)", "Orders"], ...byHourPrep.map((h) => [formatHour(h.hour), h.avgMin != null ? h.avgMin.toFixed(1) : "", h.orders])] },
     { title: "Prep time by category", rows: [["Category", "Avg prep (min)", "Orders"], ...catPrepTrend.map((c) => [c.name, c.avgMin.toFixed(1), c.orders])] },
     { title: "Slowest items (prep time)", rows: [["Item", "Avg prep (min)", "Orders"], ...itemPrepTrend.map((i) => [i.name, i.avgMin.toFixed(1), i.orders])] },
   ]
+
+  const isToday = fromDate === todayStr() && toDate === todayStr()
 
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h2 className="text-lg font-semibold tracking-tight text-slate-800">Analytics</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">Key trends from the last {WINDOW_DAYS} days.</p>
+          <p className="text-sm text-muted-foreground mt-0.5">Key trends from the selected range.</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" className="text-xs"
@@ -185,13 +281,85 @@ export function Analytics() {
 
       <div className="space-y-6">
 
+      {/* Filters (slicers) — every chart/KPI below reacts to these */}
+      <Card className="border-0 shadow-sm">
+        <CardContent className="p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <Calendar className="h-4 w-4 text-slate-400 flex-shrink-0" />
+              <Input type="date" value={fromDate} max={toDate} onChange={(e) => setFromDate(e.target.value)} className="bg-white w-[132px] sm:w-[150px] h-8 text-xs" />
+              <span className="text-slate-400 text-sm">–</span>
+              <Input type="date" value={toDate} min={fromDate} max={todayStr()} onChange={(e) => setToDate(e.target.value)} className="bg-white w-[132px] sm:w-[150px] h-8 text-xs" />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Button variant={isToday ? "secondary" : "outline"} size="sm" className="text-xs h-8"
+                onClick={() => { setFromDate(todayStr()); setToDate(todayStr()) }}>Today</Button>
+              <Button variant="outline" size="sm" className="text-xs h-8"
+                onClick={() => { setFromDate(daysAgoStr(6)); setToDate(todayStr()) }}>7 days</Button>
+              <Button variant="outline" size="sm" className="text-xs h-8"
+                onClick={() => { setFromDate(daysAgoStr(29)); setToDate(todayStr()) }}>30 days</Button>
+            </div>
+
+            <div className="w-px h-6 bg-border mx-1 hidden sm:block" />
+
+            <Select value={orderType} onValueChange={setOrderType}>
+              <SelectTrigger className="h-8 text-xs w-[120px] bg-white"><SelectValue placeholder="Order type" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All types</SelectItem>
+                <SelectItem value="pickup">Pickup</SelectItem>
+                <SelectItem value="delivery">In-Car</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={payment} onValueChange={setPayment}>
+              <SelectTrigger className="h-8 text-xs w-[130px] bg-white"><SelectValue placeholder="Payment" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All payments</SelectItem>
+                <SelectItem value="COD">Cash</SelectItem>
+                <SelectItem value="PHONEPE">PhonePe</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={status} onValueChange={setStatus}>
+              <SelectTrigger className="h-8 text-xs w-[120px] bg-white"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All statuses</SelectItem>
+                {STATUS_FILTER_OPTIONS.map((s) => <SelectItem key={s} value={s}>{ORDER_STATUS_LABELS[s] || s}</SelectItem>)}
+              </SelectContent>
+            </Select>
+
+            {waiters.length > 0 && (
+              <Select value={waiterId} onValueChange={setWaiterId}>
+                <SelectTrigger className="h-8 text-xs w-[130px] bg-white"><SelectValue placeholder="Waiter" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All waiters</SelectItem>
+                  {waiters.map((w) => <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
+
+            <Select value={customerType} onValueChange={setCustomerType}>
+              <SelectTrigger className="h-8 text-xs w-[130px] bg-white"><SelectValue placeholder="Customer" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All customers</SelectItem>
+                <SelectItem value="new">New</SelectItem>
+                <SelectItem value="repeat">Repeat</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* KPIs */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         {kpis.map((k, i) => (
-          <Card key={k.title} className="border-0 shadow-sm anim-fade-up" style={{ animationDelay: `${i * 60}ms` }}>
+          <Card key={k.title} className="border-0 shadow-sm anim-fade-up" style={{ animationDelay: `${i * 60}ms` }} title={k.tooltip}>
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
-                <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{k.title}</p>
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wide flex items-center gap-1">
+                  {k.title}
+                  {k.tooltip && <Info className="h-3 w-3 text-slate-400" />}
+                </p>
                 <div className={`p-1.5 rounded-lg ${k.tint}-bg-subtle`}>
                   <k.icon className={`h-4 w-4 ${k.tint}-text`} />
                 </div>
@@ -202,16 +370,54 @@ export function Analytics() {
         ))}
       </div>
 
-      {/* Daily prep-time trend — is SLA compliance improving or slipping? */}
+      {loading && orders.length === 0 ? (
+        <p className="text-slate-400 text-sm text-center py-16">Loading…</p>
+      ) : filtered.length === 0 ? (
+        <p className="text-slate-400 text-sm text-center py-16">No orders match these filters</p>
+      ) : (
+      <>
+
+      {/* Orders — daily trend */}
       <Card className="border-0 shadow-sm">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-2">
-            <Timer className="h-4 w-4" /> Prep-time trend · {WINDOW_DAYS} days
+            <CalendarDays className="h-4 w-4" /> Orders · {windowDays} day{windowDays === 1 ? "" : "s"}
           </CardTitle>
         </CardHeader>
         <CardContent>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={dailyOrders} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+              <XAxis dataKey="day" tickLine={false} axisLine={false} fontSize={11} stroke="#71717a"
+                interval="preserveStartEnd" minTickGap={12} />
+              <YAxis tickLine={false} axisLine={false} fontSize={12} stroke="#71717a" width={28} allowDecimals={false} />
+              <Tooltip
+                cursor={{ fill: "rgba(255,255,255,0.04)" }}
+                contentStyle={tooltipStyle}
+                wrapperStyle={{ zIndex: 50 }}
+                formatter={(v, _n, p) => [`${v} order${v === 1 ? "" : "s"} · ${formatCurrency(p.payload.revenue)}`, "Orders"]}
+              />
+              <Bar dataKey="orders" fill="var(--brand, #f97316)" radius={[4, 4, 0, 0]} maxBarSize={28} />
+            </BarChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+
+      {/* Daily prep + total time trend — is SLA compliance improving or slipping? */}
+      <Card className="border-0 shadow-sm">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-2">
+            <Timer className="h-4 w-4" /> Prep time vs total order time · {windowDays} day{windowDays === 1 ? "" : "s"}
+          </CardTitle>
+          <p className="text-xs text-slate-400 mt-1">
+            Prep = kitchen only (PREPARING→READY) · Total = the customer's full wait (placed→COMPLETED)
+            {avgPrepAll !== null && ` · avg prep ${avgPrepAll.toFixed(1)}m`}
+            {avgTotalAll !== null && ` · avg total ${avgTotalAll.toFixed(1)}m`}
+          </p>
+        </CardHeader>
+        <CardContent>
           {timed.length === 0 ? (
-            <p className="text-slate-400 text-sm text-center py-16">No completed prep times yet</p>
+            <p className="text-slate-400 text-sm text-center py-16">No timed orders yet</p>
           ) : (
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={dailyPrepTrend} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
@@ -222,14 +428,21 @@ export function Analytics() {
                   tickFormatter={(v) => `${v}m`} />
                 <Tooltip
                   contentStyle={tooltipStyle}
-                  formatter={(v, _n, p) => v == null ? ["No orders", "Avg prep"] : [`${v.toFixed(1)}m avg · ${p.payload.breached} over SLA`, "Avg prep"]}
+                  wrapperStyle={{ zIndex: 50 }}
+                  formatter={(v, n) => {
+                    if (v == null) return ["No orders", n === "avgMin" ? "Prep" : "Total"]
+                    return [`${v.toFixed(1)}m`, n === "avgMin" ? "Avg prep" : "Avg total"]
+                  }}
                 />
+                <Legend iconType="circle" iconSize={8} formatter={(v) => (
+                  <span className="text-xs text-slate-600">{v === "avgMin" ? "Prep time" : "Total time"}</span>
+                )} />
                 <ReferenceLine y={SLA_WARN_MIN} stroke="#f59e0b" strokeDasharray="4 4"
                   label={{ value: `${SLA_WARN_MIN}m`, position: "insideTopLeft", fontSize: 10, fill: "#f59e0b" }} />
                 <ReferenceLine y={SLA_CRIT_MIN} stroke="#ef4444" strokeDasharray="4 4"
                   label={{ value: `${SLA_CRIT_MIN}m SLA`, position: "insideTopLeft", fontSize: 10, fill: "#ef4444" }} />
-                <Line type="monotone" dataKey="avgMin" stroke="var(--brand, #f97316)" strokeWidth={2} dot={false}
-                  connectNulls={false} />
+                <Line type="monotone" dataKey="avgMin" stroke="var(--brand, #f97316)" strokeWidth={2} dot={false} connectNulls={false} />
+                <Line type="monotone" dataKey="avgTotalMin" stroke="var(--brand-secondary, #7c3aed)" strokeWidth={2} dot={false} connectNulls={false} />
               </LineChart>
             </ResponsiveContainer>
           )}
@@ -241,7 +454,7 @@ export function Analytics() {
         <Card className="border-0 shadow-sm lg:col-span-2">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-2">
-              <Trophy className="h-4 w-4" /> Best-selling categories · {WINDOW_DAYS} days
+              <Trophy className="h-4 w-4" /> Best-selling categories
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -257,6 +470,7 @@ export function Analytics() {
                   <Tooltip
                     cursor={{ fill: "rgba(255,255,255,0.04)" }}
                     contentStyle={tooltipStyle}
+                    wrapperStyle={{ zIndex: 50 }}
                     formatter={(v, _n, p) => [`${v} sold · ${formatCurrency(p.payload.revenue)}`, p.payload.name]}
                   />
                   <Bar dataKey="units" radius={[0, 6, 6, 0]} maxBarSize={26}>
@@ -282,7 +496,7 @@ export function Analytics() {
                     <Cell fill="var(--brand, #f97316)" />
                     <Cell fill="#94a3b8" />
                   </Pie>
-                  <Tooltip contentStyle={tooltipStyle}
+                  <Tooltip contentStyle={tooltipStyle} wrapperStyle={{ zIndex: 50 }}
                     formatter={(value, name, entry) => [`${value} orders (${entry.payload.pct}%)`, name]} />
                   <Legend iconType="circle" iconSize={8} formatter={(v, entry) => (
                     <span className="text-xs text-slate-600">{v} · {entry.payload.pct}%</span>
@@ -299,7 +513,7 @@ export function Analytics() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide">Top items · {WINDOW_DAYS} days</CardTitle>
+            <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide">Top items</CardTitle>
           </CardHeader>
           <CardContent>
             {topItems.length === 0 ? (
@@ -327,7 +541,9 @@ export function Analytics() {
 
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide">Orders by hour · {WINDOW_DAYS} days</CardTitle>
+            <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide">
+              Orders by hour {peakHour !== null && <span className="normal-case text-slate-400 font-normal">· peak {formatHour(peakHour)}</span>}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={240}>
@@ -345,6 +561,7 @@ export function Analytics() {
                 <Tooltip
                   cursor={{ fill: "rgba(255,255,255,0.04)" }}
                   contentStyle={tooltipStyle}
+                  wrapperStyle={{ zIndex: 50 }}
                   formatter={(v) => [`${v} orders`, "Orders"]}
                   labelFormatter={(h) => formatHour(h)}
                 />
@@ -356,7 +573,7 @@ export function Analytics() {
 
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide">Avg prep time by hour · {WINDOW_DAYS} days</CardTitle>
+            <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide">Avg prep time by hour</CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={240}>
@@ -369,6 +586,7 @@ export function Analytics() {
                 <Tooltip
                   cursor={{ fill: "rgba(255,255,255,0.04)" }}
                   contentStyle={tooltipStyle}
+                  wrapperStyle={{ zIndex: 50 }}
                   formatter={(v, _n, p) => v == null ? ["No orders", "Avg prep"] : [`${v.toFixed(1)}m avg · ${p.payload.orders} order${p.payload.orders === 1 ? "" : "s"}`, "Avg prep"]}
                   labelFormatter={(h) => formatHour(h)}
                 />
@@ -385,7 +603,7 @@ export function Analytics() {
       <Card className="border-0 shadow-sm">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-2">
-            <Timer className="h-4 w-4" /> Prep-time trends · {WINDOW_DAYS} days
+            <Timer className="h-4 w-4" /> Prep-time breakdown
           </CardTitle>
           <p className="text-xs text-slate-400 mt-1">
             {avgPrepAll !== null
@@ -394,7 +612,7 @@ export function Analytics() {
           </p>
         </CardHeader>
         <CardContent>
-          {timed.length === 0 ? (
+          {prepSamples.length === 0 ? (
             <p className="text-slate-400 text-sm text-center py-16">No completed prep times yet</p>
           ) : (
             <>
@@ -410,6 +628,7 @@ export function Analytics() {
                       <Tooltip
                         cursor={{ fill: "rgba(255,255,255,0.04)" }}
                         contentStyle={tooltipStyle}
+                        wrapperStyle={{ zIndex: 50 }}
                         formatter={(v, _n, p) => [`${v.toFixed(1)}m avg · ${p.payload.orders} order${p.payload.orders === 1 ? "" : "s"}`, p.payload.name]}
                       />
                       <Bar dataKey="avgMin" radius={[0, 6, 6, 0]} maxBarSize={22}>
@@ -450,6 +669,8 @@ export function Analytics() {
           )}
         </CardContent>
       </Card>
+      </>
+      )}
       </div>
     </div>
   )

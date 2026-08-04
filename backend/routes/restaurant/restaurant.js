@@ -9,25 +9,30 @@ import supportAuth from '../../middlewares/support.auth.js';
 const restaurantRouter = express.Router();
 restaurantRouter.use(cookieParser());
 
+// The mobile ordering app's own base URL — do NOT confuse with DASHBOARD_URL
+// (used elsewhere for waiter /scan links). Same env var as payment.js's redirect
+// target, so the QR always points at the same app customers actually order from.
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5174';
+
 restaurantRouter.get('/me', restaurantAuth, async (req, res) => {
     try {
         const restaurant = await prisma.restaurant.findUnique({
             where: { id: req.restaurantId },
-            select: { id: true, name: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true },
+            select: { id: true, name: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true },
         });
         if (!restaurant) return res.status(404).json({ message: 'Restaurant not found' });
-        res.json(restaurant);
+        res.json({ ...restaurant, orderingUrl: `${FRONTEND_URL}/restaurant/${restaurant.id}` });
     } catch (err) {
         res.status(500).json({ message: 'Error fetching restaurant', error: err });
     }
 });
 
 // Restaurant edits its OWN profile/branding from the dashboard settings page.
-const FONT_KEYS = ['manrope', 'inter', 'poppins', 'playfair', 'outfit'];
+const FONT_KEYS = ['manrope', 'inter', 'poppins', 'playfair', 'spacegrotesk', 'fraunces'];
 const CARD_STYLES = ['rounded', 'sharp'];
 
 restaurantRouter.put('/me', restaurantAuth, async (req, res) => {
-    const { name, phone, address, themeColor, secondaryColor, accentColor, fontFamily, cardStyle, logoUrl, coverUrl, pickupEnabled } = req.body;
+    const { name, phone, address, themeColor, secondaryColor, accentColor, fontFamily, cardStyle, logoUrl, coverUrl, pickupEnabled, deliveryEnabled, isOpen } = req.body;
     try {
         const data = {};
         if (name !== undefined) data.name = name || null;
@@ -40,12 +45,28 @@ restaurantRouter.put('/me', restaurantAuth, async (req, res) => {
         if (cardStyle !== undefined) data.cardStyle = CARD_STYLES.includes(cardStyle) ? cardStyle : 'rounded';
         if (logoUrl !== undefined) data.logoUrl = logoUrl || null;
         if (coverUrl !== undefined) data.coverUrl = coverUrl || null;
-        if (pickupEnabled !== undefined) data.pickupEnabled = !!pickupEnabled;
+        if (isOpen !== undefined) data.isOpen = !!isOpen;
+
+        // Pickup and delivery-in-car are validated together — at least one must stay
+        // enabled, whether this request is touching one of them or both at once.
+        if (pickupEnabled !== undefined || deliveryEnabled !== undefined) {
+            const existing = await prisma.restaurant.findUnique({
+                where: { id: req.restaurantId },
+                select: { pickupEnabled: true, deliveryEnabled: true },
+            });
+            const nextPickup = pickupEnabled !== undefined ? !!pickupEnabled : existing.pickupEnabled;
+            const nextDelivery = deliveryEnabled !== undefined ? !!deliveryEnabled : existing.deliveryEnabled;
+            if (!nextPickup && !nextDelivery) {
+                return res.status(400).json({ message: 'At least one fulfilment option (pickup or delivery) must stay enabled' });
+            }
+            data.pickupEnabled = nextPickup;
+            data.deliveryEnabled = nextDelivery;
+        }
 
         const updated = await prisma.restaurant.update({
             where: { id: req.restaurantId },
             data,
-            select: { id: true, name: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true },
+            select: { id: true, name: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true },
         });
         res.json(updated);
     } catch (err) {

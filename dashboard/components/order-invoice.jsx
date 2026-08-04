@@ -47,7 +47,7 @@ function InvoiceBody({ order, className }) {
 
       {/* Meta */}
       <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, marginBottom: 12 }}>
-        <Row label="Invoice" value={`#${order.id}`} />
+        <Row label="Invoice" value={`#${order.dailyOrderNumber ?? order.id}`} />
         <Row label="Date" value={new Date(order.createdAt).toLocaleString()} />
         <Row label="Customer" value={customer} />
         <Row label="Phone" value={phone} />
@@ -119,7 +119,7 @@ export function OrderInvoice({ order }) {
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-sm">
-        <DialogHeader><DialogTitle>Invoice · Order #{order.id}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>Invoice · Order #{order.dailyOrderNumber ?? order.id}</DialogTitle></DialogHeader>
 
         <InvoiceBody order={order} />
 

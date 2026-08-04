@@ -25,3 +25,14 @@ export function prepMinutes(order) {
   if (!start || !end || end < start) return null
   return (end - start) / 60000
 }
+
+// Minutes from order creation to COMPLETED — the customer's actual wait, not
+// just the kitchen's PREPARING→READY window. Only meaningful once an order is
+// actually done, so null for anything still in flight.
+export function totalMinutes(order) {
+  if (order.status !== "COMPLETED") return null
+  const start = new Date(order.createdAt).getTime()
+  const end = historyTime(order, "COMPLETED")
+  if (!start || !end || end < start) return null
+  return (end - start) / 60000
+}

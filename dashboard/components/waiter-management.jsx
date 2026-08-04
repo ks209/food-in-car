@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { UserPlus, QrCode, Copy, Power, Users } from "lucide-react"
+import { UserPlus, QrCode, Copy, Power, Users, Trash2, RotateCcw, History } from "lucide-react"
 import { QRCodeSVG } from "qrcode.react"
 import { toast } from "sonner"
 import axios from "axios"
@@ -19,6 +19,9 @@ export function WaiterManagement() {
   const [name, setName] = useState("")
   const [phone, setPhone] = useState("")
   const [tokenInfo, setTokenInfo] = useState(null) // { waiter, scanUrl }
+  const [deletedOpen, setDeletedOpen] = useState(false)
+  const [deletedWaiters, setDeletedWaiters] = useState([])
+  const [deletedLoading, setDeletedLoading] = useState(false)
 
   const fetchWaiters = async () => {
     setLoading(true)
@@ -29,6 +32,18 @@ export function WaiterManagement() {
       toast.error("Failed to load waiters")
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchDeletedWaiters = async () => {
+    setDeletedLoading(true)
+    try {
+      const res = await axios.get(`${API}/api/waiter`, { params: { deleted: true }, withCredentials: true })
+      setDeletedWaiters(res.data)
+    } catch {
+      toast.error("Failed to load deleted waiters")
+    } finally {
+      setDeletedLoading(false)
     }
   }
 
@@ -54,6 +69,33 @@ export function WaiterManagement() {
     } catch {
       toast.error("Failed to update waiter")
     }
+  }
+
+  const deleteWaiter = async (w) => {
+    if (!window.confirm(`Delete ${w.name}? Their delivery history is kept, and you can restore them later.`)) return
+    try {
+      await axios.delete(`${API}/api/waiter/${w.id}`, { withCredentials: true })
+      toast.success("Waiter deleted")
+      fetchWaiters()
+    } catch {
+      toast.error("Failed to delete waiter")
+    }
+  }
+
+  const restoreWaiter = async (w) => {
+    try {
+      await axios.post(`${API}/api/waiter/${w.id}/restore`, {}, { withCredentials: true })
+      toast.success("Waiter restored")
+      fetchDeletedWaiters()
+      fetchWaiters()
+    } catch {
+      toast.error("Failed to restore waiter")
+    }
+  }
+
+  const openDeleted = () => {
+    setDeletedOpen(true)
+    fetchDeletedWaiters()
   }
 
   const generateToken = async (w) => {
@@ -92,10 +134,13 @@ export function WaiterManagement() {
 
       {/* Waiter list */}
       <Card className="border-0 shadow-sm">
-        <CardHeader className="pb-3">
+        <CardHeader className="pb-3 flex items-center justify-between">
           <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-2">
             <Users className="h-4 w-4" /> Waiters
           </CardTitle>
+          <button onClick={openDeleted} className="text-xs text-slate-400 hover:text-slate-700 inline-flex items-center gap-1">
+            <History className="h-3.5 w-3.5" /> Deleted waiters
+          </button>
         </CardHeader>
         <CardContent className="p-0">
           {loading && waiters.length === 0 ? (
@@ -124,6 +169,10 @@ export function WaiterManagement() {
                       onClick={() => toggleActive(w)}>
                       <Power className="h-3.5 w-3.5 mr-1" /> {w.isActive ? "Deactivate" : "Activate"}
                     </Button>
+                    <Button size="sm" variant="ghost" className="text-xs text-slate-400 hover:text-red-500"
+                      onClick={() => deleteWaiter(w)}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -131,6 +180,34 @@ export function WaiterManagement() {
           )}
         </CardContent>
       </Card>
+
+      {/* Deleted waiters — restore */}
+      <Dialog open={deletedOpen} onOpenChange={setDeletedOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Deleted waiters</DialogTitle></DialogHeader>
+          {deletedLoading ? (
+            <p className="text-sm text-slate-400 text-center py-6">Loading…</p>
+          ) : deletedWaiters.length === 0 ? (
+            <p className="text-sm text-slate-400 text-center py-6">No deleted waiters.</p>
+          ) : (
+            <div className="divide-y divide-slate-50 -mx-6">
+              {deletedWaiters.map((w) => (
+                <div key={w.id} className="flex items-center justify-between gap-2 px-6 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-800 truncate">{w.name}</p>
+                    <p className="text-xs text-slate-400">
+                      {w.phone ? `${w.phone} · ` : ""}{w.deliveredCount} delivered
+                    </p>
+                  </div>
+                  <Button size="sm" variant="outline" className="text-xs flex-shrink-0" onClick={() => restoreWaiter(w)}>
+                    <RotateCcw className="h-3.5 w-3.5 mr-1" /> Restore
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Scan link dialog */}
       <Dialog open={!!tokenInfo} onOpenChange={(o) => !o && setTokenInfo(null)}>

@@ -6,11 +6,12 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
-import { Loader2, Store, Car, Paintbrush } from "lucide-react"
+import { Loader2, Store, Car, Paintbrush, Power } from "lucide-react"
 import Link from "next/link"
 import { toast } from "sonner"
 import axios from "axios"
 import { API } from "@/lib/api"
+import { QrDownloadCard } from "@/components/qr-download"
 
 export function RestaurantSettings() {
   const [form, setForm] = useState(null)
@@ -27,6 +28,8 @@ export function RestaurantSettings() {
           address: r.data.address || "",
           logoUrl: r.data.logoUrl || "",
           pickupEnabled: r.data.pickupEnabled ?? false,
+          deliveryEnabled: r.data.deliveryEnabled ?? true,
+          isOpen: r.data.isOpen ?? true,
           username: r.data.username,
           domain: r.data.domain,
         }
@@ -51,13 +54,15 @@ export function RestaurantSettings() {
           address: form.address,
           logoUrl: form.logoUrl,
           pickupEnabled: form.pickupEnabled,
+          deliveryEnabled: form.deliveryEnabled,
+          isOpen: form.isOpen,
         },
         { withCredentials: true }
       )
       setOriginal(form)
       toast.success("Settings saved")
-    } catch {
-      toast.error("Failed to save settings")
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to save settings")
     } finally {
       setSaving(false)
     }
@@ -127,25 +132,68 @@ export function RestaurantSettings() {
           <Card className="border-0">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-2">
-                <Car className="h-4 w-4" /> Fulfilment
+                <Power className="h-4 w-4" /> Shop status
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-start justify-between gap-4">
                 <div className="space-y-0.5">
-                  <Label className="text-sm">Allow pickup orders</Label>
+                  <Label className="text-sm">{form.isOpen ? "Open for orders" : "Closed"}</Label>
                   <p className="text-xs text-muted-foreground">
-                    When on, customers can choose “Pickup” and skip the vehicle number. When off, a vehicle number is required on every order.
+                    When closed, customers see “Restaurant is currently closed” and can’t place new orders. The dashboard stays accessible so you can finish existing orders.
                   </p>
                 </div>
                 <Switch
-                  checked={form.pickupEnabled}
-                  onCheckedChange={(v) => setField("pickupEnabled", v)}
+                  checked={form.isOpen}
+                  onCheckedChange={(v) => setField("isOpen", v)}
                   className="mt-0.5 flex-shrink-0"
                 />
               </div>
             </CardContent>
           </Card>
+
+          <Card className="border-0">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-2">
+                <Car className="h-4 w-4" /> Fulfilment
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-0.5">
+                  <Label className="text-sm">Pickup</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Customers can choose “Pickup” and skip the vehicle number.
+                  </p>
+                </div>
+                <Switch
+                  checked={form.pickupEnabled}
+                  onCheckedChange={(v) => setField("pickupEnabled", v)}
+                  disabled={form.pickupEnabled && !form.deliveryEnabled}
+                  className="mt-0.5 flex-shrink-0"
+                />
+              </div>
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-0.5">
+                  <Label className="text-sm">Delivery in car</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Customers can order to their parked car with a vehicle number.
+                  </p>
+                </div>
+                <Switch
+                  checked={form.deliveryEnabled}
+                  onCheckedChange={(v) => setField("deliveryEnabled", v)}
+                  disabled={form.deliveryEnabled && !form.pickupEnabled}
+                  className="mt-0.5 flex-shrink-0"
+                />
+              </div>
+              {!form.pickupEnabled && !form.deliveryEnabled && (
+                <p className="text-xs text-red-500">At least one fulfilment option must stay enabled.</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <QrDownloadCard />
 
         </div>
 

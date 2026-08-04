@@ -11,11 +11,14 @@ const waiterRouter = express.Router();
 // missing value fails loudly instead of silently depending on NODE_ENV.
 const DASHBOARD_URL = process.env.DASHBOARD_URL || null;
 
-// List a restaurant's waiters with how many orders each has delivered
+// List a restaurant's waiters with how many orders each has delivered.
+// Soft-deleted waiters are hidden by default — pass ?deleted=true to list
+// only those (for the restore UI) instead.
 waiterRouter.get('/', restaurantAuth, async (req, res) => {
   try {
+    const wantDeleted = req.query.deleted === 'true';
     const waiters = await prisma.waiter.findMany({
-      where: { restaurantId: req.restaurantId },
+      where: { restaurantId: req.restaurantId, deletedAt: wantDeleted ? { not: null } : null },
       include: { _count: { select: { orders: true } } },
       orderBy: { createdAt: 'desc' },
     });
@@ -43,7 +46,7 @@ waiterRouter.post('/', restaurantAuth, async (req, res) => {
 waiterRouter.put('/:id', restaurantAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const existing = await prisma.waiter.findFirst({ where: { id, restaurantId: req.restaurantId } });
+    const existing = await prisma.waiter.findFirst({ where: { id, restaurantId: req.restaurantId, deletedAt: null } });
     if (!existing) return res.status(404).json({ error: 'Waiter not found' });
 
     const { name, phone, isActive } = req.body;
@@ -61,11 +64,41 @@ waiterRouter.put('/:id', restaurantAuth, async (req, res) => {
   }
 });
 
+// Soft delete — hides the waiter from the UI and blocks new scan tokens, but
+// keeps the row (and every order's waiterId/history) intact so past delivery
+// attribution is preserved. Reversible via /restore.
+waiterRouter.delete('/:id', restaurantAuth, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const existing = await prisma.waiter.findFirst({ where: { id, restaurantId: req.restaurantId, deletedAt: null } });
+    if (!existing) return res.status(404).json({ error: 'Waiter not found' });
+
+    await prisma.waiter.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } });
+    res.json({ message: 'Waiter deleted' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete waiter', details: error.message });
+  }
+});
+
+// Restore a soft-deleted waiter (stays inactive — restaurant re-activates explicitly)
+waiterRouter.post('/:id/restore', restaurantAuth, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const existing = await prisma.waiter.findFirst({ where: { id, restaurantId: req.restaurantId, deletedAt: { not: null } } });
+    if (!existing) return res.status(404).json({ error: 'Deleted waiter not found' });
+
+    const waiter = await prisma.waiter.update({ where: { id }, data: { deletedAt: null } });
+    res.json(waiter);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to restore waiter', details: error.message });
+  }
+});
+
 // Mint a 1-day scan token + link for a waiter
 waiterRouter.post('/:id/token', restaurantAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const waiter = await prisma.waiter.findFirst({ where: { id, restaurantId: req.restaurantId } });
+    const waiter = await prisma.waiter.findFirst({ where: { id, restaurantId: req.restaurantId, deletedAt: null } });
     if (!waiter) return res.status(404).json({ error: 'Waiter not found' });
     if (!waiter.isActive) return res.status(400).json({ error: 'Waiter is inactive' });
 
