@@ -18,7 +18,7 @@ restaurantRouter.get('/me', restaurantAuth, async (req, res) => {
     try {
         const restaurant = await prisma.restaurant.findUnique({
             where: { id: req.restaurantId },
-            select: { id: true, name: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true },
+            select: { id: true, name: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true },
         });
         if (!restaurant) return res.status(404).json({ message: 'Restaurant not found' });
         res.json({ ...restaurant, orderingUrl: `${FRONTEND_URL}/restaurant/${restaurant.id}` });
@@ -32,7 +32,7 @@ const FONT_KEYS = ['manrope', 'inter', 'poppins', 'playfair', 'spacegrotesk', 'f
 const CARD_STYLES = ['rounded', 'sharp'];
 
 restaurantRouter.put('/me', restaurantAuth, async (req, res) => {
-    const { name, phone, address, themeColor, secondaryColor, accentColor, fontFamily, cardStyle, logoUrl, coverUrl, pickupEnabled, deliveryEnabled, isOpen } = req.body;
+    const { name, phone, address, themeColor, secondaryColor, accentColor, fontFamily, cardStyle, logoUrl, coverUrl, pickupEnabled, deliveryEnabled, isOpen, slaWarnMinutes, slaCritMinutes } = req.body;
     try {
         const data = {};
         if (name !== undefined) data.name = name || null;
@@ -46,6 +46,25 @@ restaurantRouter.put('/me', restaurantAuth, async (req, res) => {
         if (logoUrl !== undefined) data.logoUrl = logoUrl || null;
         if (coverUrl !== undefined) data.coverUrl = coverUrl || null;
         if (isOpen !== undefined) data.isOpen = !!isOpen;
+
+        // Kitchen SLA thresholds — validated together (like fulfilment) so a
+        // request touching only one can't leave warn >= crit.
+        if (slaWarnMinutes !== undefined || slaCritMinutes !== undefined) {
+            const existing = await prisma.restaurant.findUnique({
+                where: { id: req.restaurantId },
+                select: { slaWarnMinutes: true, slaCritMinutes: true },
+            });
+            const nextWarn = slaWarnMinutes !== undefined ? parseInt(slaWarnMinutes) : existing.slaWarnMinutes;
+            const nextCrit = slaCritMinutes !== undefined ? parseInt(slaCritMinutes) : existing.slaCritMinutes;
+            if (!Number.isInteger(nextWarn) || !Number.isInteger(nextCrit) || nextWarn < 1 || nextCrit < 1) {
+                return res.status(400).json({ message: 'SLA thresholds must be positive whole numbers of minutes' });
+            }
+            if (nextWarn >= nextCrit) {
+                return res.status(400).json({ message: 'The warning threshold must be less than the critical threshold' });
+            }
+            data.slaWarnMinutes = nextWarn;
+            data.slaCritMinutes = nextCrit;
+        }
 
         // Pickup and delivery-in-car are validated together — at least one must stay
         // enabled, whether this request is touching one of them or both at once.
@@ -66,7 +85,7 @@ restaurantRouter.put('/me', restaurantAuth, async (req, res) => {
         const updated = await prisma.restaurant.update({
             where: { id: req.restaurantId },
             data,
-            select: { id: true, name: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true },
+            select: { id: true, name: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true },
         });
         res.json(updated);
     } catch (err) {

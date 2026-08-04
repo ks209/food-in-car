@@ -1,7 +1,13 @@
 export const CHART_TOOLTIP_STYLE = {
-  background: "#1c1c1f", border: "1px solid rgba(255,255,255,0.1)",
+  background: "#1c1c1f", border: "1px solid rgba(255,255,255,0.16)",
   borderRadius: 10, color: "#fafafa", fontSize: 12,
+  boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
 }
+
+// Pair with every <Tooltip contentStyle={CHART_TOOLTIP_STYLE} .../> — lifts it
+// above any other stacked/positioned element on the page (sidebar, dialogs,
+// sticky headers) that might otherwise sit on top of it.
+export const CHART_TOOLTIP_WRAPPER_STYLE = { zIndex: 200 }
 
 export function formatCurrency(value) {
   return `₹${Math.round(value).toLocaleString("en-IN")}`

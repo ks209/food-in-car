@@ -30,6 +30,10 @@ model Restaurant {
   pickupEnabled  Boolean     @default(false)
   deliveryEnabled Boolean    @default(true)
   isOpen         Boolean     @default(true)
+  // Kitchen SLA thresholds (minutes) — Analytics + Kitchen Display flag a
+  // PREPARING order "slow" past slaWarnMinutes and "over SLA" past slaCritMinutes.
+  slaWarnMinutes Int         @default(8)
+  slaCritMinutes Int         @default(15)
   refreshToken   String?
   menu           MenuItem[]
   orders         Order[]
