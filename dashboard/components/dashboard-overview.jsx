@@ -2,49 +2,53 @@
 
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { ShoppingBag, IndianRupee, Clock, ChefHat, ArrowUp, ArrowDown, Minus } from "lucide-react"
+import { ShoppingBag, IndianRupee, Timer, ChefHat, ArrowUp, ArrowDown, Minus } from "lucide-react"
 import {
-  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
+  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
 } from "recharts"
 import axios from "axios"
 import Link from "next/link"
 
 import { API } from "@/lib/api"
-import { CHART_TOOLTIP_STYLE, formatCurrency } from "@/lib/format"
+import { CHART_TOOLTIP_STYLE, CHART_TOOLTIP_WRAPPER_STYLE, formatCurrency } from "@/lib/format"
 import { ORDER_STATUS_COLORS, ORDER_STATUS_LABELS } from "@/lib/status"
+import { totalMinutes } from "@/lib/sla"
 import { StatusDot } from "@/components/ui/status-dot"
 
 // Only COMPLETED orders are real revenue — cancelled/not-fulfilled/in-flight orders don't count
 const REVENUE_STATES = ["COMPLETED"]
-const ACTIVE_STATES = ["PENDING", "PAID", "PREPARING", "READY"]
 const DAY_MS = 24 * 60 * 60 * 1000
 const RECENT_ORDERS_LIMIT = 12
 
-// The status an order had at a given point in time, reconstructed from its
-// history — lets "Active Orders" compare against a real snapshot of yesterday
-// instead of just today's raw counts (which wouldn't mean much for a live gauge).
-function statusAt(order, timestamp) {
-  const history = [...(order.orderStatusHistory || [])].sort((a, b) => new Date(a.updatedAt) - new Date(b.updatedAt))
-  let status = null
-  for (const h of history) {
-    if (new Date(h.updatedAt).getTime() > timestamp) break
-    status = h.status
-  }
-  return status
+function formatMinutes(mins) {
+  if (mins == null) return "—"
+  if (mins < 60) return `${mins.toFixed(0)}m`
+  const h = Math.floor(mins / 60)
+  const m = Math.round(mins % 60)
+  return `${h}h ${m}m`
 }
 
-// null = nothing to compare (both zero); Infinity = went from zero to something ("New")
+function avg(samples) {
+  return samples.length ? samples.reduce((s, v) => s + v, 0) / samples.length : null
+}
+
+// null = no comparison possible (missing data, or both zero); Infinity = went
+// from zero/nothing to something ("New")
 function pctChange(current, previous) {
+  if (current == null || previous == null) return null
   if (previous === 0) return current === 0 ? null : Infinity
   return ((current - previous) / previous) * 100
 }
 
-function ChangeBadge({ current, previous }) {
+// `invert`: for metrics where going DOWN is the good direction (e.g. a
+// completion-time average) — the arrow still shows the real trend, only the
+// color flips.
+function ChangeBadge({ current, previous, invert = false }) {
   const change = pctChange(current, previous)
   if (change === null) return null
   if (change === Infinity) {
     return (
-      <span className="inline-flex items-center gap-0.5 text-xs font-semibold text-emerald-600">
+      <span className={`inline-flex items-center gap-0.5 text-xs font-semibold ${invert ? "text-red-500" : "text-emerald-600"}`}>
         <ArrowUp className="h-3 w-3" /> New
       </span>
     )
@@ -58,9 +62,10 @@ function ChangeBadge({ current, previous }) {
     )
   }
   const positive = rounded > 0
+  const good = invert ? !positive : positive
   const Icon = positive ? ArrowUp : ArrowDown
   return (
-    <span className={`inline-flex items-center gap-0.5 text-xs font-semibold ${positive ? "text-emerald-600" : "text-red-500"}`}>
+    <span className={`inline-flex items-center gap-0.5 text-xs font-semibold ${good ? "text-emerald-600" : "text-red-500"}`}>
       <Icon className="h-3 w-3" /> {Math.abs(rounded)}%
     </span>
   )
@@ -87,12 +92,11 @@ export function DashboardOverview() {
   const revenueToday = todayOrders.filter((o) => REVENUE_STATES.includes(o.status)).reduce((sum, o) => sum + o.totalAmount, 0)
   const revenueYesterday = yesterdayOrders.filter((o) => REVENUE_STATES.includes(o.status)).reduce((sum, o) => sum + o.totalAmount, 0)
 
-  const activeOrders = orders.filter((o) => ACTIVE_STATES.includes(o.status)).length
-  // Orders that existed yesterday at this same moment, and were active then
-  const activeOrdersYesterday = orders.filter((o) => {
-    if (new Date(o.createdAt).getTime() > yesterdayMoment) return false
-    return ACTIVE_STATES.includes(statusAt(o, yesterdayMoment))
-  }).length
+  // Avg time from order placed to COMPLETED — the customer's actual wait,
+  // a far more actionable number on a day-to-day basis than a live "orders
+  // currently in flight" gauge (which swings with volume, not performance).
+  const completionToday = avg(todayOrders.map(totalMinutes).filter((m) => m != null))
+  const completionYesterday = avg(yesterdayOrders.map(totalMinutes).filter((m) => m != null))
 
   // Exclude soft-deleted items (isActive === false); split the rest by availability
   const liveItems = menuItems.filter((m) => m.isActive !== false)
@@ -105,7 +109,8 @@ export function DashboardOverview() {
   const stats = [
     { title: "Orders Today", value: todayOrders.length, icon: ShoppingBag, tint: "brand", current: todayOrders.length, previous: yesterdayOrders.length },
     { title: "Revenue Today", value: formatCurrency(revenueToday), icon: IndianRupee, tint: "brand-secondary", current: revenueToday, previous: revenueYesterday },
-    { title: "Active Orders", value: activeOrders, icon: Clock, tint: "brand-accent", current: activeOrders, previous: activeOrdersYesterday },
+    { title: "Avg Completion Time", value: formatMinutes(completionToday), icon: Timer, tint: "brand-accent",
+      current: completionToday, previous: completionYesterday, invert: true },
     { title: "Menu Items", value: liveItems.length, icon: ChefHat, tint: "brand",
       sub: `${activeItems} active · ${inactiveItems} inactive`, current: liveItems.length, previous: liveItemsYesterday },
   ]
@@ -124,21 +129,21 @@ export function DashboardOverview() {
   return (
     <div className="space-y-6">
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {stats.map((stat, i) => (
           <Card key={stat.title} className="border-0 shadow-sm anim-fade-up" style={{ animationDelay: `${i * 60}ms` }}>
-            <CardContent className="p-5">
+            <CardContent className="p-3.5">
               <div className="flex items-start justify-between">
                 <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{stat.title}</p>
-                <div className={`p-1.5 rounded-lg ${stat.tint}-bg-subtle`}>
-                  <stat.icon className={`h-4 w-4 ${stat.tint}-text`} />
+                <div className={`p-1 rounded-lg ${stat.tint}-bg-subtle`}>
+                  <stat.icon className={`h-3.5 w-3.5 ${stat.tint}-text`} />
                 </div>
               </div>
-              <div className="flex items-baseline gap-2 mt-2">
-                <p className="text-2xl font-bold text-slate-900">{stat.value}</p>
-                <ChangeBadge current={stat.current} previous={stat.previous} />
+              <div className="flex items-baseline gap-2 mt-1.5">
+                <p className="text-xl font-bold text-slate-900">{stat.value}</p>
+                <ChangeBadge current={stat.current} previous={stat.previous} invert={stat.invert} />
               </div>
-              <p className="text-xs text-slate-400 mt-1">{stat.sub || "vs. yesterday"}</p>
+              <p className="text-xs text-slate-400 mt-0.5">{stat.sub || "vs. yesterday"}</p>
             </CardContent>
           </Card>
         ))}
@@ -150,12 +155,12 @@ export function DashboardOverview() {
           <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide">Revenue · last 15 days</CardTitle>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={revenue15d} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
+          <ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={revenue15d} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
               <defs>
                 <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="var(--brand, #f97316)" stopOpacity={1} />
-                  <stop offset="100%" stopColor="var(--brand-secondary, #7c3aed)" stopOpacity={0.75} />
+                  <stop offset="0%" stopColor="var(--brand, #f97316)" stopOpacity={0.55} />
+                  <stop offset="100%" stopColor="var(--brand, #f97316)" stopOpacity={0.03} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
@@ -163,10 +168,11 @@ export function DashboardOverview() {
                 interval="preserveStartEnd" minTickGap={12} />
               <YAxis tickLine={false} axisLine={false} fontSize={12} stroke="#71717a" width={54}
                 tickFormatter={(v) => formatCurrency(v)} />
-              <Tooltip formatter={(v) => [formatCurrency(v), "Revenue"]} cursor={{ fill: "rgba(255,255,255,0.04)" }}
-                contentStyle={CHART_TOOLTIP_STYLE} />
-              <Bar dataKey="revenue" fill="url(#revenueGradient)" radius={[6, 6, 0, 0]} maxBarSize={48} />
-            </BarChart>
+              <Tooltip formatter={(v) => [formatCurrency(v), "Revenue"]} cursor={{ stroke: "var(--brand, #f97316)", strokeWidth: 1, strokeDasharray: "4 4" }}
+                contentStyle={CHART_TOOLTIP_STYLE} wrapperStyle={CHART_TOOLTIP_WRAPPER_STYLE} />
+              <Area type="monotone" dataKey="revenue" stroke="var(--brand, #f97316)" strokeWidth={2.5}
+                fill="url(#revenueGradient)" dot={false} activeDot={{ r: 4 }} />
+            </AreaChart>
           </ResponsiveContainer>
         </CardContent>
       </Card>

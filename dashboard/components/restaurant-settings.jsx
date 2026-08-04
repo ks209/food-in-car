@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
-import { Loader2, Store, Car, Paintbrush, Power, AlertCircle } from "lucide-react"
+import { Loader2, Store, Car, Paintbrush, Power, AlertCircle, Timer } from "lucide-react"
 import Link from "next/link"
 import { toast } from "sonner"
 import axios from "axios"
@@ -31,6 +31,8 @@ export function RestaurantSettings() {
           pickupEnabled: r.data.pickupEnabled ?? false,
           deliveryEnabled: r.data.deliveryEnabled ?? true,
           isOpen: r.data.isOpen ?? true,
+          slaWarnMinutes: r.data.slaWarnMinutes ?? 8,
+          slaCritMinutes: r.data.slaCritMinutes ?? 15,
           username: r.data.username,
           domain: r.data.domain,
         }
@@ -75,21 +77,22 @@ export function RestaurantSettings() {
   }
 
   // Shop status + fulfilment save themselves instantly (see saveInstant) — this
-  // bar is only ever for the profile text fields now.
+  // bar covers the profile text fields plus the SLA minute inputs (typing a
+  // number needs an explicit save, unlike a switch flip).
   const handleSave = async () => {
+    if (!slaValid) { toast.error("The warning threshold must be less than the critical threshold"); return }
     setSaving(true)
     try {
-      await axios.put(
-        `${API}/api/restaurant/me`,
-        {
-          name: form.name,
-          phone: form.phone,
-          address: form.address,
-          logoUrl: form.logoUrl,
-        },
-        { withCredentials: true }
-      )
-      setOriginal((o) => ({ ...o, name: form.name, phone: form.phone, address: form.address, logoUrl: form.logoUrl }))
+      const payload = {
+        name: form.name,
+        phone: form.phone,
+        address: form.address,
+        logoUrl: form.logoUrl,
+        slaWarnMinutes: Number(form.slaWarnMinutes),
+        slaCritMinutes: Number(form.slaCritMinutes),
+      }
+      await axios.put(`${API}/api/restaurant/me`, payload, { withCredentials: true })
+      setOriginal((o) => ({ ...o, ...payload }))
       toast.success("Settings saved")
     } catch (err) {
       toast.error(err?.response?.data?.message || "Failed to save settings")
@@ -109,6 +112,7 @@ export function RestaurantSettings() {
   }
 
   const initial = (form.name || form.username || "R")[0].toUpperCase()
+  const slaValid = Number(form.slaWarnMinutes) >= 1 && Number(form.slaCritMinutes) >= 1 && Number(form.slaWarnMinutes) < Number(form.slaCritMinutes)
 
   return (
     <div className="max-w-5xl">
@@ -230,6 +234,40 @@ export function RestaurantSettings() {
             </CardContent>
           </Card>
 
+          <Card className="border-0">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-2">
+                <Timer className="h-4 w-4" /> Kitchen SLA
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-xs text-muted-foreground -mt-1">
+                How long an order can sit in "Preparing" before Kitchen Display and Analytics flag it as slow or over SLA.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Warning after</Label>
+                  <div className="relative">
+                    <Input type="number" min={1} value={form.slaWarnMinutes}
+                      onChange={(e) => setField("slaWarnMinutes", e.target.value)} className="pr-12" />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">min</span>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Over SLA after</Label>
+                  <div className="relative">
+                    <Input type="number" min={1} value={form.slaCritMinutes}
+                      onChange={(e) => setField("slaCritMinutes", e.target.value)} className="pr-12" />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">min</span>
+                  </div>
+                </div>
+              </div>
+              {!slaValid && (
+                <p className="text-xs text-red-500">The warning threshold must be less than the critical threshold.</p>
+              )}
+            </CardContent>
+          </Card>
+
           <QrDownloadCard />
 
         </div>
@@ -285,7 +323,7 @@ export function RestaurantSettings() {
             <Button variant="outline" size="sm" className="bg-transparent border-amber-950/30 text-amber-950 hover:bg-amber-600/20" onClick={handleReset} disabled={saving}>
               Discard
             </Button>
-            <Button size="sm" className="bg-amber-950 text-white hover:bg-amber-900 min-w-28" onClick={handleSave} disabled={saving}>
+            <Button size="sm" className="bg-amber-950 text-white hover:bg-amber-900 min-w-28" onClick={handleSave} disabled={saving || !slaValid}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save changes"}
             </Button>
           </div>

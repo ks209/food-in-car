@@ -1,14 +1,14 @@
 // Kitchen SLA thresholds — minutes an order can sit in PREPARING before it's
-// flagged. Shared by the Kitchen Display's live timers and the Analytics
-// prep-time trends so both agree on what "late" means.
+// flagged. Configurable per restaurant (Settings → Kitchen SLA); these are
+// only the fallback used before that restaurant data has loaded.
 export const SLA_WARN_MIN = 8
 export const SLA_CRIT_MIN = 15
 
 export const SLA_COLORS = { ok: "#94a3b8", warn: "#f59e0b", crit: "#ef4444" }
 
-export function slaColor(minutes) {
-  if (minutes >= SLA_CRIT_MIN) return SLA_COLORS.crit
-  if (minutes >= SLA_WARN_MIN) return SLA_COLORS.warn
+export function slaColor(minutes, warnMin = SLA_WARN_MIN, critMin = SLA_CRIT_MIN) {
+  if (minutes >= critMin) return SLA_COLORS.crit
+  if (minutes >= warnMin) return SLA_COLORS.warn
   return SLA_COLORS.ok
 }
 

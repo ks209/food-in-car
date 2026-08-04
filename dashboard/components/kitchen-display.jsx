@@ -9,8 +9,9 @@ import axios from "axios"
 
 import { API } from "@/lib/api"
 import { useOrders } from "@/lib/orders-context"
+import { useRestaurant } from "@/lib/restaurant-context"
 import { StatusDot } from "@/components/ui/status-dot"
-import { SLA_CRIT_MIN, slaColor, historyTime, prepMinutes } from "@/lib/sla"
+import { SLA_WARN_MIN, SLA_CRIT_MIN, slaColor, historyTime, prepMinutes } from "@/lib/sla"
 
 function elapsedLabel(ms) {
   const totalSec = Math.max(0, Math.floor(ms / 1000))
@@ -25,6 +26,9 @@ function itemsLine(order) {
 
 export function KitchenDisplay() {
   const { orders, refetch, playSlaAlert, patchOrder } = useOrders()
+  const restaurant = useRestaurant()
+  const slaWarnMin = restaurant?.slaWarnMinutes ?? SLA_WARN_MIN
+  const slaCritMin = restaurant?.slaCritMinutes ?? SLA_CRIT_MIN
   const [now, setNow] = useState(() => Date.now())
   const alertedIdsRef = useRef(new Set()) // order ids we've already sounded the SLA alarm for
 
@@ -78,12 +82,12 @@ export function KitchenDisplay() {
     }
     preparing.forEach(({ o, startedAt }) => {
       const mins = (now - startedAt) / 60000
-      if (mins >= SLA_CRIT_MIN && !alertedIdsRef.current.has(o.id)) {
+      if (mins >= slaCritMin && !alertedIdsRef.current.has(o.id)) {
         alertedIdsRef.current.add(o.id)
         playSlaAlert()
       }
     })
-  }, [now, preparing, playSlaAlert])
+  }, [now, preparing, playSlaAlert, slaCritMin])
 
   const stats = [
     { title: "Up Next", value: queued.length, icon: Clock, tint: "brand-secondary" },
@@ -169,8 +173,8 @@ export function KitchenDisplay() {
               preparing.map(({ o: order, startedAt }) => {
                 const elapsedMs = now - startedAt
                 const mins = elapsedMs / 60000
-                const urgency = slaColor(mins)
-                const isCritical = mins >= SLA_CRIT_MIN
+                const urgency = slaColor(mins, slaWarnMin, slaCritMin)
+                const isCritical = mins >= slaCritMin
                 return (
                   <div key={order.id} className={`rounded-xl border p-4 space-y-3 bg-white ${
                     isCritical ? "border-red-300 kds-critical-pulse" : "border-slate-200"

@@ -14,10 +14,11 @@ import {
 } from "recharts"
 import axios from "axios"
 import { API } from "@/lib/api"
-import { CHART_TOOLTIP_STYLE as tooltipStyle, formatCurrency, formatHour, toLocalDateStr, todayStr, daysAgoStr, localDateRange } from "@/lib/format"
+import { CHART_TOOLTIP_STYLE as tooltipStyle, CHART_TOOLTIP_WRAPPER_STYLE as tooltipWrapperStyle, formatCurrency, formatHour, toLocalDateStr, todayStr, daysAgoStr, localDateRange } from "@/lib/format"
 import { CHART_CATEGORY_COLORS } from "@/lib/chart-colors"
 import { SLA_WARN_MIN, SLA_CRIT_MIN, slaColor, prepMinutes, totalMinutes } from "@/lib/sla"
 import { ORDER_STATUS_LABELS } from "@/lib/status"
+import { useRestaurant } from "@/lib/restaurant-context"
 import { StatusDot } from "@/components/ui/status-dot"
 import { Button } from "@/components/ui/button"
 import { downloadCsv } from "@/lib/export"
@@ -30,6 +31,10 @@ const STATUS_FILTER_OPTIONS = ["PENDING", "PAID", "PREPARING", "READY", "COMPLET
 const customerKey = (o) => o.user?.id ?? o.guestName ?? o.id
 
 export function Analytics() {
+  const restaurant = useRestaurant()
+  const slaWarnMin = restaurant?.slaWarnMinutes ?? SLA_WARN_MIN
+  const slaCritMin = restaurant?.slaCritMinutes ?? SLA_CRIT_MIN
+
   const [orders, setOrders] = useState([])
   const [menu, setMenu] = useState([])
   const [waiters, setWaiters] = useState([])
@@ -128,7 +133,7 @@ export function Analytics() {
     { title: "Cancellation Rate", value: cancellationRate !== null ? `${cancellationRate}%` : "—", icon: XCircle, tint: "brand-accent" },
   ]
 
-  // ── Best-selling categories, by units sold ───────────────────────────────────
+  // ── Best-selling categories, by revenue ──────────────────────────────────────
   const catAgg = {}
   sold.forEach((o) =>
     (o.orderItems || []).forEach((it) => {
@@ -140,7 +145,7 @@ export function Analytics() {
       catAgg[cat].revenue += rev
     })
   )
-  const topCategories = Object.values(catAgg).sort((a, b) => b.units - a.units).slice(0, 8)
+  const topCategories = Object.values(catAgg).sort((a, b) => b.revenue - a.revenue).slice(0, 8)
 
   // ── Top-selling items, by units sold ─────────────────────────────────────────
   const itemAgg = {}
@@ -194,7 +199,7 @@ export function Analytics() {
 
   const avgPrepAll = prepSamples.length ? prepSamples.reduce((s, t) => s + t.mins, 0) / prepSamples.length : null
   const avgTotalAll = totalSamples.length ? totalSamples.reduce((s, t) => s + t.totalMins, 0) / totalSamples.length : null
-  const breached = prepSamples.filter((t) => t.mins >= SLA_CRIT_MIN)
+  const breached = prepSamples.filter((t) => t.mins >= slaCritMin)
 
   const avg = (samples) => samples.reduce((s, v) => s + v, 0) / samples.length
 
@@ -235,7 +240,7 @@ export function Analytics() {
       day: d.toLocaleDateString([], { day: "numeric", month: "short" }),
       avgMin: prepDay.length ? avg(prepDay) : null,
       avgTotalMin: totalDay.length ? avg(totalDay) : null,
-      breached: prepDay.filter((m) => m >= SLA_CRIT_MIN).length,
+      breached: prepDay.filter((m) => m >= slaCritMin).length,
     }
   })
 
@@ -394,7 +399,7 @@ export function Analytics() {
               <Tooltip
                 cursor={{ fill: "rgba(255,255,255,0.04)" }}
                 contentStyle={tooltipStyle}
-                wrapperStyle={{ zIndex: 50 }}
+                wrapperStyle={tooltipWrapperStyle}
                 formatter={(v, _n, p) => [`${v} order${v === 1 ? "" : "s"} · ${formatCurrency(p.payload.revenue)}`, "Orders"]}
               />
               <Bar dataKey="orders" fill="var(--brand, #f97316)" radius={[4, 4, 0, 0]} maxBarSize={28} />
@@ -419,7 +424,7 @@ export function Analytics() {
           {timed.length === 0 ? (
             <p className="text-slate-400 text-sm text-center py-16">No timed orders yet</p>
           ) : (
-            <ResponsiveContainer width="100%" height={220}>
+            <ResponsiveContainer width="100%" height={170}>
               <LineChart data={dailyPrepTrend} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
                 <XAxis dataKey="day" tickLine={false} axisLine={false} fontSize={11} stroke="#71717a"
@@ -428,7 +433,7 @@ export function Analytics() {
                   tickFormatter={(v) => `${v}m`} />
                 <Tooltip
                   contentStyle={tooltipStyle}
-                  wrapperStyle={{ zIndex: 50 }}
+                  wrapperStyle={tooltipWrapperStyle}
                   formatter={(v, n) => {
                     if (v == null) return ["No orders", n === "avgMin" ? "Prep" : "Total"]
                     return [`${v.toFixed(1)}m`, n === "avgMin" ? "Avg prep" : "Avg total"]
@@ -437,10 +442,10 @@ export function Analytics() {
                 <Legend iconType="circle" iconSize={8} formatter={(v) => (
                   <span className="text-xs text-slate-600">{v === "avgMin" ? "Prep time" : "Total time"}</span>
                 )} />
-                <ReferenceLine y={SLA_WARN_MIN} stroke="#f59e0b" strokeDasharray="4 4"
-                  label={{ value: `${SLA_WARN_MIN}m`, position: "insideTopLeft", fontSize: 10, fill: "#f59e0b" }} />
-                <ReferenceLine y={SLA_CRIT_MIN} stroke="#ef4444" strokeDasharray="4 4"
-                  label={{ value: `${SLA_CRIT_MIN}m SLA`, position: "insideTopLeft", fontSize: 10, fill: "#ef4444" }} />
+                <ReferenceLine y={slaWarnMin} stroke="#f59e0b" strokeDasharray="4 4"
+                  label={{ value: `${slaWarnMin}m`, position: "insideTopLeft", fontSize: 10, fill: "#f59e0b" }} />
+                <ReferenceLine y={slaCritMin} stroke="#ef4444" strokeDasharray="4 4"
+                  label={{ value: `${slaCritMin}m SLA`, position: "insideTopLeft", fontSize: 10, fill: "#ef4444" }} />
                 <Line type="monotone" dataKey="avgMin" stroke="var(--brand, #f97316)" strokeWidth={2} dot={false} connectNulls={false} />
                 <Line type="monotone" dataKey="avgTotalMin" stroke="var(--brand-secondary, #7c3aed)" strokeWidth={2} dot={false} connectNulls={false} />
               </LineChart>
@@ -464,16 +469,17 @@ export function Analytics() {
               <ResponsiveContainer width="100%" height={Math.max(200, topCategories.length * 44)}>
                 <BarChart data={topCategories} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 18 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" horizontal={false} />
-                  <XAxis type="number" tickLine={false} axisLine={false} fontSize={12} stroke="#71717a" allowDecimals={false}
-                    label={{ value: "units sold", position: "insideBottom", offset: -4, fontSize: 11, fill: "#71717a" }} />
+                  <XAxis type="number" tickLine={false} axisLine={false} fontSize={12} stroke="#71717a"
+                    tickFormatter={(v) => formatCurrency(v)}
+                    label={{ value: "revenue", position: "insideBottom", offset: -4, fontSize: 11, fill: "#71717a" }} />
                   <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} fontSize={12} stroke="#71717a" width={110} />
                   <Tooltip
                     cursor={{ fill: "rgba(255,255,255,0.04)" }}
                     contentStyle={tooltipStyle}
-                    wrapperStyle={{ zIndex: 50 }}
-                    formatter={(v, _n, p) => [`${v} sold · ${formatCurrency(p.payload.revenue)}`, p.payload.name]}
+                    wrapperStyle={tooltipWrapperStyle}
+                    formatter={(v, _n, p) => [`${formatCurrency(v)} · ${p.payload.units} sold`, p.payload.name]}
                   />
-                  <Bar dataKey="units" radius={[0, 6, 6, 0]} maxBarSize={26}>
+                  <Bar dataKey="revenue" radius={[0, 6, 6, 0]} maxBarSize={26}>
                     {topCategories.map((c, i) => <Cell key={c.name} fill={CHART_CATEGORY_COLORS[i % CHART_CATEGORY_COLORS.length]} />)}
                   </Bar>
                 </BarChart>
@@ -496,7 +502,7 @@ export function Analytics() {
                     <Cell fill="var(--brand, #f97316)" />
                     <Cell fill="#94a3b8" />
                   </Pie>
-                  <Tooltip contentStyle={tooltipStyle} wrapperStyle={{ zIndex: 50 }}
+                  <Tooltip contentStyle={tooltipStyle} wrapperStyle={tooltipWrapperStyle}
                     formatter={(value, name, entry) => [`${value} orders (${entry.payload.pct}%)`, name]} />
                   <Legend iconType="circle" iconSize={8} formatter={(v, entry) => (
                     <span className="text-xs text-slate-600">{v} · {entry.payload.pct}%</span>
@@ -560,7 +566,7 @@ export function Analytics() {
                 <Tooltip
                   cursor={{ fill: "rgba(255,255,255,0.04)" }}
                   contentStyle={tooltipStyle}
-                  wrapperStyle={{ zIndex: 50 }}
+                  wrapperStyle={tooltipWrapperStyle}
                   formatter={(v) => [`${v} orders`, "Orders"]}
                   labelFormatter={(h) => formatHour(h)}
                 />
@@ -580,7 +586,7 @@ export function Analytics() {
           </CardTitle>
           <p className="text-xs text-slate-400 mt-1">
             {avgPrepAll !== null
-              ? `Avg ${avgPrepAll.toFixed(1)}m to prepare · ${breached.length} order${breached.length === 1 ? "" : "s"} over the ${SLA_CRIT_MIN}m SLA`
+              ? `Avg ${avgPrepAll.toFixed(1)}m to prepare · ${breached.length} order${breached.length === 1 ? "" : "s"} over the ${slaCritMin}m SLA`
               : "No completed prep times yet"}
           </p>
         </CardHeader>
@@ -592,7 +598,7 @@ export function Analytics() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div>
                   <p className="text-xs font-medium text-slate-500 mb-2">By category — slowest first</p>
-                  <ResponsiveContainer width="100%" height={Math.max(160, catPrepTrend.length * 40)}>
+                  <ResponsiveContainer width="100%" height={Math.max(120, catPrepTrend.length * 30)}>
                     <BarChart data={catPrepTrend} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 18 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" horizontal={false} />
                       <XAxis type="number" tickLine={false} axisLine={false} fontSize={12} stroke="#71717a"
@@ -601,11 +607,11 @@ export function Analytics() {
                       <Tooltip
                         cursor={{ fill: "rgba(255,255,255,0.04)" }}
                         contentStyle={tooltipStyle}
-                        wrapperStyle={{ zIndex: 50 }}
+                        wrapperStyle={tooltipWrapperStyle}
                         formatter={(v, _n, p) => [`${v.toFixed(1)}m avg · ${p.payload.orders} order${p.payload.orders === 1 ? "" : "s"}`, p.payload.name]}
                       />
                       <Bar dataKey="avgMin" radius={[0, 6, 6, 0]} maxBarSize={22}>
-                        {catPrepTrend.map((c) => <Cell key={c.name} fill={slaColor(c.avgMin)} />)}
+                        {catPrepTrend.map((c) => <Cell key={c.name} fill={slaColor(c.avgMin, slaWarnMin, slaCritMin)} />)}
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
@@ -620,7 +626,7 @@ export function Analytics() {
                           <p className="text-sm font-medium text-slate-800 truncate">{it.name}</p>
                           <p className="text-xs text-slate-400">{it.orders} order{it.orders === 1 ? "" : "s"}</p>
                         </div>
-                        <StatusDot color={slaColor(it.avgMin)} className="flex-shrink-0">{it.avgMin.toFixed(1)}m</StatusDot>
+                        <StatusDot color={slaColor(it.avgMin, slaWarnMin, slaCritMin)} className="flex-shrink-0">{it.avgMin.toFixed(1)}m</StatusDot>
                       </div>
                     ))}
                   </div>
@@ -629,13 +635,13 @@ export function Analytics() {
 
               <div className="flex flex-wrap items-center gap-4 mt-5 pt-4 border-t border-slate-100">
                 <span className="flex items-center gap-1.5 text-xs text-slate-500">
-                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: slaColor(0) }} /> On time (&lt;{SLA_WARN_MIN}m)
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: slaColor(0, slaWarnMin, slaCritMin) }} /> On time (&lt;{slaWarnMin}m)
                 </span>
                 <span className="flex items-center gap-1.5 text-xs text-slate-500">
-                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: slaColor(SLA_WARN_MIN) }} /> Slow ({SLA_WARN_MIN}–{SLA_CRIT_MIN}m)
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: slaColor(slaWarnMin, slaWarnMin, slaCritMin) }} /> Slow ({slaWarnMin}–{slaCritMin}m)
                 </span>
                 <span className="flex items-center gap-1.5 text-xs text-slate-500">
-                  <AlertTriangle className="h-3 w-3 text-red-500" /> Over SLA (&gt;{SLA_CRIT_MIN}m)
+                  <AlertTriangle className="h-3 w-3 text-red-500" /> Over SLA (&gt;{slaCritMin}m)
                 </span>
               </div>
             </>
