@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Loader2, Store, Car, Paintbrush, Power, AlertCircle, Timer, MapPin } from "lucide-react"
+import { Loader2, Store, Car, Paintbrush, Power, AlertCircle, Timer, MapPin, CreditCard, ShieldCheck } from "lucide-react"
 import Link from "next/link"
 import { toast } from "sonner"
 import axios from "axios"
@@ -20,6 +20,7 @@ export function RestaurantSettings() {
   const [saving, setSaving] = useState(false)
   const [savingKey, setSavingKey] = useState(null)
   const [cities, setCities] = useState([])
+  const [phonepeConfigured, setPhonepeConfigured] = useState(false)
 
   useEffect(() => {
     axios
@@ -38,11 +39,16 @@ export function RestaurantSettings() {
           latitude: r.data.latitude ?? "",
           longitude: r.data.longitude ?? "",
           cityId: r.data.cityId ?? "",
+          phonepeMerchantId: r.data.phonepeMerchantId || "",
+          phonepeSaltKey: "", // write-only — server never sends the real value back
+          phonepeSaltIndex: r.data.phonepeSaltIndex || "1",
+          phonepeSandbox: r.data.phonepeSandbox ?? true,
           username: r.data.username,
           domain: r.data.domain,
         }
         setForm(data)
         setOriginal(data)
+        setPhonepeConfigured(r.data.phonepeConfigured)
       })
       .catch(() => toast.error("Failed to load settings"))
     axios.get(`${API}/api/city`).then((r) => setCities(r.data)).catch(() => {})
@@ -100,9 +106,23 @@ export function RestaurantSettings() {
         latitude: form.latitude === "" ? null : Number(form.latitude),
         longitude: form.longitude === "" ? null : Number(form.longitude),
         cityId: form.cityId === "" ? null : Number(form.cityId),
+        phonepeMerchantId: form.phonepeMerchantId,
+        phonepeSaltIndex: form.phonepeSaltIndex,
+        phonepeSandbox: form.phonepeSandbox,
+        // Omit entirely when blank — the backend treats "not present" as
+        // "leave the saved key alone", vs. an empty string which it'd reject.
+        ...(form.phonepeSaltKey ? { phonepeSaltKey: form.phonepeSaltKey } : {}),
       }
-      await axios.put(`${API}/api/restaurant/me`, payload, { withCredentials: true })
-      setOriginal((o) => ({ ...o, ...payload }))
+      const res = await axios.put(`${API}/api/restaurant/me`, payload, { withCredentials: true })
+      // Sync to `form` itself, not the numeric-coerced `payload` — the inputs
+      // leave form values as strings (e.g. "18.5204"), and merging payload's
+      // coerced numbers into `original` made the dirty check's JSON.stringify
+      // comparison see a permanent string-vs-number mismatch, so the "unsaved
+      // changes" bar never cleared after saving. The salt key field always
+      // clears back to blank afterward — it's write-only, like a password field.
+      setOriginal({ ...form, phonepeSaltKey: "" })
+      setField("phonepeSaltKey", "")
+      setPhonepeConfigured(res.data.phonepeConfigured)
       toast.success("Settings saved")
     } catch (err) {
       toast.error(err?.response?.data?.message || "Failed to save settings")
@@ -284,6 +304,55 @@ export function RestaurantSettings() {
                     {cities.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}{c.state ? `, ${c.state}` : ""}</SelectItem>)}
                   </SelectContent>
                 </Select>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-0">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-2">
+                <CreditCard className="h-4 w-4" /> Payments
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-start justify-between gap-4">
+                <p className="text-xs text-muted-foreground -mt-1">
+                  Your PhonePe merchant credentials — customer checkout is PhonePe-only, and payments need to land in
+                  your own merchant account, not shared with any other restaurant.
+                </p>
+                {phonepeConfigured ? (
+                  <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 flex-shrink-0">
+                    <ShieldCheck className="h-3.5 w-3.5" /> Configured
+                  </span>
+                ) : (
+                  <span className="text-xs font-medium text-amber-600 flex-shrink-0">Not configured</span>
+                )}
+              </div>
+              {!phonepeConfigured && (
+                <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  Without these, checkout still works for testing — orders place successfully but no real charge happens.
+                </p>
+              )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Merchant ID</Label>
+                  <Input value={form.phonepeMerchantId} onChange={(e) => setField("phonepeMerchantId", e.target.value)} placeholder="PGTESTPAYUAT" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Salt Key {phonepeConfigured ? "(leave blank to keep)" : ""}</Label>
+                  <Input type="password" value={form.phonepeSaltKey} onChange={(e) => setField("phonepeSaltKey", e.target.value)} placeholder={phonepeConfigured ? "••••••••" : "Salt key"} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Salt Index</Label>
+                  <Input value={form.phonepeSaltIndex} onChange={(e) => setField("phonepeSaltIndex", e.target.value)} placeholder="1" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Environment</Label>
+                  <div className="flex items-center gap-2 h-9">
+                    <Switch checked={!form.phonepeSandbox} onCheckedChange={(v) => setField("phonepeSandbox", !v)} />
+                    <span className="text-sm text-muted-foreground">{form.phonepeSandbox ? "Sandbox (test)" : "Production (live)"}</span>
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>

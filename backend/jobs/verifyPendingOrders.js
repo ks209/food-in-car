@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import prisma from '../config/prisma.js';
-import { DEV_MODE, reconcileTransaction } from '../utils/phonepe.js';
+import { isDevMode, reconcileTransaction } from '../utils/phonepe.js';
 
 const CHECK_AFTER_MIN = 5;    // give the customer time to finish paying before the first check
 const ABANDON_AFTER_MIN = 45; // still pending after this long — treat as abandoned, auto-cancel
@@ -9,8 +9,6 @@ const ABANDON_AFTER_MIN = 45; // still pending after this long — treat as aban
 // confirmation — e.g. the customer closed the tab mid-payment, or PhonePe's callback
 // never reached us. COD orders have no external payment to verify and are never touched.
 async function verifyPendingOrders() {
-  if (DEV_MODE) return; // no real PhonePe credentials to check against
-
   const checkCutoff = new Date(Date.now() - CHECK_AFTER_MIN * 60 * 1000);
   const abandonCutoff = new Date(Date.now() - ABANDON_AFTER_MIN * 60 * 1000);
 
@@ -19,17 +17,22 @@ async function verifyPendingOrders() {
       status: 'PENDING',
       order: { status: 'PENDING', paymentMethod: 'PHONEPE', createdAt: { lte: checkCutoff } },
     },
-    include: { order: true },
+    include: { order: { include: { restaurant: true } } },
     orderBy: { id: 'desc' },
   });
 
   if (stuckTxns.length === 0) return;
 
-  let paid = 0, cancelled = 0, stillPending = 0;
+  let paid = 0, cancelled = 0, stillPending = 0, skipped = 0;
 
   for (const txn of stuckTxns) {
+    // Credentials are per-restaurant — a restaurant with none configured has
+    // no real PhonePe transaction to check against (this txn was placed in
+    // dev mode), so there's nothing to reconcile.
+    if (isDevMode(txn.order.restaurant)) { skipped++; continue; }
+
     try {
-      const result = await reconcileTransaction(txn);
+      const result = await reconcileTransaction(txn.order.restaurant, txn);
       if (result.paid) { paid++; continue; }
 
       // Still unpaid after the abandon window — the customer never completed
@@ -54,7 +57,7 @@ async function verifyPendingOrders() {
     }
   }
 
-  console.log(`[verify-pending-orders] checked ${stuckTxns.length} — paid ${paid}, cancelled ${cancelled}, still pending ${stillPending}`);
+  console.log(`[verify-pending-orders] checked ${stuckTxns.length} — paid ${paid}, cancelled ${cancelled}, still pending ${stillPending}, skipped (no gateway) ${skipped}`);
 }
 
 export function startPendingOrderVerification() {

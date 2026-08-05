@@ -30,7 +30,11 @@ const REVENUE_STATES = ['COMPLETED'];
 orderRouter.get('/', restaurantAuth, async (req, res) => {
   try {
     const { from, to } = req.query;
-    const where = { restaurantId: req.restaurantId };
+    // PENDING = payment not yet confirmed (or, before checkout was PhonePe-only,
+    // a COD order not yet accepted). Never a real, actionable order — excluded
+    // everywhere the dashboard reads orders from (this is the one shared source
+    // for Orders, Kitchen Display, Overview, Analytics, and the new-order toast).
+    const where = { restaurantId: req.restaurantId, status: { not: 'PENDING' } };
     if (from || to) {
       where.createdAt = {};
       if (from) {
@@ -235,63 +239,11 @@ orderRouter.get('/:id', async (req, res) => {
   }
 });
 
-// Create order — no auth required (guest checkout + auto user creation keyed by phone)
-orderRouter.post('/create', async (req, res) => {
-  try {
-    const { restaurantId, items, totalAmount, deliveryInstructions, guestName, guestVehicle, mobileNumber, deviceKey } = req.body;
-    if (!restaurantId || !items || !totalAmount || !guestName || !mobileNumber) {
-      return res.status(400).json({ error: 'Name, phone number and items are required' });
-    }
-
-    const restaurant = await prisma.restaurant.findUnique({ where: { id: parseInt(restaurantId) } });
-    if (!restaurant || !restaurant.isActive) return res.status(404).json({ error: 'Restaurant not found' });
-    if (!restaurant.isOpen) return res.status(400).json({ error: 'Restaurant is currently closed' });
-
-    // Vehicle is optional: absent means the customer chose pickup.
-    const vehicle = guestVehicle && guestVehicle.trim() ? guestVehicle.trim().toUpperCase() : null;
-
-    // Auto-create or find the customer by phone number; remember their vehicle (if any)
-    const customer = await resolveCustomerByPhone(mobileNumber, guestName, vehicle);
-    const dailyOrderNumber = await nextDailyOrderNumber(parseInt(restaurantId));
-
-    const order = await prisma.order.create({
-      data: {
-        restaurantId: parseInt(restaurantId),
-        userId: customer.id,
-        dailyOrderNumber,
-        guestName,
-        guestVehicle: vehicle,
-        totalAmount: parseFloat(totalAmount),
-        deliveryCode: genDeliveryCode(),
-        deviceKey: deviceKey || null,
-        deliveryInstructions: deliveryInstructions || '',
-        status: 'PENDING',
-        paymentMethod: 'COD',
-        orderStatusHistory: { create: { status: 'PENDING', updatedBy: 'customer' } },
-        orderItems: {
-          create: items.map(i => ({
-            menuItemId: i.id || null,
-            name: i.name,
-            unitPrice: i.price,
-            finalPrice: i.price,
-            quantity: i.quantity || 1,
-            options: {
-              create: (i.selectedOptions || []).map(o => ({
-                name: o.name,
-                priceDelta: o.priceDelta || 0,
-              })),
-            },
-          })),
-        },
-      },
-      include: { orderItems: { include: { options: true } }, orderStatusHistory: true },
-    });
-
-    res.status(201).json(order);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to create order', details: error.message });
-  }
-});
+// Guest COD checkout used to live here (POST /create). Removed — customer
+// checkout is PhonePe-only now (see POST /api/payment/initiate), so there's
+// no path that creates a COD order stuck permanently at PENDING with nothing
+// to ever move it to PAID. The dashboard's own walk-in/dine-in billing (cash
+// at the counter) is unrelated and still works via POST /pos below.
 
 // Restaurant: create a walk-in bill from the offline-capable dashboard POS.
 // Unlike /create (guest checkout), this is authenticated as the restaurant and the

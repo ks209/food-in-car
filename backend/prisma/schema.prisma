@@ -37,6 +37,15 @@ model Restaurant {
   // to restaurants tagged with it (see GET /api/restaurant/nearby?cityId=).
   cityId         Int?
   city           City?       @relation(fields: [cityId], references: [id])
+  // PhonePe merchant credentials — per-restaurant so each tenant's payments go
+  // to their OWN merchant account, not a single shared one. phonepeSaltKey is
+  // write-only from the API's perspective (never included in any GET select).
+  // Null merchantId/saltKey means this restaurant has no gateway configured
+  // yet — checkout runs in per-restaurant dev mode (order placed, no real charge).
+  phonepeMerchantId String?
+  phonepeSaltKey    String?
+  phonepeSaltIndex  String?     @default("1")
+  phonepeSandbox    Boolean     @default(true)
   pickupEnabled  Boolean     @default(false)
   deliveryEnabled Boolean    @default(true)
   isOpen         Boolean     @default(true)

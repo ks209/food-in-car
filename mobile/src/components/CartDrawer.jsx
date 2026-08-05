@@ -5,7 +5,7 @@ import { useCart } from "../context/CartContext"
 import { useAuth } from "../context/AuthContext"
 import { getDeviceKey } from "../lib/device"
 import { saveActiveOrder } from "../lib/activeOrder"
-import api, { orderApi } from "../api"
+import api from "../api"
 
 export default function CartDrawer({ open, onClose, restaurant, restaurantId }) {
   const { cart, addItem, decrementItem, clearCart, total, itemCount } = useCart()
@@ -28,7 +28,6 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
     setPhone(p => p || user.phoneNumber || "")
   }, [user])
 
-  const isPhonePe = restaurant?.paymentGateway?.toUpperCase() === "PHONEPE"
   const phoneValid = /^\d{10}$/.test(phone.trim())
   // Fulfilment mode: pickup-only forces pickup, delivery-only forces car, both shows a toggle.
   const pickupAllowed = !!restaurant?.pickupEnabled
@@ -45,13 +44,15 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
     else if (!pickupAllowed && deliveryAllowed) setOrderType("car")
   }, [restaurant, pickupAllowed, deliveryAllowed])
 
+  // Server recomputes price/availability from the live menu — see
+  // validateAndPriceCart on the backend — so the cart's own price/quantity
+  // here is just what the customer intends to buy, not what gets charged.
   const orderPayload = () => ({
     restaurantId: parseInt(restaurantId),
     items: cart.map(i => ({
-      id: i.id, name: i.name, price: i.price, quantity: i.quantity,
+      id: i.id, name: i.name, quantity: i.quantity,
       selectedOptions: i.selectedOptions || [],
     })),
-    totalAmount: total,
     deliveryInstructions: instructions,
     guestName: name.trim(),
     // Vehicle only for in-car delivery; empty means "pickup" (backend treats absent as pickup)
@@ -60,21 +61,7 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
     deviceKey: getDeviceKey(),
   })
 
-  // ── COD flow ─────────────────────────────────────────────────────────────────
-  const handleCOD = async () => {
-    if (!canOrder) return
-    setPlacing(true); setError("")
-    try {
-      const res = await orderApi.create(orderPayload())
-      saveActiveOrder({ restaurantId, orderId: res.data.id, code: res.data.deliveryCode })
-      clearCart(); onClose()
-      navigate(`/restaurant/${restaurantId}/order/${res.data.id}?code=${res.data.deliveryCode}`)
-    } catch (err) {
-      setError(err.response?.data?.error || "Couldn't place order. Try again.")
-    } finally { setPlacing(false) }
-  }
-
-  // ── PhonePe flow ─────────────────────────────────────────────────────────────
+  // ── PhonePe flow — the only checkout path (COD removed) ─────────────────────
   const handlePhonePe = async () => {
     if (!canOrder) return
     setPlacing(true); setError("")
@@ -250,33 +237,24 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
                 <p style={{ fontWeight:800, fontSize:"1.25rem", color:"var(--text)" }}>₹{total.toFixed(0)}</p>
               </div>
 
-              {isPhonePe ? (
-                <button onClick={handlePhonePe} disabled={placing || !canOrder}
-                  style={{
-                    display:"flex", alignItems:"center", gap:"0.5rem",
-                    background: canOrder ? "#5f259f" : "var(--border)",
-                    color:"white", border:"none", borderRadius:14,
-                    padding:"0.85rem 1.25rem", fontWeight:700, fontSize:"0.9rem",
-                    cursor: canOrder ? "pointer" : "not-allowed",
-                    transition:"all 0.15s", opacity: placing ? 0.7 : 1,
-                  }}>
-                  {placing ? (
-                    "Redirecting…"
-                  ) : (
-                    <>
-                      <PhonePeIcon />
-                      Pay with PhonePe
-                    </>
-                  )}
-                </button>
-              ) : (
-                <button onClick={handleCOD} disabled={placing || !canOrder}
-                  className="btn btn-primary"
-                  style={{ borderRadius:14, padding:"0.85rem 1.75rem", fontSize:"1rem",
-                    opacity: (!canOrder && !placing) ? 0.5 : 1 }}>
-                  {placing ? "Placing…" : "Place Order →"}
-                </button>
-              )}
+              <button onClick={handlePhonePe} disabled={placing || !canOrder}
+                style={{
+                  display:"flex", alignItems:"center", gap:"0.5rem",
+                  background: canOrder ? "#5f259f" : "var(--border)",
+                  color:"white", border:"none", borderRadius:14,
+                  padding:"0.85rem 1.25rem", fontWeight:700, fontSize:"0.9rem",
+                  cursor: canOrder ? "pointer" : "not-allowed",
+                  transition:"all 0.15s", opacity: placing ? 0.7 : 1,
+                }}>
+                {placing ? (
+                  "Redirecting…"
+                ) : (
+                  <>
+                    <PhonePeIcon />
+                    Pay with PhonePe
+                  </>
+                )}
+              </button>
             </div>
 
             {!canOrder && cart.length > 0 && (
@@ -287,7 +265,7 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
               </p>
             )}
 
-            {isPhonePe && canOrder && (
+            {canOrder && (
               <p style={{ textAlign:"center", fontSize:"0.75rem", color:"var(--muted)" }}>
                 Secured by PhonePe · You'll be redirected to pay
               </p>
