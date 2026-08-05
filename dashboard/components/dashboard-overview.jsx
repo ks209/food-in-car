@@ -10,7 +10,7 @@ import axios from "axios"
 import Link from "next/link"
 
 import { API } from "@/lib/api"
-import { CHART_TOOLTIP_STYLE, CHART_TOOLTIP_WRAPPER_STYLE, formatCurrency } from "@/lib/format"
+import { CHART_TOOLTIP_STYLE, CHART_TOOLTIP_WRAPPER_STYLE, CHART_TOOLTIP_ITEM_STYLE, CHART_TOOLTIP_LABEL_STYLE, formatCurrency } from "@/lib/format"
 import { ORDER_STATUS_COLORS, ORDER_STATUS_LABELS } from "@/lib/status"
 import { totalMinutes } from "@/lib/sla"
 import { StatusDot } from "@/components/ui/status-dot"
@@ -18,7 +18,9 @@ import { StatusDot } from "@/components/ui/status-dot"
 // Only COMPLETED orders are real revenue — cancelled/not-fulfilled/in-flight orders don't count
 const REVENUE_STATES = ["COMPLETED"]
 const DAY_MS = 24 * 60 * 60 * 1000
-const RECENT_ORDERS_LIMIT = 12
+// One row's worth at the widest (xl, 6-col) breakpoint — keeps this section's
+// height bounded and predictable so the whole page fits in one screen.
+const RECENT_ORDERS_LIMIT = 6
 
 function formatMinutes(mins) {
   if (mins == null) return "—"
@@ -127,19 +129,21 @@ export function DashboardOverview() {
   })
 
   return (
-    <div className="space-y-6">
-      {/* Stats */}
+    <div className="space-y-3">
+      {/* Stats — Card's own default py-6/gap-6 (see card.jsx) is dropped here
+          via py-0; with only one child (CardContent) that inherited padding
+          was pure unused height, not visual breathing room. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {stats.map((stat, i) => (
-          <Card key={stat.title} className="border-0 shadow-sm anim-fade-up" style={{ animationDelay: `${i * 60}ms` }}>
-            <CardContent className="p-3.5">
+          <Card key={stat.title} className="border-0 shadow-sm anim-fade-up py-0" style={{ animationDelay: `${i * 60}ms` }}>
+            <CardContent className="p-3">
               <div className="flex items-start justify-between">
                 <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{stat.title}</p>
                 <div className={`p-1 rounded-lg ${stat.tint}-bg-subtle`}>
                   <stat.icon className={`h-3.5 w-3.5 ${stat.tint}-text`} />
                 </div>
               </div>
-              <div className="flex items-baseline gap-2 mt-1.5">
+              <div className="flex items-baseline gap-2 mt-1">
                 <p className="text-xl font-bold text-slate-900">{stat.value}</p>
                 <ChangeBadge current={stat.current} previous={stat.previous} invert={stat.invert} />
               </div>
@@ -150,12 +154,12 @@ export function DashboardOverview() {
       </div>
 
       {/* Revenue chart */}
-      <Card className="border-0 shadow-sm">
-        <CardHeader className="pb-2">
+      <Card className="border-0 shadow-sm py-3 gap-2">
+        <CardHeader className="pb-0">
           <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide">Revenue · last 15 days</CardTitle>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={200}>
+          <ResponsiveContainer width="100%" height={140}>
             <AreaChart data={revenue15d} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
               <defs>
                 <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
@@ -169,7 +173,8 @@ export function DashboardOverview() {
               <YAxis tickLine={false} axisLine={false} fontSize={12} stroke="#71717a" width={54}
                 tickFormatter={(v) => formatCurrency(v)} />
               <Tooltip formatter={(v) => [formatCurrency(v), "Revenue"]} cursor={{ stroke: "var(--brand, #f97316)", strokeWidth: 1, strokeDasharray: "4 4" }}
-                contentStyle={CHART_TOOLTIP_STYLE} wrapperStyle={CHART_TOOLTIP_WRAPPER_STYLE} />
+                contentStyle={CHART_TOOLTIP_STYLE} wrapperStyle={CHART_TOOLTIP_WRAPPER_STYLE}
+                itemStyle={CHART_TOOLTIP_ITEM_STYLE} labelStyle={CHART_TOOLTIP_LABEL_STYLE} />
               <Area type="monotone" dataKey="revenue" stroke="var(--brand, #f97316)" strokeWidth={2.5}
                 fill="url(#revenueGradient)" dot={false} activeDot={{ r: 4 }} />
             </AreaChart>
@@ -178,10 +183,10 @@ export function DashboardOverview() {
       </Card>
 
       {/* Recent orders — a compact, wrapping card grid instead of a tall row
-          list, so the most recent orders are visible at a glance with no
-          scrolling; the rest are one click away on the full Orders page. */}
-      <Card className="border-0 shadow-sm">
-        <CardHeader className="pb-3 flex items-center justify-between">
+          list. Capped at one row's worth so the whole Overview page fits in
+          a single screen; the rest are one click away on the full Orders page. */}
+      <Card className="border-0 shadow-sm py-3 gap-2">
+        <CardHeader className="pb-0 flex items-center justify-between">
           <CardTitle className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
             Recent Orders
           </CardTitle>
@@ -195,10 +200,10 @@ export function DashboardOverview() {
           {orders.length === 0 ? (
             <p className="text-slate-400 text-sm text-center py-8">No orders yet</p>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2.5">
               {orders.slice(0, RECENT_ORDERS_LIMIT).map((order) => (
-                <div key={order.id} className="rounded-lg border border-slate-100 p-3 hover:border-slate-200 hover:bg-muted/40 transition-colors min-w-0">
-                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                <div key={order.id} className="rounded-lg border border-slate-100 p-2.5 hover:border-slate-200 hover:bg-muted/40 transition-colors min-w-0">
+                  <div className="flex items-center justify-between gap-2 mb-1">
                     <span className="text-xs font-mono text-slate-400 flex-shrink-0">#{order.dailyOrderNumber ?? order.id}</span>
                     <span className="text-xs text-slate-400 flex-shrink-0">
                       {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -207,7 +212,7 @@ export function DashboardOverview() {
                   <p className="text-sm font-medium text-slate-800 truncate">
                     {order.user?.customerName || order.guestName || "Guest"}
                   </p>
-                  <p className="text-xs text-slate-400 truncate mb-2">
+                  <p className="text-xs text-slate-400 truncate mb-1.5">
                     {order.guestVehicle
                       ? order.guestVehicle
                       : <span className="text-amber-600 font-medium">Pickup</span>}

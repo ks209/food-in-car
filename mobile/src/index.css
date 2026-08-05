@@ -355,6 +355,43 @@ a.card:active, .card:active { transform: scale(0.99); }
 .dot-delivered  { background: #4ade80; }
 .dot-cancelled  { background: #f87171; }
 
+/* ════════════════════════════════════════════
+   HOME (nearby restaurants)
+   ════════════════════════════════════════════ */
+.home-topbar {
+  display: flex; align-items: center; padding: 1rem 1.1rem 0.25rem;
+}
+.home-brand { display: flex; align-items: center; gap: 0.6rem; }
+.home-brand-logo { width: 32px; height: 32px; border-radius: 9px; object-fit: cover; }
+.home-brand-name { font-family: var(--font-display); font-weight: 800; font-size: 1.05rem; }
+
+.home-hero { padding: 0.75rem 1.1rem 0.5rem; }
+.home-hero h1 { font-size: 1.4rem; font-weight: 800; line-height: 1.2; }
+.home-location-status { color: var(--text-secondary); font-size: 0.85rem; margin-top: 0.3rem; }
+.home-fallback-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin-top: 0.7rem; }
+.home-locate-btn { padding: 0.5rem 0.9rem; flex-shrink: 0; }
+.home-city-select { width: auto; min-width: 168px; padding: 0.55rem 0.8rem; font-size: 0.85rem; font-weight: 600; }
+
+.home-search-wrap { padding: 0.4rem 1.1rem 0.2rem; }
+.search-clear-btn { display: flex; align-items: center; justify-content: center; color: var(--muted); flex-shrink: 0; }
+
+.home-empty { padding: 3rem 1.5rem; text-align: center; color: var(--text-secondary); display: flex; flex-direction: column; gap: 0.9rem; align-items: center; }
+
+.rest-list { display: flex; flex-direction: column; gap: 0.85rem; padding: 0.5rem 1.1rem 1rem; }
+.rest-card { display: flex; flex-direction: column; overflow: hidden; }
+.rest-card-cover { position: relative; height: 128px; width: 100%; background: var(--surface); }
+.rest-card-cover img { width: 100%; height: 100%; object-fit: cover; }
+.rest-card-cover-fallback { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--muted); }
+.rest-closed-badge { position: absolute; top: 0.6rem; right: 0.6rem; background: rgba(11,13,18,0.78); color: var(--text-secondary); backdrop-filter: blur(6px); }
+.rest-card-body { padding: 0.85rem 1rem 1rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.rest-card-row { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+.rest-card-row h3 { font-size: 1.02rem; font-weight: 800; letter-spacing: -0.01em; }
+.rest-rating { display: inline-flex; align-items: center; gap: 0.22rem; color: var(--star); font-weight: 700; font-size: 0.82rem; flex-shrink: 0; }
+.rest-cuisines { color: var(--text-secondary); font-size: 0.82rem; }
+.rest-card-meta { display: flex; align-items: center; gap: 0.35rem; color: var(--text-secondary); font-size: 0.8rem; margin-top: 0.15rem; }
+
+.home-load-more { width: calc(100% - 2.2rem); margin: 0 1.1rem 1.5rem; }
+
 /* ── Scrollbar ── */
 * { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.14) transparent; }
 *::-webkit-scrollbar { width: 8px; height: 8px; }

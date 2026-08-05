@@ -3,6 +3,21 @@ import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
+// Fixed list for the mobile app's city-picker fallback (no admin UI for this
+// yet — add rows here and re-run the seed to grow it).
+const cities = [
+  { name: 'Mumbai', state: 'Maharashtra' },
+  { name: 'Pune', state: 'Maharashtra' },
+  { name: 'Bengaluru', state: 'Karnataka' },
+  { name: 'Delhi', state: 'Delhi' },
+  { name: 'Hyderabad', state: 'Telangana' },
+  { name: 'Chennai', state: 'Tamil Nadu' },
+  { name: 'Kolkata', state: 'West Bengal' },
+  { name: 'Ahmedabad', state: 'Gujarat' },
+  { name: 'Jaipur', state: 'Rajasthan' },
+  { name: 'Chandigarh', state: 'Chandigarh' },
+];
+
 const restaurants = [
   {
     name: 'Spice Garden',
@@ -10,6 +25,7 @@ const restaurants = [
     password: 'spice123',
     domain: 'spicegarden.food',
     address: '12 Curry Lane, Mumbai, MH 400001',
+    cityName: 'Mumbai',
     phone: '+91 98200 11111',
     paymentGateway: 'PHONEPE',
     themeColor: '#f97316',
@@ -57,6 +73,7 @@ const restaurants = [
     password: 'burger123',
     domain: 'burgerbarn.food',
     address: '88 Fast Food Street, Bengaluru, KA 560001',
+    cityName: 'Bengaluru',
     phone: '+91 98450 22222',
     paymentGateway: 'razorpay',
     themeColor: '#ef4444',
@@ -97,6 +114,7 @@ const restaurants = [
     password: 'green123',
     domain: 'greenbowl.food',
     address: '5 Wellness Avenue, Pune, MH 411001',
+    cityName: 'Pune',
     phone: '+91 90110 33333',
     paymentGateway: 'razorpay',
     themeColor: '#10b981',
@@ -142,6 +160,14 @@ const restaurants = [
 async function main() {
   console.log('Seeding database...');
 
+  const cityIdByName = new Map();
+  for (const c of cities) {
+    const existingCity = await prisma.city.findFirst({ where: { name: c.name } });
+    const city = existingCity ?? await prisma.city.create({ data: { name: c.name, state: c.state, isActive: true } });
+    cityIdByName.set(c.name, city.id);
+  }
+  console.log(`Seeded ${cities.length} cities.`);
+
   const heroFields = (r) => ({
     coverUrl: r.coverUrl ?? null,
     cuisines: r.cuisines ?? null,
@@ -150,10 +176,11 @@ async function main() {
   });
 
   for (const r of restaurants) {
+    const cityId = r.cityName ? cityIdByName.get(r.cityName) ?? null : null;
     const existing = await prisma.restaurant.findUnique({ where: { username: r.username } });
     if (existing) {
-      // Backfill hero metadata on already-seeded restaurants.
-      await prisma.restaurant.update({ where: { id: existing.id }, data: heroFields(r) });
+      // Backfill hero metadata + city on already-seeded restaurants.
+      await prisma.restaurant.update({ where: { id: existing.id }, data: { ...heroFields(r), cityId } });
       console.log(`"${r.name}" already exists — refreshed hero fields.`);
       continue;
     }
@@ -169,6 +196,7 @@ async function main() {
         phone: r.phone || null,
         paymentGateway: r.paymentGateway,
         themeColor: r.themeColor,
+        cityId,
         ...heroFields(r),
         isActive: true,
       },

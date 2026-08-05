@@ -9,6 +9,15 @@ export const CHART_TOOLTIP_STYLE = {
 // sticky headers) that might otherwise sit on top of it.
 export const CHART_TOOLTIP_WRAPPER_STYLE = { zIndex: 200 }
 
+// Recharts renders each tooltip row with its own inline color that defaults to
+// that data series' own color (the bar/line's fill) — NOT contentStyle.color,
+// which only paints the outer box. A dark series color (purple, navy, etc.)
+// against the dark tooltip background reads as barely-legible dark-on-dark.
+// Pair this with contentStyle on every <Tooltip> so the value/label rows use
+// the same light, high-contrast text regardless of that series' own color.
+export const CHART_TOOLTIP_ITEM_STYLE = { color: "#fafafa" }
+export const CHART_TOOLTIP_LABEL_STYLE = { color: "#fafafa", fontWeight: 600, marginBottom: 4 }
+
 export function formatCurrency(value) {
   return `₹${Math.round(value).toLocaleString("en-IN")}`
 }

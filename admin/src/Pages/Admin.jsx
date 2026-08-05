@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { restaurantApi } from '../api';
+import { restaurantApi, cityApi } from '../api';
 
 const emptyForm = {
   name: '',
@@ -11,12 +11,16 @@ const emptyForm = {
   paymentGateway: '',
   themeColor: '#f97316',
   logoUrl: '',
+  latitude: '',
+  longitude: '',
+  cityId: '',
 };
 
 const GATEWAYS = ['PHONEPE', 'razorpay', 'COD'];
 
 const Admin = ({ onLogout }) => {
   const [restaurants, setRestaurants] = useState([]);
+  const [cities, setCities] = useState([]);
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -32,7 +36,10 @@ const Admin = ({ onLogout }) => {
     }
   };
 
-  useEffect(() => { fetchRestaurants(); }, []);
+  useEffect(() => {
+    fetchRestaurants();
+    cityApi.all().then((res) => setCities(res.data)).catch(() => {});
+  }, []);
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
@@ -80,6 +87,9 @@ const Admin = ({ onLogout }) => {
       paymentGateway: r.paymentGateway || '',
       themeColor: r.themeColor || '#f97316',
       logoUrl: r.logoUrl || '',
+      latitude: r.latitude ?? '',
+      longitude: r.longitude ?? '',
+      cityId: r.cityId ?? '',
     });
     setEditingId(r.id);
     setMsg('');
@@ -202,7 +212,26 @@ const Admin = ({ onLogout }) => {
                 <label>Logo URL</label>
                 <input name="logoUrl" value={form.logoUrl} onChange={handleChange} placeholder="https://…" />
               </div>
+              <div className="field">
+                <label>Latitude</label>
+                <input name="latitude" type="number" step="any" min="-90" max="90" value={form.latitude} onChange={handleChange} placeholder="19.0760" />
+              </div>
+              <div className="field">
+                <label>Longitude</label>
+                <input name="longitude" type="number" step="any" min="-180" max="180" value={form.longitude} onChange={handleChange} placeholder="72.8777" />
+              </div>
+              <div className="field">
+                <label>City</label>
+                <select name="cityId" value={form.cityId} onChange={handleChange}>
+                  <option value="">No city set</option>
+                  {cities.map((c) => <option key={c.id} value={c.id}>{c.name}{c.state ? `, ${c.state}` : ''}</option>)}
+                </select>
+              </div>
             </div>
+            <p style={{ fontSize: 12, color: '#94a3b8', marginTop: 8 }}>
+              Latitude/longitude power the mobile app's "nearby restaurants" homepage — leave blank to exclude this restaurant from that list until set.
+              City is the fallback shown when a customer's location isn't available.
+            </p>
             <div style={{ marginTop: 16 }}>
               <button
                 className="btn btn-primary"

@@ -109,6 +109,76 @@ restaurantRouter.get('/all', supportAuth, async (req, res) => {
     }
 });
 
+// Public, unauthenticated — the mobile app's homepage. Registered before
+// GET /:id (Express matches routes in order; /:id would otherwise swallow
+// this path). Distance-sorted when ?lat=&lng= are given and valid (GPS
+// takes priority over ?cityId= if both are somehow sent); otherwise falls
+// back to rating-sorted, optionally narrowed to one city (the customer
+// picked a city instead of granting location). ?search= matches name or
+// cuisines and layers onto either mode. Only restaurants with saved
+// coordinates are eligible for distance sort — one without them just
+// doesn't show up until an admin sets them.
+restaurantRouter.get('/nearby', async (req, res) => {
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const pageSize = Math.min(50, Math.max(1, parseInt(req.query.pageSize) || 10));
+    const offset = (page - 1) * pageSize;
+    const search = (req.query.search || '').trim();
+
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+    const hasCoords = Number.isFinite(lat) && Number.isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+
+    const cityIdNum = parseInt(req.query.cityId, 10);
+    const cityId = !hasCoords && Number.isInteger(cityIdNum) && cityIdNum > 0 ? cityIdNum : null;
+
+    try {
+        const rows = hasCoords
+            ? await prisma.$queryRawUnsafe(
+                `
+                SELECT id, name, "logoUrl", "coverUrl", cuisines, rating, "ratingCount", "isOpen", address,
+                  (6371 * acos(LEAST(1, GREATEST(-1,
+                    cos(radians($1)) * cos(radians(latitude)) * cos(radians(longitude) - radians($2))
+                    + sin(radians($1)) * sin(radians(latitude))
+                  )))) AS distance,
+                  COUNT(*) OVER()::int AS "totalCount"
+                FROM "Restaurant"
+                WHERE "isActive" = true AND latitude IS NOT NULL AND longitude IS NOT NULL
+                  AND ($3 = '' OR name ILIKE '%' || $3 || '%' OR cuisines ILIKE '%' || $3 || '%')
+                ORDER BY distance ASC
+                LIMIT $4 OFFSET $5
+                `,
+                lat, lng, search, pageSize, offset
+              )
+            : await prisma.$queryRawUnsafe(
+                `
+                SELECT id, name, "logoUrl", "coverUrl", cuisines, rating, "ratingCount", "isOpen", address,
+                  NULL::float AS distance,
+                  COUNT(*) OVER()::int AS "totalCount"
+                FROM "Restaurant"
+                WHERE "isActive" = true
+                  AND ($1::int IS NULL OR "cityId" = $1::int)
+                  AND ($2 = '' OR name ILIKE '%' || $2 || '%' OR cuisines ILIKE '%' || $2 || '%')
+                ORDER BY rating DESC NULLS LAST, "ratingCount" DESC NULLS LAST
+                LIMIT $3 OFFSET $4
+                `,
+                cityId, search, pageSize, offset
+              );
+
+        const total = rows[0]?.totalCount ?? 0;
+        const restaurants = rows.map(({ totalCount, ...r }) => r);
+        res.json({
+            restaurants,
+            page,
+            pageSize,
+            total,
+            totalPages: Math.max(1, Math.ceil(total / pageSize)),
+            sortedBy: hasCoords ? 'distance' : 'rating',
+        });
+    } catch (err) {
+        res.status(500).json({ message: 'Error fetching nearby restaurants', error: err.message });
+    }
+});
+
 restaurantRouter.get('/:id', async (req, res) => {
     const id = Number(req.params.id);
     try {
@@ -132,6 +202,34 @@ restaurantRouter.get('/:id', async (req, res) => {
 });
 
 
+// Coordinates are optional (a restaurant not yet located is simply excluded
+// from the mobile app's distance-sorted nearby listing), but if given they
+// must be real lat/lng values — bad data here silently breaks Haversine sort.
+function parseCoordinates(latitude, longitude) {
+    if (latitude === undefined && longitude === undefined) return { ok: true, data: {} };
+    const latEmpty = latitude === '' || latitude === null;
+    const lngEmpty = longitude === '' || longitude === null;
+    if (latEmpty && lngEmpty) return { ok: true, data: { latitude: null, longitude: null } };
+    if (latEmpty || lngEmpty) return { ok: false }; // must set both together, or neither
+    const lat = Number(latitude);
+    const lng = Number(longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        return { ok: false };
+    }
+    return { ok: true, data: { latitude: lat, longitude: lng } };
+}
+
+// cityId is optional — '' / null / undefined all mean "not set". Existence of
+// the referenced City row is enforced by the FK constraint (Prisma throws on
+// a bad id), not re-checked here — the admin dropdown only ever sends real ids.
+function parseCityId(cityId) {
+    if (cityId === undefined) return { ok: true, data: {} };
+    if (cityId === '' || cityId === null) return { ok: true, data: { cityId: null } };
+    const id = parseInt(cityId, 10);
+    if (!Number.isInteger(id) || id <= 0) return { ok: false };
+    return { ok: true, data: { cityId: id } };
+}
+
 restaurantRouter.post('/create', supportAuth, async (req, res) => {
     const {
         name,
@@ -143,12 +241,24 @@ restaurantRouter.post('/create', supportAuth, async (req, res) => {
         phone,
         themeColor,
         logoUrl,
+        latitude,
+        longitude,
+        cityId,
     } = req.body;
 
     console.log(req.body);
 
     if (!domain || !username || !password || !address) {
         return res.status(400).json({ message: 'Missing required fields' });
+    }
+
+    const coords = parseCoordinates(latitude, longitude);
+    if (!coords.ok) {
+        return res.status(400).json({ message: 'Latitude must be between -90 and 90, longitude between -180 and 180' });
+    }
+    const city = parseCityId(cityId);
+    if (!city.ok) {
+        return res.status(400).json({ message: 'Invalid city' });
     }
 
     try {
@@ -166,6 +276,8 @@ restaurantRouter.post('/create', supportAuth, async (req, res) => {
                 themeColor: themeColor || '#f97316',
                 logoUrl: logoUrl || null,
                 isActive: true,
+                ...coords.data,
+                ...city.data,
             },
         });
 
@@ -179,7 +291,16 @@ restaurantRouter.post('/create', supportAuth, async (req, res) => {
 
 restaurantRouter.put('/update/:id', supportAuth, async (req, res) => {
     const id = Number(req.params.id);
-    const { name, domain, username, paymentGateway, address, phone, themeColor, logoUrl } = req.body;
+    const { name, domain, username, paymentGateway, address, phone, themeColor, logoUrl, latitude, longitude, cityId } = req.body;
+
+    const coords = parseCoordinates(latitude, longitude);
+    if (!coords.ok) {
+        return res.status(400).json({ message: 'Latitude must be between -90 and 90, longitude between -180 and 180' });
+    }
+    const city = parseCityId(cityId);
+    if (!city.ok) {
+        return res.status(400).json({ message: 'Invalid city' });
+    }
 
     try {
         const existing = await prisma.restaurant.findUnique({ where: { id } });
@@ -189,7 +310,7 @@ restaurantRouter.put('/update/:id', supportAuth, async (req, res) => {
 
         const updated = await prisma.restaurant.update({
             where: { id },
-            data: { name, domain, username, paymentGateway, address, phone, themeColor, logoUrl },
+            data: { name, domain, username, paymentGateway, address, phone, themeColor, logoUrl, ...coords.data, ...city.data },
         });
 
         res.json(updated);
