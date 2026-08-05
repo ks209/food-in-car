@@ -21,6 +21,10 @@ export const cityApi = {
   all: () => api.get("/api/city"),
 }
 
+export const configApi = {
+  get: () => api.get("/api/config"),
+}
+
 export const categoryApi = {
   byRestaurant: (restaurantId) => api.get(`/api/category/restaurant/${restaurantId}`),
 }

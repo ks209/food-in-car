@@ -85,7 +85,7 @@ export default function LoginPage() {
               <input className="input" type="password" placeholder="Enter your password"
                 value={loginForm.password} onChange={e => setLoginForm({ ...loginForm, password: e.target.value })} required />
             </div>
-            <button className="btn-primary" type="submit" disabled={loading} style={{ marginTop: "0.5rem" }}>
+            <button className="btn btn-primary" type="submit" disabled={loading} style={{ marginTop: "0.5rem" }}>
               {loading ? "Signing in..." : "Sign In"}
             </button>
           </form>
@@ -116,7 +116,7 @@ export default function LoginPage() {
               <input className="input" type="text" placeholder="e.g. DL 4C AB 1234"
                 value={registerForm.vehicleNo} onChange={e => setRegisterForm({ ...registerForm, vehicleNo: e.target.value })} required />
             </div>
-            <button className="btn-primary" type="submit" disabled={loading} style={{ marginTop: "0.5rem" }}>
+            <button className="btn btn-primary" type="submit" disabled={loading} style={{ marginTop: "0.5rem" }}>
               {loading ? "Creating account..." : "Create Account"}
             </button>
           </form>

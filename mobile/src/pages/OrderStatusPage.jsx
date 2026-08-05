@@ -361,11 +361,13 @@ export default function OrderStatusPage() {
           </p>
         )}
 
-        {!isDone && !isCancelled && (
-          <p style={{ textAlign:"center", color:"var(--muted)", fontSize:"0.75rem" }}>
-            Refreshes automatically every 2 seconds
-          </p>
-        )}
+        <Link to="/" style={{
+          display:"flex", alignItems:"center", justifyContent:"center", gap:"0.4rem",
+          marginTop:"1rem", opacity:0.4,
+        }}>
+          <img src="/carkhanaalogo.png" alt="" style={{ width:14, height:14, borderRadius:4, objectFit:"cover" }} />
+          <span style={{ fontSize:"0.7rem", fontWeight:600, color:"var(--text)", letterSpacing:"0.02em" }}>Powered by Carkhanaa</span>
+        </Link>
 
       </div>
     </div>

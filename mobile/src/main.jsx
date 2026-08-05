@@ -8,3 +8,11 @@ createRoot(document.getElementById("root")).render(
     <App />
   </StrictMode>
 )
+
+// See public/sw.js — presence alone is what Chrome's install-eligibility
+// check wants, not any actual caching behavior.
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {})
+  })
+}

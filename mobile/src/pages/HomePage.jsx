@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Link } from "react-router-dom"
-import { MapPin, Star, UtensilsCrossed, LocateFixed, Search, X } from "lucide-react"
-import { restaurantApi, cityApi } from "../api"
+import { MapPin, Star, UtensilsCrossed, LocateFixed, Search, X, Download } from "lucide-react"
+import { restaurantApi, cityApi, configApi } from "../api"
 import { applyTheme, DEFAULT_HEX } from "../lib/theme"
 
 const PAGE_SIZE = 10
@@ -78,8 +78,38 @@ export default function HomePage() {
 
   const skipNextSearchFetch = useRef(true)
 
+  // "Add to Home Screen" test button — gated by a backend env flag so it can
+  // be toggled without a frontend redeploy, and only ever shows on browsers
+  // that actually support the install prompt (Chrome/Edge/Android — iOS
+  // Safari has no beforeinstallprompt event at all; there, Add to Home
+  // Screen is manual, via the browser's own Share menu).
+  const [installEnabled, setInstallEnabled] = useState(false)
+  const [installPrompt, setInstallPrompt] = useState(null)
+  const [installed, setInstalled] = useState(false)
+
   useEffect(() => { applyTheme(DEFAULT_HEX) }, [])
   useEffect(() => { cityApi.all().then((r) => setCities(r.data)).catch(() => {}) }, [])
+  useEffect(() => { configApi.get().then((r) => setInstallEnabled(!!r.data.pwaInstallButtonEnabled)).catch(() => {}) }, [])
+
+  useEffect(() => {
+    const onBeforeInstall = (e) => { e.preventDefault(); setInstallPrompt(e) }
+    const onInstalled = () => { setInstalled(true); setInstallPrompt(null) }
+    window.addEventListener("beforeinstallprompt", onBeforeInstall)
+    window.addEventListener("appinstalled", onInstalled)
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onBeforeInstall)
+      window.removeEventListener("appinstalled", onInstalled)
+    }
+  }, [])
+
+  async function handleInstallClick() {
+    if (!installPrompt) return
+    installPrompt.prompt()
+    await installPrompt.userChoice
+    setInstallPrompt(null) // the captured event is one-shot — can't prompt() twice
+  }
+
+  const showInstallButton = installEnabled && !!installPrompt && !installed
 
   function loadRestaurants(pageNum, modeParams, searchTerm, { append = false } = {}) {
     const params = { page: pageNum, pageSize: PAGE_SIZE, ...modeParams }
@@ -179,6 +209,11 @@ export default function HomePage() {
           <img src="/carkhanaalogo.png" alt="Carkhanaa" className="home-brand-logo" />
           <span className="home-brand-name">Carkhanaa</span>
         </div>
+        {showInstallButton && (
+          <button className="btn btn-outline btn-sm home-install-btn" onClick={handleInstallClick}>
+            <Download size={14} /> Install App
+          </button>
+        )}
       </div>
 
       <div className="home-hero">
