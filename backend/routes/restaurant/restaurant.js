@@ -18,7 +18,7 @@ restaurantRouter.get('/me', restaurantAuth, async (req, res) => {
     try {
         const restaurant = await prisma.restaurant.findUnique({
             where: { id: req.restaurantId },
-            select: { id: true, name: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true },
+            select: { id: true, name: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true, latitude: true, longitude: true, cityId: true },
         });
         if (!restaurant) return res.status(404).json({ message: 'Restaurant not found' });
         res.json({ ...restaurant, orderingUrl: `${FRONTEND_URL}/restaurant/${restaurant.id}` });
@@ -32,7 +32,7 @@ const FONT_KEYS = ['manrope', 'inter', 'poppins', 'playfair', 'spacegrotesk', 'f
 const CARD_STYLES = ['rounded', 'sharp'];
 
 restaurantRouter.put('/me', restaurantAuth, async (req, res) => {
-    const { name, phone, address, themeColor, secondaryColor, accentColor, fontFamily, cardStyle, logoUrl, coverUrl, pickupEnabled, deliveryEnabled, isOpen, slaWarnMinutes, slaCritMinutes } = req.body;
+    const { name, phone, address, themeColor, secondaryColor, accentColor, fontFamily, cardStyle, logoUrl, coverUrl, pickupEnabled, deliveryEnabled, isOpen, slaWarnMinutes, slaCritMinutes, latitude, longitude, cityId } = req.body;
     try {
         const data = {};
         if (name !== undefined) data.name = name || null;
@@ -46,6 +46,24 @@ restaurantRouter.put('/me', restaurantAuth, async (req, res) => {
         if (logoUrl !== undefined) data.logoUrl = logoUrl || null;
         if (coverUrl !== undefined) data.coverUrl = coverUrl || null;
         if (isOpen !== undefined) data.isOpen = !!isOpen;
+
+        // Location — same parsing/validation the SaaS admin portal uses (see
+        // parseCoordinates/parseCityId below) so a restaurant owner setting
+        // these themselves is held to the same rules.
+        if (latitude !== undefined || longitude !== undefined) {
+            const coords = parseCoordinates(latitude, longitude);
+            if (!coords.ok) {
+                return res.status(400).json({ message: 'Latitude must be between -90 and 90, longitude between -180 and 180' });
+            }
+            Object.assign(data, coords.data);
+        }
+        if (cityId !== undefined) {
+            const city = parseCityId(cityId);
+            if (!city.ok) {
+                return res.status(400).json({ message: 'Invalid city' });
+            }
+            Object.assign(data, city.data);
+        }
 
         // Kitchen SLA thresholds — validated together (like fulfilment) so a
         // request touching only one can't leave warn >= crit.
@@ -85,7 +103,7 @@ restaurantRouter.put('/me', restaurantAuth, async (req, res) => {
         const updated = await prisma.restaurant.update({
             where: { id: req.restaurantId },
             data,
-            select: { id: true, name: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true },
+            select: { id: true, name: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true, latitude: true, longitude: true, cityId: true },
         });
         res.json(updated);
     } catch (err) {
