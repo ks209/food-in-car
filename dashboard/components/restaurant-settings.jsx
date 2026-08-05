@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
-import { Loader2, Store, Car, Paintbrush, Power, AlertCircle, Timer } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Loader2, Store, Car, Paintbrush, Power, AlertCircle, Timer, MapPin } from "lucide-react"
 import Link from "next/link"
 import { toast } from "sonner"
 import axios from "axios"
@@ -18,6 +19,7 @@ export function RestaurantSettings() {
   const [original, setOriginal] = useState(null)
   const [saving, setSaving] = useState(false)
   const [savingKey, setSavingKey] = useState(null)
+  const [cities, setCities] = useState([])
 
   useEffect(() => {
     axios
@@ -33,6 +35,9 @@ export function RestaurantSettings() {
           isOpen: r.data.isOpen ?? true,
           slaWarnMinutes: r.data.slaWarnMinutes ?? 8,
           slaCritMinutes: r.data.slaCritMinutes ?? 15,
+          latitude: r.data.latitude ?? "",
+          longitude: r.data.longitude ?? "",
+          cityId: r.data.cityId ?? "",
           username: r.data.username,
           domain: r.data.domain,
         }
@@ -40,6 +45,7 @@ export function RestaurantSettings() {
         setOriginal(data)
       })
       .catch(() => toast.error("Failed to load settings"))
+    axios.get(`${API}/api/city`).then((r) => setCities(r.data)).catch(() => {})
   }, [])
 
   const setField = (k, v) => setForm((p) => ({ ...p, [k]: v }))
@@ -81,6 +87,7 @@ export function RestaurantSettings() {
   // number needs an explicit save, unlike a switch flip).
   const handleSave = async () => {
     if (!slaValid) { toast.error("The warning threshold must be less than the critical threshold"); return }
+    if (!locationValid) { toast.error("Set both latitude and longitude, or leave both blank"); return }
     setSaving(true)
     try {
       const payload = {
@@ -90,6 +97,9 @@ export function RestaurantSettings() {
         logoUrl: form.logoUrl,
         slaWarnMinutes: Number(form.slaWarnMinutes),
         slaCritMinutes: Number(form.slaCritMinutes),
+        latitude: form.latitude === "" ? null : Number(form.latitude),
+        longitude: form.longitude === "" ? null : Number(form.longitude),
+        cityId: form.cityId === "" ? null : Number(form.cityId),
       }
       await axios.put(`${API}/api/restaurant/me`, payload, { withCredentials: true })
       setOriginal((o) => ({ ...o, ...payload }))
@@ -113,6 +123,9 @@ export function RestaurantSettings() {
 
   const initial = (form.name || form.username || "R")[0].toUpperCase()
   const slaValid = Number(form.slaWarnMinutes) >= 1 && Number(form.slaCritMinutes) >= 1 && Number(form.slaWarnMinutes) < Number(form.slaCritMinutes)
+  const latSet = form.latitude !== ""
+  const lngSet = form.longitude !== ""
+  const locationValid = latSet === lngSet && (!latSet || (Number(form.latitude) >= -90 && Number(form.latitude) <= 90 && Number(form.longitude) >= -180 && Number(form.longitude) <= 180))
 
   return (
     <div className="max-w-5xl">
@@ -237,6 +250,47 @@ export function RestaurantSettings() {
           <Card className="border-0">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-2">
+                <MapPin className="h-4 w-4" /> Location
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-xs text-muted-foreground -mt-1">
+                Powers the mobile app's "nearby restaurants" homepage — customers see you sorted by distance. Leave blank to stay out of that list until set.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Latitude</Label>
+                  <Input type="number" step="any" min={-90} max={90} value={form.latitude}
+                    onChange={(e) => setField("latitude", e.target.value)} placeholder="19.0760" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Longitude</Label>
+                  <Input type="number" step="any" min={-180} max={180} value={form.longitude}
+                    onChange={(e) => setField("longitude", e.target.value)} placeholder="72.8777" />
+                </div>
+              </div>
+              {!locationValid && (
+                <p className="text-xs text-red-500">Set both latitude and longitude, or leave both blank.</p>
+              )}
+              <div className="space-y-1.5">
+                <Label className="text-sm">City</Label>
+                <p className="text-xs text-muted-foreground">
+                  Shown to customers who can't share their location, as an alternative to distance sorting.
+                </p>
+                <Select value={form.cityId ? String(form.cityId) : "none"} onValueChange={(v) => setField("cityId", v === "none" ? "" : v)}>
+                  <SelectTrigger><SelectValue placeholder="No city set" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No city set</SelectItem>
+                    {cities.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}{c.state ? `, ${c.state}` : ""}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-0">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-2">
                 <Timer className="h-4 w-4" /> Kitchen SLA
               </CardTitle>
             </CardHeader>
@@ -323,7 +377,7 @@ export function RestaurantSettings() {
             <Button variant="outline" size="sm" className="bg-transparent border-amber-950/30 text-amber-950 hover:bg-amber-600/20" onClick={handleReset} disabled={saving}>
               Discard
             </Button>
-            <Button size="sm" className="bg-amber-950 text-white hover:bg-amber-900 min-w-28" onClick={handleSave} disabled={saving || !slaValid}>
+            <Button size="sm" className="bg-amber-950 text-white hover:bg-amber-900 min-w-28" onClick={handleSave} disabled={saving || !slaValid || !locationValid}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save changes"}
             </Button>
           </div>
