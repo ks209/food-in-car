@@ -94,7 +94,7 @@ function Sidebar({ open, onClose }) {
         </nav>
 
         {/* Logout */}
-        <div className="px-3 pb-5 border-t sidebar-border pt-4">
+        <div className="px-3 pb-3 border-t sidebar-border pt-4">
           <button
             onClick={handleLogout}
             className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium sidebar-link hover:bg-white/[0.04] transition-colors"
@@ -102,6 +102,13 @@ function Sidebar({ open, onClose }) {
             <LogOut className="h-4 w-4 flex-shrink-0" />
             Sign Out
           </button>
+        </div>
+
+        {/* Platform mark — every restaurant's dashboard looks different (their
+            own logo/colors above), this stays identical across all of them. */}
+        <div className="px-3 pb-4 flex items-center justify-center gap-1.5 opacity-40">
+          <img src="/carkhanaalogo.png" alt="" className="h-3.5 w-3.5 rounded object-cover" />
+          <span className="text-white text-[11px] font-medium tracking-wide">Powered by Carkhanaa</span>
         </div>
       </div>
     </>

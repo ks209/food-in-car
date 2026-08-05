@@ -359,9 +359,10 @@ a.card:active, .card:active { transform: scale(0.99); }
    HOME (nearby restaurants)
    ════════════════════════════════════════════ */
 .home-topbar {
-  display: flex; align-items: center; padding: 1rem 1.1rem 0.25rem;
+  display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.1rem 0.25rem;
 }
 .home-brand { display: flex; align-items: center; gap: 0.6rem; }
+.home-install-btn { padding: 0.45rem 0.85rem; flex-shrink: 0; }
 .home-brand-logo { width: 32px; height: 32px; border-radius: 9px; object-fit: cover; }
 .home-brand-name { font-family: var(--font-display); font-weight: 800; font-size: 1.05rem; }
 
