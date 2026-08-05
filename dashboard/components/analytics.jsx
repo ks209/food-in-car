@@ -14,7 +14,7 @@ import {
 } from "recharts"
 import axios from "axios"
 import { API } from "@/lib/api"
-import { CHART_TOOLTIP_STYLE as tooltipStyle, CHART_TOOLTIP_WRAPPER_STYLE as tooltipWrapperStyle, formatCurrency, formatHour, toLocalDateStr, todayStr, daysAgoStr, localDateRange } from "@/lib/format"
+import { CHART_TOOLTIP_STYLE as tooltipStyle, CHART_TOOLTIP_WRAPPER_STYLE as tooltipWrapperStyle, CHART_TOOLTIP_ITEM_STYLE as tooltipItemStyle, CHART_TOOLTIP_LABEL_STYLE as tooltipLabelStyle, formatCurrency, formatHour, toLocalDateStr, todayStr, daysAgoStr, localDateRange } from "@/lib/format"
 import { CHART_CATEGORY_COLORS } from "@/lib/chart-colors"
 import { SLA_WARN_MIN, SLA_CRIT_MIN, slaColor, prepMinutes, totalMinutes } from "@/lib/sla"
 import { ORDER_STATUS_LABELS } from "@/lib/status"
@@ -286,29 +286,31 @@ export function Analytics() {
 
       <div className="space-y-6">
 
-      {/* Filters (slicers) — every chart/KPI below reacts to these */}
+      {/* Filters (slicers) — every chart/KPI below reacts to these. Every
+          control here is deliberately narrow so the whole bar fits on one
+          row at common laptop widths instead of the last item wrapping. */}
       <Card className="border-0 shadow-sm">
-        <CardContent className="p-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <Calendar className="h-4 w-4 text-slate-400 flex-shrink-0" />
-              <Input type="date" value={fromDate} max={toDate} onChange={(e) => setFromDate(e.target.value)} className="bg-white w-[132px] sm:w-[150px] h-8 text-xs" />
-              <span className="text-slate-400 text-sm">–</span>
-              <Input type="date" value={toDate} min={fromDate} max={todayStr()} onChange={(e) => setToDate(e.target.value)} className="bg-white w-[132px] sm:w-[150px] h-8 text-xs" />
+        <CardContent className="p-3">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <div className="flex items-center gap-1 flex-wrap">
+              <Calendar className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
+              <Input type="date" value={fromDate} max={toDate} onChange={(e) => setFromDate(e.target.value)} className="bg-white w-[118px] h-7 text-xs px-1.5" />
+              <span className="text-slate-400 text-xs">–</span>
+              <Input type="date" value={toDate} min={fromDate} max={todayStr()} onChange={(e) => setToDate(e.target.value)} className="bg-white w-[118px] h-7 text-xs px-1.5" />
             </div>
-            <div className="flex items-center gap-1.5">
-              <Button variant={isToday ? "secondary" : "outline"} size="sm" className="text-xs h-8"
+            <div className="flex items-center gap-1">
+              <Button variant={isToday ? "secondary" : "outline"} size="sm" className="text-xs h-7 px-2"
                 onClick={() => { setFromDate(todayStr()); setToDate(todayStr()) }}>Today</Button>
-              <Button variant="outline" size="sm" className="text-xs h-8"
-                onClick={() => { setFromDate(daysAgoStr(6)); setToDate(todayStr()) }}>7 days</Button>
-              <Button variant="outline" size="sm" className="text-xs h-8"
-                onClick={() => { setFromDate(daysAgoStr(29)); setToDate(todayStr()) }}>30 days</Button>
+              <Button variant="outline" size="sm" className="text-xs h-7 px-2"
+                onClick={() => { setFromDate(daysAgoStr(6)); setToDate(todayStr()) }}>7d</Button>
+              <Button variant="outline" size="sm" className="text-xs h-7 px-2"
+                onClick={() => { setFromDate(daysAgoStr(29)); setToDate(todayStr()) }}>30d</Button>
             </div>
 
-            <div className="w-px h-6 bg-border mx-1 hidden sm:block" />
+            <div className="w-px h-5 bg-border mx-0.5 hidden sm:block" />
 
             <Select value={orderType} onValueChange={setOrderType}>
-              <SelectTrigger className="h-8 text-xs w-[120px] bg-white"><SelectValue placeholder="Order type" /></SelectTrigger>
+              <SelectTrigger className="h-7 text-xs w-[92px] bg-white"><SelectValue placeholder="Order type" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All types</SelectItem>
                 <SelectItem value="pickup">Pickup</SelectItem>
@@ -317,7 +319,7 @@ export function Analytics() {
             </Select>
 
             <Select value={payment} onValueChange={setPayment}>
-              <SelectTrigger className="h-8 text-xs w-[130px] bg-white"><SelectValue placeholder="Payment" /></SelectTrigger>
+              <SelectTrigger className="h-7 text-xs w-[100px] bg-white"><SelectValue placeholder="Payment" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All payments</SelectItem>
                 <SelectItem value="COD">Cash</SelectItem>
@@ -326,7 +328,7 @@ export function Analytics() {
             </Select>
 
             <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger className="h-8 text-xs w-[120px] bg-white"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectTrigger className="h-7 text-xs w-[95px] bg-white"><SelectValue placeholder="Status" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All statuses</SelectItem>
                 {STATUS_FILTER_OPTIONS.map((s) => <SelectItem key={s} value={s}>{ORDER_STATUS_LABELS[s] || s}</SelectItem>)}
@@ -335,7 +337,7 @@ export function Analytics() {
 
             {waiters.length > 0 && (
               <Select value={waiterId} onValueChange={setWaiterId}>
-                <SelectTrigger className="h-8 text-xs w-[130px] bg-white"><SelectValue placeholder="Waiter" /></SelectTrigger>
+                <SelectTrigger className="h-7 text-xs w-[100px] bg-white"><SelectValue placeholder="Waiter" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All waiters</SelectItem>
                   {waiters.map((w) => <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>)}
@@ -344,7 +346,7 @@ export function Analytics() {
             )}
 
             <Select value={customerType} onValueChange={setCustomerType}>
-              <SelectTrigger className="h-8 text-xs w-[130px] bg-white"><SelectValue placeholder="Customer" /></SelectTrigger>
+              <SelectTrigger className="h-7 text-xs w-[100px] bg-white"><SelectValue placeholder="Customer" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All customers</SelectItem>
                 <SelectItem value="new">New</SelectItem>
@@ -400,6 +402,8 @@ export function Analytics() {
                 cursor={{ fill: "rgba(255,255,255,0.04)" }}
                 contentStyle={tooltipStyle}
                 wrapperStyle={tooltipWrapperStyle}
+                itemStyle={tooltipItemStyle}
+                labelStyle={tooltipLabelStyle}
                 formatter={(v, _n, p) => [`${v} order${v === 1 ? "" : "s"} · ${formatCurrency(p.payload.revenue)}`, "Orders"]}
               />
               <Bar dataKey="orders" fill="var(--brand, #f97316)" radius={[4, 4, 0, 0]} maxBarSize={28} />
@@ -434,6 +438,8 @@ export function Analytics() {
                 <Tooltip
                   contentStyle={tooltipStyle}
                   wrapperStyle={tooltipWrapperStyle}
+                  itemStyle={tooltipItemStyle}
+                  labelStyle={tooltipLabelStyle}
                   formatter={(v, n) => {
                     if (v == null) return ["No orders", n === "avgMin" ? "Prep" : "Total"]
                     return [`${v.toFixed(1)}m`, n === "avgMin" ? "Avg prep" : "Avg total"]
@@ -477,6 +483,8 @@ export function Analytics() {
                     cursor={{ fill: "rgba(255,255,255,0.04)" }}
                     contentStyle={tooltipStyle}
                     wrapperStyle={tooltipWrapperStyle}
+                    itemStyle={tooltipItemStyle}
+                    labelStyle={tooltipLabelStyle}
                     formatter={(v, _n, p) => [`${formatCurrency(v)} · ${p.payload.units} sold`, p.payload.name]}
                   />
                   <Bar dataKey="revenue" radius={[0, 6, 6, 0]} maxBarSize={26}>
@@ -503,6 +511,7 @@ export function Analytics() {
                     <Cell fill="#94a3b8" />
                   </Pie>
                   <Tooltip contentStyle={tooltipStyle} wrapperStyle={tooltipWrapperStyle}
+                    itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle}
                     formatter={(value, name, entry) => [`${value} orders (${entry.payload.pct}%)`, name]} />
                   <Legend iconType="circle" iconSize={8} formatter={(v, entry) => (
                     <span className="text-xs text-slate-600">{v} · {entry.payload.pct}%</span>
@@ -567,6 +576,8 @@ export function Analytics() {
                   cursor={{ fill: "rgba(255,255,255,0.04)" }}
                   contentStyle={tooltipStyle}
                   wrapperStyle={tooltipWrapperStyle}
+                  itemStyle={tooltipItemStyle}
+                  labelStyle={tooltipLabelStyle}
                   formatter={(v) => [`${v} orders`, "Orders"]}
                   labelFormatter={(h) => formatHour(h)}
                 />
@@ -608,6 +619,8 @@ export function Analytics() {
                         cursor={{ fill: "rgba(255,255,255,0.04)" }}
                         contentStyle={tooltipStyle}
                         wrapperStyle={tooltipWrapperStyle}
+                        itemStyle={tooltipItemStyle}
+                        labelStyle={tooltipLabelStyle}
                         formatter={(v, _n, p) => [`${v.toFixed(1)}m avg · ${p.payload.orders} order${p.payload.orders === 1 ? "" : "s"}`, p.payload.name]}
                       />
                       <Bar dataKey="avgMin" radius={[0, 6, 6, 0]} maxBarSize={22}>

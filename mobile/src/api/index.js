@@ -14,6 +14,11 @@ export const userApi = {
 
 export const restaurantApi = {
   get: (id) => api.get(`/api/restaurant/${id}`),
+  nearby: (params) => api.get("/api/restaurant/nearby", { params }),
+}
+
+export const cityApi = {
+  all: () => api.get("/api/city"),
 }
 
 export const categoryApi = {

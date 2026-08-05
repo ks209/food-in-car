@@ -27,6 +27,16 @@ model Restaurant {
   cuisines       String?
   rating         Float?
   ratingCount    Int?
+  // Set manually by SaaS support staff when onboarding a restaurant (admin
+  // panel). Nullable — restaurants without coordinates are excluded from the
+  // mobile app's distance-sorted "nearby" listing until set.
+  latitude       Float?
+  longitude      Float?
+  // Fallback grouping for the mobile app's "nearby" list when a customer's
+  // GPS is unavailable/denied — they pick a city instead, and this filters
+  // to restaurants tagged with it (see GET /api/restaurant/nearby?cityId=).
+  cityId         Int?
+  city           City?       @relation(fields: [cityId], references: [id])
   pickupEnabled  Boolean     @default(false)
   deliveryEnabled Boolean    @default(true)
   isOpen         Boolean     @default(true)
@@ -243,3 +253,14 @@ model Waiter {
   updatedAt    DateTime   @updatedAt
 }
 
+
+// Fallback grouping for the mobile app's homepage when a customer's GPS is
+// unavailable/denied — they pick a city instead of getting distance-sorted
+// results. Seeded with a fixed list (see prisma/seed.js); no admin UI yet.
+model City {
+  id          Int          @id @default(autoincrement())
+  name        String
+  state       String?
+  isActive    Boolean      @default(true)
+  restaurants Restaurant[]
+}

@@ -19,4 +19,8 @@ export const restaurantApi = {
   activate: (id) => api.put(`/api/restaurant/activate/${id}`),
 }
 
+export const cityApi = {
+  all: () => api.get('/api/city'),
+}
+
 export default api

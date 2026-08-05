@@ -175,7 +175,12 @@ export function DashboardLayout({ children }) {
                 </div>
               </header>
 
-              <main key={pathname} className="p-4 sm:p-8 anim-fade-up overflow-x-hidden">{children}</main>
+              {/* No overflow-x-hidden here on purpose — it used to clip any chart
+                  tooltip (Recharts positions them `position: absolute` relative to
+                  the chart) that landed near a card's edge. z-index can't rescue an
+                  element from an ancestor's overflow clip, so the only fix is to not
+                  clip this container at all. */}
+              <main key={pathname} className="p-4 sm:p-8 anim-fade-up">{children}</main>
             </div>
           </div>
         </BillingProvider>
