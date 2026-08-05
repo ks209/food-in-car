@@ -18,10 +18,13 @@ restaurantRouter.get('/me', restaurantAuth, async (req, res) => {
     try {
         const restaurant = await prisma.restaurant.findUnique({
             where: { id: req.restaurantId },
-            select: { id: true, name: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true, latitude: true, longitude: true, cityId: true },
+            select: { id: true, name: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true, latitude: true, longitude: true, cityId: true, phonepeMerchantId: true, phonepeSaltIndex: true, phonepeSandbox: true, phonepeSaltKey: true },
         });
         if (!restaurant) return res.status(404).json({ message: 'Restaurant not found' });
-        res.json({ ...restaurant, orderingUrl: `${FRONTEND_URL}/restaurant/${restaurant.id}` });
+        // phonepeSaltKey is fetched only to derive this flag — it must never
+        // leave the server in a response body.
+        const { phonepeSaltKey, ...safe } = restaurant;
+        res.json({ ...safe, phonepeConfigured: !!(restaurant.phonepeMerchantId && phonepeSaltKey), orderingUrl: `${FRONTEND_URL}/restaurant/${restaurant.id}` });
     } catch (err) {
         res.status(500).json({ message: 'Error fetching restaurant', error: err });
     }
@@ -32,7 +35,7 @@ const FONT_KEYS = ['manrope', 'inter', 'poppins', 'playfair', 'spacegrotesk', 'f
 const CARD_STYLES = ['rounded', 'sharp'];
 
 restaurantRouter.put('/me', restaurantAuth, async (req, res) => {
-    const { name, phone, address, themeColor, secondaryColor, accentColor, fontFamily, cardStyle, logoUrl, coverUrl, pickupEnabled, deliveryEnabled, isOpen, slaWarnMinutes, slaCritMinutes, latitude, longitude, cityId } = req.body;
+    const { name, phone, address, themeColor, secondaryColor, accentColor, fontFamily, cardStyle, logoUrl, coverUrl, pickupEnabled, deliveryEnabled, isOpen, slaWarnMinutes, slaCritMinutes, latitude, longitude, cityId, phonepeMerchantId, phonepeSaltKey, phonepeSaltIndex, phonepeSandbox } = req.body;
     try {
         const data = {};
         if (name !== undefined) data.name = name || null;
@@ -100,12 +103,22 @@ restaurantRouter.put('/me', restaurantAuth, async (req, res) => {
             data.deliveryEnabled = nextDelivery;
         }
 
+        // PhonePe credentials. phonepeSaltKey is write-only ("leave blank to
+        // keep existing", same pattern as the restaurant login password on the
+        // admin edit form) — an empty/undefined value never overwrites a saved
+        // key, since GET /me can't hand it back for the form to round-trip.
+        if (phonepeMerchantId !== undefined) data.phonepeMerchantId = phonepeMerchantId.trim() || null;
+        if (phonepeSaltKey !== undefined && phonepeSaltKey.trim()) data.phonepeSaltKey = phonepeSaltKey.trim();
+        if (phonepeSaltIndex !== undefined) data.phonepeSaltIndex = phonepeSaltIndex.trim() || '1';
+        if (phonepeSandbox !== undefined) data.phonepeSandbox = !!phonepeSandbox;
+
         const updated = await prisma.restaurant.update({
             where: { id: req.restaurantId },
             data,
-            select: { id: true, name: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true, latitude: true, longitude: true, cityId: true },
+            select: { id: true, name: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true, latitude: true, longitude: true, cityId: true, phonepeMerchantId: true, phonepeSaltIndex: true, phonepeSandbox: true, phonepeSaltKey: true },
         });
-        res.json(updated);
+        const { phonepeSaltKey: _saltKey, ...safeUpdated } = updated;
+        res.json({ ...safeUpdated, phonepeConfigured: !!(updated.phonepeMerchantId && _saltKey) });
     } catch (err) {
         res.status(500).json({ message: 'Error updating restaurant', error: err });
     }
@@ -204,7 +217,6 @@ restaurantRouter.get('/:id', async (req, res) => {
             where: { id },
             include: {
                 menu: true,
-                orders: true,
                 category: true,
             },
         });
@@ -213,7 +225,26 @@ restaurantRouter.get('/:id', async (req, res) => {
             return res.status(404).json({ message: 'Restaurant not found' });
         }
 
-        res.json(restaurant);
+        // Average total wait (placed → COMPLETED) over the most recent
+        // completed orders — a light public signal for "how long will this
+        // take", not the full order history (this endpoint used to include
+        // every raw Order row — every guest's name/vehicle/phone-linked order
+        // — to any unauthenticated caller; that's gone in favor of just this).
+        const waitRows = await prisma.$queryRawUnsafe(
+            `
+            SELECT AVG(EXTRACT(EPOCH FROM ("updatedAt" - "createdAt")) / 60) AS "avgMinutes"
+            FROM (
+              SELECT "updatedAt", "createdAt" FROM "Order"
+              WHERE "restaurantId" = $1 AND status = 'COMPLETED'
+              ORDER BY "createdAt" DESC
+              LIMIT 20
+            ) recent
+            `,
+            id
+        );
+        const avgWaitMinutes = waitRows[0]?.avgMinutes != null ? Math.round(Number(waitRows[0].avgMinutes)) : null;
+
+        res.json({ ...restaurant, avgWaitMinutes });
     } catch (err) {
         res.status(500).json({ message: 'Error fetching restaurant', error: err });
     }

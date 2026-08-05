@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useMemo } from "react"
 import { useParams } from "react-router-dom"
-import { Search, Mic, Star, MapPin, UtensilsCrossed, ShoppingBag, X, ArrowUpDown } from "lucide-react"
+import { Search, Mic, Star, MapPin, UtensilsCrossed, ShoppingBag, X, ArrowUpDown, Timer } from "lucide-react"
 import { restaurantApi, categoryApi } from "../api"
 import { useCart } from "../context/CartContext"
 import CartDrawer from "../components/CartDrawer"
@@ -28,9 +28,14 @@ function SkeletonCard() {
 
 export default function MenuPage() {
   const { restaurantId } = useParams()
-  const { itemCount, total } = useCart()
+  const { itemCount, total, setActiveRestaurant } = useCart()
   const tabsRef = useRef(null)
   useRestaurantTheme(restaurantId)
+
+  // A stale cart from a different restaurant (the shared CartProvider is a
+  // single global instance) gets cleared the moment this restaurant's menu
+  // is the one actually being browsed — see CartContext.setActiveRestaurant.
+  useEffect(() => { setActiveRestaurant(restaurantId) }, [restaurantId, setActiveRestaurant])
 
   const [restaurant, setRestaurant] = useState(null)
   const [categories, setCategories] = useState([])
@@ -161,6 +166,11 @@ export default function MenuPage() {
                     )}
                     {restaurant?.ratingCount != null && (
                       <span style={{ fontSize: "0.76rem", color: "var(--muted)", fontWeight: 600 }}>{restaurant.ratingCount}+ ratings</span>
+                    )}
+                    {restaurant?.avgWaitMinutes != null && (
+                      <span className="meta-item" style={{ fontSize: "0.76rem", color: "var(--text-secondary)", fontWeight: 600 }}>
+                        <Timer size={13} strokeWidth={2.2} /> ~{restaurant.avgWaitMinutes} min wait
+                      </span>
                     )}
                   </div>
                 </div>

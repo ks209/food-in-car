@@ -5,14 +5,17 @@ import prisma from '../../config/prisma.js';
 import { genDeliveryCode } from '../../utils/deliveryCode.js';
 import { resolveCustomerByPhone } from '../../utils/customer.js';
 import { nextDailyOrderNumber } from '../../utils/dailyOrderNumber.js';
-import { MERCHANT_ID, SALT_KEY, DEV_MODE, BASE, xVerifyForPay, reconcileTransaction } from '../../utils/phonepe.js';
+import { validateAndPriceCart } from '../../utils/validateCart.js';
+import { isDevMode, baseUrl, xVerifyForPay, reconcileTransaction } from '../../utils/phonepe.js';
 
 const paymentRouter = express.Router();
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5174';
 const BACKEND_URL  = process.env.BACKEND_URL  || 'http://localhost:5000';
 
-async function createOrder(req, { restaurantId, items, totalAmount, deliveryInstructions, guestName, guestVehicle, mobileNumber, deviceKey }) {
+// `pricedItems`/`totalAmount` are the server-validated result of validateAndPriceCart
+// — never the client's raw cart — so the order and the PhonePe charge always agree.
+async function createOrder(restaurantId, { pricedItems, totalAmount, deliveryInstructions, guestName, guestVehicle, mobileNumber, deviceKey }) {
   // Vehicle is optional: absent means pickup.
   const vehicle = guestVehicle && guestVehicle.trim() ? guestVehicle.trim().toUpperCase() : null;
   const customer = await resolveCustomerByPhone(mobileNumber, guestName, vehicle);
@@ -24,7 +27,7 @@ async function createOrder(req, { restaurantId, items, totalAmount, deliveryInst
       dailyOrderNumber,
       guestName,
       guestVehicle: vehicle,
-      totalAmount: parseFloat(totalAmount),
+      totalAmount,
       deliveryCode: genDeliveryCode(),
       deviceKey: deviceKey || null,
       deliveryInstructions: deliveryInstructions || '',
@@ -32,18 +35,13 @@ async function createOrder(req, { restaurantId, items, totalAmount, deliveryInst
       paymentMethod: 'PHONEPE',
       orderStatusHistory: { create: { status: 'PENDING', updatedBy: 'customer' } },
       orderItems: {
-        create: items.map(i => ({
-          menuItemId: i.id || null,
+        create: pricedItems.map((i) => ({
+          menuItemId: i.menuItemId,
           name: i.name,
-          unitPrice: i.price,
-          finalPrice: i.price,
-          quantity: i.quantity || 1,
-          options: {
-            create: (i.selectedOptions || []).map(o => ({
-              name: o.name,
-              priceDelta: o.priceDelta || 0,
-            })),
-          },
+          unitPrice: i.unitPrice,
+          finalPrice: i.finalPrice,
+          quantity: i.quantity,
+          options: { create: i.options.map((o) => ({ name: o.name, priceDelta: o.priceDelta })) },
         })),
       },
     },
@@ -52,8 +50,8 @@ async function createOrder(req, { restaurantId, items, totalAmount, deliveryInst
 
 // ── POST /api/payment/initiate ────────────────────────────────────────────────
 paymentRouter.post('/initiate', async (req, res) => {
-  const { restaurantId, items, totalAmount, deliveryInstructions, guestName, guestVehicle, mobileNumber, deviceKey } = req.body;
-  if (!restaurantId || !items || !totalAmount || !guestName || !mobileNumber) {
+  const { restaurantId, items, deliveryInstructions, guestName, guestVehicle, mobileNumber, deviceKey } = req.body;
+  if (!restaurantId || !items || !guestName || !mobileNumber) {
     return res.status(400).json({ error: 'Missing required fields (name, phone, items)' });
   }
 
@@ -62,19 +60,27 @@ paymentRouter.post('/initiate', async (req, res) => {
     if (!restaurant || !restaurant.isActive) return res.status(404).json({ error: 'Restaurant not found' });
     if (!restaurant.isOpen) return res.status(400).json({ error: 'Restaurant is currently closed' });
 
-    const order = await createOrder(req, { restaurantId, items, totalAmount, deliveryInstructions, guestName, guestVehicle, mobileNumber, deviceKey });
+    const priced = await validateAndPriceCart(restaurantId, items);
+    if (!priced.ok) return res.status(400).json({ error: priced.error });
 
-    // Dev mode: no PhonePe credentials — skip gateway, go straight to order page
-    if (DEV_MODE) {
-      console.log('[payment] DEV_MODE — skipping PhonePe, order', order.id, 'placed as PENDING');
+    const order = await createOrder(restaurantId, {
+      pricedItems: priced.items, totalAmount: priced.totalAmount,
+      deliveryInstructions, guestName, guestVehicle, mobileNumber, deviceKey,
+    });
+
+    // No PhonePe credentials configured for THIS restaurant — skip the
+    // gateway, go straight to order page (matches the old global dev-mode
+    // fallback, just scoped per-tenant now instead of platform-wide).
+    if (isDevMode(restaurant)) {
+      console.log(`[payment] restaurant ${restaurant.id} has no PhonePe credentials — order ${order.id} placed as PENDING, no charge`);
       return res.json({ orderId: order.id, deliveryCode: order.deliveryCode, redirectUrl: null, devMode: true });
     }
 
     const merchantTransactionId = `MT${Date.now()}O${order.id}`;
-    const amountPaise = Math.round(parseFloat(totalAmount) * 100);
+    const amountPaise = Math.round(priced.totalAmount * 100);
 
     const payload = {
-      merchantId: MERCHANT_ID,
+      merchantId: restaurant.phonepeMerchantId,
       merchantTransactionId,
       merchantUserId: `MUID${order.id}`,
       amount: amountPaise,
@@ -88,9 +94,9 @@ paymentRouter.post('/initiate', async (req, res) => {
     const base64Payload = Buffer.from(JSON.stringify(payload)).toString('base64');
 
     const phonePeRes = await axios.post(
-      `${BASE}/pg/v1/pay`,
+      `${baseUrl(restaurant)}/pg/v1/pay`,
       { request: base64Payload },
-      { headers: { 'Content-Type': 'application/json', 'X-VERIFY': xVerifyForPay(base64Payload), accept: 'application/json' } }
+      { headers: { 'Content-Type': 'application/json', 'X-VERIFY': xVerifyForPay(restaurant, base64Payload), accept: 'application/json' } }
     );
 
     await prisma.merchantTransaction.create({
@@ -108,33 +114,40 @@ paymentRouter.post('/initiate', async (req, res) => {
 });
 
 // ── POST /api/payment/callback ────────────────────────────────────────────────
-// PhonePe server-to-server webhook after payment completes.
+// PhonePe server-to-server webhook after payment completes. Salt keys are now
+// per-restaurant, so unlike before we can't verify the signature until we know
+// WHICH restaurant this transaction belongs to — decode first (safe, just
+// reading bytes) to find the transaction, THEN verify against that
+// restaurant's salt key before trusting anything in the payload.
 paymentRouter.post('/callback', async (req, res) => {
   try {
     const xVerify = req.headers['x-verify'];
     const responseBody = req.body?.response;
     if (!xVerify || !responseBody) return res.status(400).send('Bad request');
 
+    const decoded = JSON.parse(Buffer.from(responseBody, 'base64').toString('utf8'));
+    const txnId = decoded?.data?.merchantTransactionId;
+    if (!txnId) return res.status(400).send('Bad request');
+
+    const txn = await prisma.merchantTransaction.findFirst({
+      where: { txnId },
+      include: { order: { include: { restaurant: true } } },
+    });
+    if (!txn) return res.status(404).send('Unknown transaction');
+    const restaurant = txn.order.restaurant;
+
     const [receivedHash] = xVerify.split('###');
-    const computedHash = crypto.createHash('sha256').update(responseBody + SALT_KEY).digest('hex');
+    const computedHash = crypto.createHash('sha256').update(responseBody + restaurant.phonepeSaltKey).digest('hex');
     if (computedHash !== receivedHash) return res.status(401).send('Unauthorized');
 
-    const decoded = JSON.parse(Buffer.from(responseBody, 'base64').toString('utf8'));
-    const txnId   = decoded?.data?.merchantTransactionId;
-    const paid    = decoded?.success && decoded?.data?.state === 'COMPLETED';
-
-    if (txnId) {
-      const newStatus = paid ? 'COMPLETED' : 'FAILED';
-      await prisma.merchantTransaction.updateMany({ where: { txnId }, data: { status: newStatus } });
-      if (paid) {
-        const txn = await prisma.merchantTransaction.findFirst({ where: { txnId } });
-        if (txn) {
-          await prisma.order.update({
-            where: { id: txn.orderId },
-            data: { status: 'PAID', orderStatusHistory: { create: { status: 'PAID', updatedBy: 'phonepe' } } },
-          });
-        }
-      }
+    const paid = decoded?.success && decoded?.data?.state === 'COMPLETED';
+    const newStatus = paid ? 'COMPLETED' : 'FAILED';
+    await prisma.merchantTransaction.updateMany({ where: { txnId }, data: { status: newStatus } });
+    if (paid) {
+      await prisma.order.update({
+        where: { id: txn.orderId },
+        data: { status: 'PAID', orderStatusHistory: { create: { status: 'PAID', updatedBy: 'phonepe' } } },
+      });
     }
     res.status(200).send('OK');
   } catch (err) {
@@ -149,12 +162,13 @@ paymentRouter.post('/callback', async (req, res) => {
 paymentRouter.get('/redirect', async (req, res) => {
   const { orderId, restaurantId } = req.query;
   try {
+    const order = await prisma.order.findUnique({ where: { id: parseInt(orderId) }, include: { restaurant: true } });
     const txn = await prisma.merchantTransaction.findFirst({
       where: { orderId: parseInt(orderId) },
       orderBy: { id: 'desc' },
     });
-    if (txn && txn.status !== 'COMPLETED') {
-      await reconcileTransaction(txn).catch(() => {}); // status check failed — order stays PENDING, user can see that
+    if (order && txn && txn.status !== 'COMPLETED') {
+      await reconcileTransaction(order.restaurant, txn).catch(() => {}); // status check failed — order stays PENDING, user can see that
     }
   } catch { /* ignore, still redirect */ }
 
@@ -174,13 +188,16 @@ paymentRouter.get('/redirect', async (req, res) => {
 paymentRouter.get('/status/:orderId', async (req, res) => {
   try {
     const orderId = parseInt(req.params.orderId);
+    const order = await prisma.order.findUnique({ where: { id: orderId }, include: { restaurant: true } });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
     const txn = await prisma.merchantTransaction.findFirst({
       where: { orderId },
       orderBy: { id: 'desc' },
     });
     if (!txn) return res.json({ status: 'NO_TRANSACTION' });
 
-    const { state, paid } = await reconcileTransaction(txn);
+    const { state, paid } = await reconcileTransaction(order.restaurant, txn);
     res.json({ txnId: txn.txnId, state, localStatus: paid ? 'COMPLETED' : txn.status, paid });
   } catch (err) {
     res.status(500).json({ error: 'Status check failed', details: err?.response?.data?.message || err.message });
