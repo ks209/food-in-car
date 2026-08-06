@@ -23,6 +23,23 @@ const TOP_OPTIONS = 8;
 // topping is not a 100% attach rate worth acting on.
 const MIN_OPTION_SAMPLE = 3;
 
+// Service windows, covering all 24 hours so every order lands in exactly one.
+// `to` is exclusive; Late wraps past midnight.
+const DAYPARTS = [
+  { key: 'morning',   label: 'Morning',   from: 5,  to: 11 },
+  { key: 'lunch',     label: 'Lunch',     from: 11, to: 16 },
+  { key: 'afternoon', label: 'Afternoon', from: 16, to: 19 },
+  { key: 'dinner',    label: 'Dinner',    from: 19, to: 23 },
+  { key: 'late',      label: 'Late',      from: 23, to: 5  },
+];
+
+const daypartFor = (hour) =>
+  DAYPARTS.find((d) => (d.from < d.to ? hour >= d.from && hour < d.to : hour >= d.from || hour < d.to));
+
+// A price change needs enough days either side to say anything. Below this the
+// comparison is reported but flagged as too early to read.
+const PRICE_MIN_DAYS = 3;
+
 // ── Local-time helpers ────────────────────────────────────────────────────────
 // Day bucketing has to happen in the RESTAURANT's local timezone, not the
 // server's — a Node process in UTC would otherwise split an IST evening service
@@ -279,6 +296,46 @@ analyticsRouter.get('/summary', restaurantAuth, async (req, res) => {
     const topItems = [...allItems].sort((a, b) => b.units - a.units).slice(0, TOP_ITEMS)
       .map(({ name, units, revenue }) => ({ name, units, revenue }));
 
+    // ── Category × daypart ──────────────────────────────────────────────────
+    // What sells when. "Main Course earns the most" is something an owner
+    // already knows; which service window each category actually lands in is
+    // what drives prep and stocking.
+    const daypartAgg = {};
+    sold.forEach((o) => {
+      const part = daypartFor(localHour(o.createdAt, offsetMin));
+      if (!part) return;
+      o.orderItems.forEach((it) => {
+        const cat = catByItem.get(it.menuItemId) || 'Uncategorized';
+        const qty = it.quantity || 1;
+        const rev = (it.finalPrice ?? it.unitPrice ?? 0) * qty;
+        if (!daypartAgg[cat]) daypartAgg[cat] = {};
+        if (!daypartAgg[cat][part.key]) daypartAgg[cat][part.key] = { units: 0, revenue: 0 };
+        daypartAgg[cat][part.key].units += qty;
+        daypartAgg[cat][part.key].revenue += rev;
+      });
+    });
+
+    const categoryDaypart = {
+      dayparts: DAYPARTS.map(({ key, label, from, to }) => ({ key, label, from, to })),
+      rows: Object.entries(daypartAgg)
+        .map(([category, parts]) => {
+          const cells = DAYPARTS.map((d) => ({
+            daypart: d.key,
+            units: parts[d.key]?.units || 0,
+            revenue: parts[d.key]?.revenue || 0,
+          }));
+          return { category, cells, total: cells.reduce((s, c) => s + c.revenue, 0) };
+        })
+        .sort((a, b) => b.total - a.total)
+        .slice(0, TOP_CATEGORIES),
+    };
+    // Shared colour scale across the whole grid — per-row scaling would make a
+    // tiny category look as busy as the main one.
+    categoryDaypart.maxCell = Math.max(
+      0,
+      ...categoryDaypart.rows.flatMap((r) => r.cells.map((c) => c.revenue))
+    );
+
     // ── Orders by hour ──────────────────────────────────────────────────────
     const hourBuckets = Array.from({ length: 24 }, () => ({ orders: 0, prep: [] }));
     filtered.forEach((o) => {
@@ -400,6 +457,88 @@ analyticsRouter.get('/summary', restaurantAuth, async (req, res) => {
       .sort((a, b) => b.attachPct - a.attachPct)
       .slice(0, TOP_OPTIONS);
 
+    // ── Price-change impact ─────────────────────────────────────────────────
+    // What happened to demand after each price edit. MenuItemHistory records a
+    // snapshot whenever price or availability moves (see utils/menuHistory.js),
+    // so consecutive rows for one item give the old and new price with the date
+    // between them.
+    //
+    // Both sides are measured as a per-DAY rate, because the windows either
+    // side of a change are almost never the same length.
+    const rangeStartMs = startOfLocalDay(from, offsetMin).getTime();
+    const rangeEndMs = endOfLocalDay(to, offsetMin).getTime();
+
+    const history = await prisma.menuItemHistory.findMany({
+      where: { menuItem: { restaurantId: req.restaurantId } },
+      select: { menuItemId: true, name: true, price: true, changedAt: true },
+      orderBy: [{ menuItemId: 'asc' }, { changedAt: 'asc' }],
+    });
+
+    // Units and revenue for one menu item between two instants.
+    const demandBetween = (menuItemId, startMs, endMs) => {
+      let units = 0;
+      let revenue = 0;
+      sold.forEach((o) => {
+        const t = new Date(o.createdAt).getTime();
+        if (t < startMs || t >= endMs) return;
+        o.orderItems.forEach((it) => {
+          if (it.menuItemId !== menuItemId) return;
+          const qty = it.quantity || 1;
+          units += qty;
+          revenue += (it.finalPrice ?? it.unitPrice ?? 0) * qty;
+        });
+      });
+      return { units, revenue };
+    };
+
+    const perDay = (value, ms) => (ms > 0 ? value / (ms / DAY_MS) : null);
+
+    const priceChanges = [];
+    for (let i = 1; i < history.length; i += 1) {
+      const before = history[i - 1];
+      const after = history[i];
+      if (before.menuItemId !== after.menuItemId) continue;
+
+      const oldPrice = Number(before.price);
+      const newPrice = Number(after.price);
+      if (oldPrice === newPrice) continue;
+
+      const changedMs = new Date(after.changedAt).getTime();
+      if (changedMs < rangeStartMs || changedMs > rangeEndMs) continue;
+
+      // Windows are clipped to the selected range and to the neighbouring
+      // changes, so a third price never contaminates the comparison.
+      const prevChangeMs = new Date(before.changedAt).getTime();
+      const nextChange = history[i + 1];
+      const nextChangeMs = nextChange && nextChange.menuItemId === after.menuItemId
+        ? new Date(nextChange.changedAt).getTime()
+        : Infinity;
+
+      const beforeStart = Math.max(rangeStartMs, prevChangeMs);
+      const afterEnd = Math.min(rangeEndMs, nextChangeMs);
+      const beforeMs = changedMs - beforeStart;
+      const afterMs = afterEnd - changedMs;
+      if (beforeMs <= 0 || afterMs <= 0) continue;
+
+      const dBefore = demandBetween(after.menuItemId, beforeStart, changedMs);
+      const dAfter = demandBetween(after.menuItemId, changedMs, afterEnd);
+
+      priceChanges.push({
+        menuItemId: after.menuItemId,
+        name: after.name,
+        oldPrice,
+        newPrice,
+        changedAt: after.changedAt,
+        direction: newPrice > oldPrice ? 'increase' : 'decrease',
+        pricePctChange: oldPrice ? ((newPrice - oldPrice) / oldPrice) * 100 : null,
+        before: { days: beforeMs / DAY_MS, unitsPerDay: perDay(dBefore.units, beforeMs), revenuePerDay: perDay(dBefore.revenue, beforeMs), ...dBefore },
+        after: { days: afterMs / DAY_MS, unitsPerDay: perDay(dAfter.units, afterMs), revenuePerDay: perDay(dAfter.revenue, afterMs), ...dAfter },
+        // Too few days either side to read anything into it yet.
+        lowConfidence: beforeMs / DAY_MS < PRICE_MIN_DAYS || afterMs / DAY_MS < PRICE_MIN_DAYS,
+      });
+    }
+    priceChanges.sort((a, b) => new Date(b.changedAt) - new Date(a.changedAt));
+
     res.json({
       range: { from, to, days },
       previous: { from: prevFrom, to: prevTo, days },
@@ -411,6 +550,11 @@ analyticsRouter.get('/summary', restaurantAuth, async (req, res) => {
       },
       daily,
       byHour,
+      categoryDaypart,
+      priceChanges,
+      // Distinguishes "no price edits in this range" from "nothing has ever
+      // been tracked", which are very different messages for the owner.
+      priceTrackingStarted: history.length > 0,
       topCategories,
       topItems,
       fulfilment: { inCar, pickup: sold.length - inCar },

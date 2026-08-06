@@ -6,11 +6,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input"
 import {
   ShoppingBag, IndianRupee, Receipt, Repeat, Trophy, Timer, AlertTriangle, Download,
-  Calendar, CheckCircle2, XCircle, CalendarDays, Grid2x2, Ghost, Sparkles,
+  Calendar, CheckCircle2, XCircle, CalendarDays, Grid2x2, Ghost, Sparkles, TrendingUp,
 } from "lucide-react"
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
-  Cell, Legend, ReferenceLine, ScatterChart, Scatter, ZAxis,
+  PieChart, Pie, Cell, Legend, ReferenceLine,
 } from "recharts"
 import axios from "axios"
 import { API } from "@/lib/api"
@@ -19,11 +19,11 @@ import {
   CHART_TOOLTIP_ITEM_STYLE as tooltipItemStyle, CHART_TOOLTIP_LABEL_STYLE as tooltipLabelStyle,
   formatCurrency, formatHour, todayStr, daysAgoStr,
 } from "@/lib/format"
-import { CHART_CATEGORY_COLORS } from "@/lib/chart-colors"
 import { ORDER_STATUS_LABELS } from "@/lib/status"
-import { formatRangeLabel } from "@/lib/compare"
+import { formatRangeLabel, pctChange } from "@/lib/compare"
 import { StatusDot } from "@/components/ui/status-dot"
 import { StatCard } from "@/components/ui/stat-card"
+import { ChangeBadge } from "@/components/ui/change-badge"
 import { Button } from "@/components/ui/button"
 import { downloadCsv } from "@/lib/export"
 
@@ -32,10 +32,10 @@ const STATUS_FILTER_OPTIONS = ["PENDING", "PAID", "PREPARING", "READY", "COMPLET
 // Menu-engineering quadrants (Kasavana-Smith). The label is the decision, not
 // the jargon — an owner should be able to act on the card without a glossary.
 const QUADRANTS = {
-  star:      { label: "Stars",      color: "#10b981", hint: "Popular and high value — feature these" },
-  plowhorse: { label: "Plowhorses", color: "#f59e0b", hint: "Sell well but earn little — reprice or cut cost" },
-  puzzle:    { label: "Puzzles",    color: "#8b5cf6", hint: "Earn well but rarely ordered — promote" },
-  dog:       { label: "Dogs",       color: "#94a3b8", hint: "Neither — candidates for removal" },
+  star:      { label: "Stars",      color: "#10b981", action: "Sell well and earn well — keep quality up and feature them" },
+  plowhorse: { label: "Plowhorses", color: "#f59e0b", action: "Popular but cheap — nudge the price up or cut portion cost" },
+  puzzle:    { label: "Puzzles",    color: "#8b5cf6", action: "Earn well but rarely ordered — promote or move up the menu" },
+  dog:       { label: "Dogs",       color: "#94a3b8", action: "Low sales and low value — candidates to drop" },
 }
 
 function fmtMin(mins) {
@@ -43,6 +43,13 @@ function fmtMin(mins) {
   if (mins < 1) return `${Math.round(mins * 60)}s`
   if (mins < 60) return `${mins.toFixed(1)}m`
   return `${Math.floor(mins / 60)}h ${Math.round(mins % 60)}m`
+}
+
+// Infinity ("went from nothing to something") isn't a number the verdict line
+// can phrase sensibly, so it's treated as no comparison here.
+function pctDelta(current, previous) {
+  const change = pctChange(current, previous)
+  return change === null || change === Infinity ? null : change
 }
 
 const dayLabel = (isoDate) =>
@@ -147,14 +154,14 @@ export function Analytics() {
   ]
 
   const fulfilmentTotal = data.fulfilment.inCar + data.fulfilment.pickup
-  const inCarPct = fulfilmentTotal ? (data.fulfilment.inCar / fulfilmentTotal) * 100 : 0
+  const pctOf = (n) => (fulfilmentTotal ? Math.round((n / fulfilmentTotal) * 100) : 0)
+  const fulfilmentSlices = [
+    { name: "In-Car", value: data.fulfilment.inCar, pct: pctOf(data.fulfilment.inCar), color: "var(--brand, #f97316)" },
+    { name: "Pickup", value: data.fulfilment.pickup, pct: pctOf(data.fulfilment.pickup), color: "#94a3b8" },
+  ].filter((s) => s.value > 0)
 
   const topItemMax = data.topItems[0]?.units || 1
-
-  const quadrantCounts = menu.matrix.reduce((acc, i) => {
-    acc[i.quadrant] = (acc[i.quadrant] || 0) + 1
-    return acc
-  }, {})
+  const daypart = data.categoryDaypart
 
   const exportSections = [
     { title: "KPIs", rows: [
@@ -165,6 +172,19 @@ export function Analytics() {
     { title: "Best-selling categories", rows: [["Category", "Units sold", "Revenue"], ...data.topCategories.map((c) => [c.name, c.units, c.revenue.toFixed(2)])] },
     { title: "Top items", rows: [["Item", "Units sold", "Revenue"], ...data.topItems.map((i) => [i.name, i.units, i.revenue.toFixed(2)])] },
     { title: "Orders by hour", rows: [["Hour", "Orders"], ...data.byHour.map((h) => [formatHour(h.hour), h.orders])] },
+    { title: "What sells when (revenue)", rows: [
+      ["Category", ...daypart.dayparts.map((d) => d.label), "Total"],
+      ...daypart.rows.map((r) => [r.category, ...r.cells.map((c) => c.revenue.toFixed(2)), r.total.toFixed(2)]),
+    ] },
+    { title: "Price changes", rows: [
+      ["Item", "Changed", "Old price", "New price", "Units/day before", "Units/day after", "Revenue/day before", "Revenue/day after", "Confidence"],
+      ...data.priceChanges.map((c) => [
+        c.name, new Date(c.changedAt).toISOString().slice(0, 10), c.oldPrice.toFixed(2), c.newPrice.toFixed(2),
+        c.before.unitsPerDay?.toFixed(2) ?? "", c.after.unitsPerDay?.toFixed(2) ?? "",
+        c.before.revenuePerDay?.toFixed(2) ?? "", c.after.revenuePerDay?.toFixed(2) ?? "",
+        c.lowConfidence ? "too early" : "ok",
+      ]),
+    ] },
     { title: "Kitchen SLA", rows: [
       ["Metric", "Value"],
       ["Median prep (p50)", prep.p50 != null ? prep.p50.toFixed(1) : ""],
@@ -443,29 +463,66 @@ export function Analytics() {
           <Card className="border-0 shadow-sm lg:col-span-2">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-2">
-                <Trophy className="h-4 w-4" /> Best-selling categories
+                <Trophy className="h-4 w-4" /> What sells when
               </CardTitle>
+              <p className="text-xs text-slate-400 mt-1">
+                Revenue by category across each service window — darker means more. Which shift a
+                category actually lands in is what drives prep and stocking.
+              </p>
             </CardHeader>
             <CardContent>
-              {data.topCategories.length === 0 ? (
+              {daypart.rows.length === 0 ? (
                 <p className="text-slate-400 text-sm text-center py-16">No sales yet</p>
               ) : (
-                <ResponsiveContainer width="100%" height={Math.max(200, data.topCategories.length * 44)}>
-                  <BarChart data={data.topCategories} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 18 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" horizontal={false} />
-                    <XAxis type="number" tickLine={false} axisLine={false} fontSize={12} stroke="#71717a"
-                      tickFormatter={(v) => formatCurrency(v)}
-                      label={{ value: "revenue", position: "insideBottom", offset: -4, fontSize: 11, fill: "#71717a" }} />
-                    <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} fontSize={12} stroke="#71717a" width={110} />
-                    <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }}
-                      contentStyle={tooltipStyle} wrapperStyle={tooltipWrapperStyle}
-                      itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle}
-                      formatter={(v, _n, p) => [`${formatCurrency(v)} · ${p.payload.units} sold`, p.payload.name]} />
-                    <Bar dataKey="revenue" radius={[0, 6, 6, 0]} maxBarSize={26}>
-                      {data.topCategories.map((c, i) => <Cell key={c.name} fill={CHART_CATEGORY_COLORS[i % CHART_CATEGORY_COLORS.length]} />)}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm border-separate border-spacing-y-1">
+                    <thead>
+                      <tr>
+                        <th className="text-left font-medium text-xs text-slate-400 uppercase tracking-wide pb-1 pr-3">Category</th>
+                        {daypart.dayparts.map((d) => (
+                          <th key={d.key} className="font-medium text-xs text-slate-400 uppercase tracking-wide pb-1 px-1 text-center whitespace-nowrap">
+                            {d.label}
+                            <span className="block font-normal normal-case text-[10px] text-slate-300">
+                              {formatHour(d.from)}–{formatHour(d.to)}
+                            </span>
+                          </th>
+                        ))}
+                        <th className="font-medium text-xs text-slate-400 uppercase tracking-wide pb-1 pl-3 text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {daypart.rows.map((row) => (
+                        <tr key={row.category}>
+                          <td className="pr-3 text-slate-800 font-medium truncate max-w-[140px]">{row.category}</td>
+                          {row.cells.map((c) => {
+                            // Shared scale across the whole grid; a floor keeps a
+                            // non-zero cell visible instead of washing out to white.
+                            const ratio = daypart.maxCell ? c.revenue / daypart.maxCell : 0
+                            return (
+                              <td key={c.daypart} className="px-1">
+                                <div
+                                  className="rounded-md py-2 text-center transition-colors"
+                                  title={`${row.category} · ${c.units} sold · ${formatCurrency(c.revenue)}`}
+                                  style={{
+                                    backgroundColor: c.revenue === 0
+                                      ? "rgba(148,163,184,0.08)"
+                                      : `color-mix(in srgb, var(--brand, #f97316) ${Math.round(12 + ratio * 78)}%, transparent)`,
+                                    color: ratio > 0.55 ? "white" : "rgb(51,65,85)",
+                                  }}
+                                >
+                                  <span className="text-xs font-semibold">
+                                    {c.revenue === 0 ? "—" : formatCurrency(c.revenue)}
+                                  </span>
+                                </div>
+                              </td>
+                            )
+                          })}
+                          <td className="pl-3 text-right font-semibold text-slate-800 whitespace-nowrap">{formatCurrency(row.total)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -478,28 +535,19 @@ export function Analytics() {
               {fulfilmentTotal === 0 ? (
                 <p className="text-slate-400 text-sm text-center py-8">No orders yet</p>
               ) : (
-                // A two-slice donut spent a whole card saying one number; a
-                // split bar says the same thing in a fraction of the space.
-                <div className="space-y-4">
-                  <div className="flex h-3 rounded-full overflow-hidden bg-slate-100">
-                    <div style={{ width: `${inCarPct}%`, backgroundColor: "var(--brand, #f97316)" }} />
-                    <div style={{ width: `${100 - inCarPct}%`, backgroundColor: "#94a3b8" }} />
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="flex items-center gap-2 text-slate-600">
-                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: "var(--brand, #f97316)" }} /> In-Car
-                      </span>
-                      <span className="font-semibold text-slate-800">{data.fulfilment.inCar} · {Math.round(inCarPct)}%</span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="flex items-center gap-2 text-slate-600">
-                        <span className="h-2 w-2 rounded-full bg-slate-400" /> Pickup
-                      </span>
-                      <span className="font-semibold text-slate-800">{data.fulfilment.pickup} · {Math.round(100 - inCarPct)}%</span>
-                    </div>
-                  </div>
-                </div>
+                <ResponsiveContainer width="100%" height={240}>
+                  <PieChart>
+                    <Pie data={fulfilmentSlices} dataKey="value" nameKey="name" innerRadius={50} outerRadius={80} paddingAngle={2}>
+                      {fulfilmentSlices.map((s) => <Cell key={s.name} fill={s.color} />)}
+                    </Pie>
+                    <Tooltip contentStyle={tooltipStyle} wrapperStyle={tooltipWrapperStyle}
+                      itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle}
+                      formatter={(value, name, entry) => [`${value} orders (${entry.payload.pct}%)`, name]} />
+                    <Legend iconType="circle" iconSize={8} formatter={(v, entry) => (
+                      <span className="text-xs text-slate-600">{v} · {entry.payload.pct}%</span>
+                    )} />
+                  </PieChart>
+                </ResponsiveContainer>
               )}
             </CardContent>
           </Card>
@@ -578,8 +626,9 @@ export function Analytics() {
               <Grid2x2 className="h-4 w-4" /> Menu engineering
             </CardTitle>
             <p className="text-xs text-slate-400 mt-1">
-              Units sold against revenue per unit. Lines mark the thresholds: {menu.thresholds.units.toFixed(1)} units
-              and {formatCurrency(menu.thresholds.unitRevenue)} per unit.
+              Every item sorted by how well it sells against what it earns per unit. An item counts as
+              selling well above {menu.thresholds.units.toFixed(1)} units, and earning well above
+              {" "}{formatCurrency(menu.thresholds.unitRevenue)} per unit.
               {" "}Revenue per unit stands in for margin — add a cost per menu item to make this true profit.
             </p>
           </CardHeader>
@@ -587,54 +636,133 @@ export function Analytics() {
             {menu.matrix.length === 0 ? (
               <p className="text-slate-400 text-sm text-center py-16">No items sold in this range</p>
             ) : (
-              <>
-                <div className="flex flex-wrap gap-3 mb-4">
-                  {Object.entries(QUADRANTS).map(([key, q]) => (
-                    <div key={key} className="flex items-center gap-1.5" title={q.hint}>
-                      <span className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: q.color }} />
-                      <span className="text-xs font-medium text-slate-600">{q.label}</span>
-                      <span className="text-xs text-slate-400">{quadrantCounts[key] || 0}</span>
-                    </div>
-                  ))}
-                </div>
+              // Grouped lists rather than a scatter plot. A quadrant chart makes
+              // the reader do the work — find the dot, map it back to an axis,
+              // decide what the position means. The decision is the point, so
+              // each group leads with the action and then names the items.
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {Object.entries(QUADRANTS).map(([key, q]) => {
+                  const items = menu.matrix.filter((i) => i.quadrant === key)
+                  return (
+                    <div key={key} className="rounded-lg border border-slate-100 overflow-hidden">
+                      <div className="px-4 py-3 border-l-4" style={{ borderLeftColor: q.color, backgroundColor: `color-mix(in srgb, ${q.color} 6%, transparent)` }}>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-semibold text-slate-800">{q.label}</span>
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                            style={{ backgroundColor: `color-mix(in srgb, ${q.color} 16%, transparent)`, color: q.color }}>
+                            {items.length}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-0.5">{q.action}</p>
+                      </div>
 
-                <ResponsiveContainer width="100%" height={300}>
-                  <ScatterChart margin={{ top: 12, right: 20, left: 4, bottom: 20 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                    <XAxis type="number" dataKey="units" name="Units sold" tickLine={false} axisLine={false}
-                      fontSize={12} stroke="#71717a" allowDecimals={false}
-                      label={{ value: "units sold →", position: "insideBottom", offset: -8, fontSize: 11, fill: "#71717a" }} />
-                    <YAxis type="number" dataKey="unitRevenue" name="Revenue per unit" tickLine={false} axisLine={false}
-                      fontSize={12} stroke="#71717a" width={58} tickFormatter={(v) => formatCurrency(v)}
-                      label={{ value: "₹ per unit →", angle: -90, position: "insideLeft", fontSize: 11, fill: "#71717a" }} />
-                    <ZAxis type="number" dataKey="revenue" range={[60, 400]} name="Revenue" />
-                    <Tooltip cursor={{ strokeDasharray: "4 4" }}
-                      contentStyle={tooltipStyle} wrapperStyle={tooltipWrapperStyle}
-                      itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle}
-                      content={({ active, payload }) => {
-                        if (!active || !payload?.length) return null
-                        const i = payload[0].payload
-                        return (
-                          <div style={tooltipStyle} className="px-3 py-2">
-                            <p className="font-semibold">{i.name}</p>
-                            <p className="text-xs opacity-80">{i.category}</p>
-                            <p className="text-xs mt-1">
-                              {i.units} sold · {formatCurrency(i.unitRevenue)}/unit · {formatCurrency(i.revenue)} total
-                            </p>
-                            <p className="text-xs mt-1" style={{ color: QUADRANTS[i.quadrant].color }}>
-                              {QUADRANTS[i.quadrant].label} — {QUADRANTS[i.quadrant].hint}
-                            </p>
-                          </div>
-                        )
-                      }} />
-                    <ReferenceLine x={menu.thresholds.units} stroke="#94a3b8" strokeDasharray="4 4" />
-                    <ReferenceLine y={menu.thresholds.unitRevenue} stroke="#94a3b8" strokeDasharray="4 4" />
-                    <Scatter data={menu.matrix} fillOpacity={0.85}>
-                      {menu.matrix.map((i) => <Cell key={`${i.id}-${i.name}`} fill={QUADRANTS[i.quadrant].color} />)}
-                    </Scatter>
-                  </ScatterChart>
-                </ResponsiveContainer>
-              </>
+                      {items.length === 0 ? (
+                        <p className="text-xs text-slate-400 px-4 py-4">Nothing in this group</p>
+                      ) : (
+                        <div className="divide-y divide-slate-50">
+                          {items.slice(0, 6).map((i) => (
+                            <div key={`${i.id}-${i.name}`} className="flex items-center justify-between gap-3 px-4 py-2">
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-slate-800 truncate">{i.name}</p>
+                                <p className="text-xs text-slate-400 truncate">{i.category}</p>
+                              </div>
+                              <div className="text-right flex-shrink-0">
+                                <p className="text-sm font-semibold text-slate-800">{formatCurrency(i.unitRevenue)}<span className="text-xs font-normal text-slate-400">/unit</span></p>
+                                <p className="text-xs text-slate-400">{i.units} sold · {formatCurrency(i.revenue)}</p>
+                              </div>
+                            </div>
+                          ))}
+                          {items.length > 6 && (
+                            <p className="text-xs text-slate-400 px-4 py-2">+{items.length - 6} more</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ── Price-change impact ────────────────────────────────────────────
+            What actually happened to demand after each price edit. Both sides
+            are per-day rates, since the windows either side of a change are
+            almost never the same length. */}
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-2">
+              <TrendingUp className="h-4 w-4" /> Price changes · did they work?
+            </CardTitle>
+            <p className="text-xs text-slate-400 mt-1">
+              Units and revenue per day before and after each price edit in this range.
+            </p>
+          </CardHeader>
+          <CardContent>
+            {data.priceChanges.length === 0 ? (
+              <p className="text-slate-400 text-sm text-center py-8">
+                {data.priceTrackingStarted
+                  ? "No price changes in this range."
+                  : "No price history yet — edit a menu price and its effect will show up here."}
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {data.priceChanges.map((c) => {
+                  const unitsDelta = pctDelta(c.after.unitsPerDay, c.before.unitsPerDay)
+                  const revenueDelta = pctDelta(c.after.revenuePerDay, c.before.revenuePerDay)
+                  return (
+                    <div key={`${c.menuItemId}-${c.changedAt}`} className="rounded-lg border border-slate-100 p-3">
+                      <div className="flex items-start justify-between gap-3 flex-wrap">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-slate-800 truncate">{c.name}</p>
+                          <p className="text-xs text-slate-400">
+                            {new Date(c.changedAt).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })}
+                            {c.lowConfidence && " · too early to read"}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm flex-shrink-0">
+                          <span className="text-slate-400 line-through">{formatCurrency(c.oldPrice)}</span>
+                          <span className="text-slate-400">→</span>
+                          <span className="font-semibold text-slate-800">{formatCurrency(c.newPrice)}</span>
+                          <span className={`text-xs font-semibold ${c.direction === "increase" ? "text-amber-600" : "text-sky-600"}`}>
+                            {c.direction === "increase" ? "+" : ""}{Math.round(c.pricePctChange)}%
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className={`grid grid-cols-2 gap-3 mt-3 ${c.lowConfidence ? "opacity-60" : ""}`}>
+                        <div className="rounded-md bg-muted/40 p-2.5">
+                          <p className="text-xs text-slate-500">Units / day</p>
+                          <p className="text-sm font-semibold text-slate-800 mt-0.5">
+                            {c.before.unitsPerDay?.toFixed(1) ?? "—"} → {c.after.unitsPerDay?.toFixed(1) ?? "—"}
+                            <ChangeBadge current={c.after.unitsPerDay} previous={c.before.unitsPerDay} className="ml-2" />
+                          </p>
+                        </div>
+                        <div className="rounded-md bg-muted/40 p-2.5">
+                          <p className="text-xs text-slate-500">Revenue / day</p>
+                          <p className="text-sm font-semibold text-slate-800 mt-0.5">
+                            {formatCurrency(c.before.revenuePerDay ?? 0)} → {formatCurrency(c.after.revenuePerDay ?? 0)}
+                            <ChangeBadge current={c.after.revenuePerDay} previous={c.before.revenuePerDay} className="ml-2" />
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* The verdict an owner actually wants: fewer sales is
+                          fine if the money went up, and that's easy to miss
+                          reading two percentages side by side. */}
+                      {!c.lowConfidence && revenueDelta !== null && (
+                        <p className="text-xs mt-2 text-slate-500">
+                          {revenueDelta > 2
+                            ? `Revenue up ${Math.round(revenueDelta)}%${unitsDelta !== null && unitsDelta < 0 ? ` despite ${Math.abs(Math.round(unitsDelta))}% fewer sold` : ""} — the change paid off.`
+                            : revenueDelta < -2
+                              ? `Revenue down ${Math.abs(Math.round(revenueDelta))}%${unitsDelta !== null && unitsDelta < 0 ? ` on ${Math.abs(Math.round(unitsDelta))}% fewer sold` : ""} — worth reconsidering.`
+                              : "Revenue held roughly flat."}
+                        </p>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
             )}
           </CardContent>
         </Card>

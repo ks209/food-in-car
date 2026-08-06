@@ -155,25 +155,28 @@ export function DashboardOverview() {
   // 7 days back — a fair baseline. Yesterday isn't: on a weekly-seasonal
   // business, "Monday vs Sunday" mostly measures which day it is.
   const baseline = days[HISTORY_DAYS - 8]
-  const last7 = days.slice(HISTORY_DAYS - 7)
   const baselineLabel = `vs last ${weekdayLabel(sameWeekdayLastWeek())}`
 
+  // No sparklines here, deliberately. The Overview's job is "what is true right
+  // now" — the delta against last week already carries the direction, and four
+  // more charts above the fold made the landing screen read as a wall of data.
+  // The full daily trends live one click away on Analytics.
   const stats = [
     {
       title: "Orders Today", value: today.orders, icon: ShoppingBag, tint: "brand",
-      current: today.orders, previous: baseline?.orders, trend: last7.map((d) => d.orders),
+      current: today.orders, previous: baseline?.orders,
     },
     {
       title: "Revenue Today", value: formatCurrency(today.revenue), icon: IndianRupee, tint: "brand-secondary",
-      current: today.revenue, previous: baseline?.revenue, trend: last7.map((d) => d.revenue),
+      current: today.revenue, previous: baseline?.revenue,
     },
     {
       title: "Avg Order Value", value: formatCurrency(today.aov), icon: Receipt, tint: "brand-accent",
-      current: today.aov, previous: baseline?.aov, trend: last7.map((d) => d.aov),
+      current: today.aov, previous: baseline?.aov,
     },
     {
       title: "Avg Customer Wait", value: formatMinutes(today.wait), icon: Timer, tint: "brand",
-      current: today.wait, previous: baseline?.wait, invert: true, trend: last7.map((d) => d.wait),
+      current: today.wait, previous: baseline?.wait, invert: true,
       tooltip: "Average time from order placed to COMPLETED, for orders that finished today.",
     },
   ]
