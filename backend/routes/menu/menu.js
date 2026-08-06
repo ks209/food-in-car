@@ -1,6 +1,7 @@
 import express from 'express';
 import prisma from '../../config/prisma.js';
 import restaurantAuth from '../../middlewares/restaurant.auth.js';
+import { recordMenuSnapshot, isTrackedChange } from '../../utils/menuHistory.js';
 const menuRouter = express.Router();
 
 menuRouter.post('/create', restaurantAuth, async (req, res) => {
@@ -53,6 +54,10 @@ menuRouter.post('/create', restaurantAuth, async (req, res) => {
         }
       }
     });
+
+    // Opening snapshot, so the first later price edit has a "before" to
+    // compare against rather than appearing out of nowhere.
+    await recordMenuSnapshot(menuItem, 'restaurant:create');
 
     res.status(201).json(menuItem);
   } catch (error) {
@@ -135,6 +140,12 @@ menuRouter.put('/:id', restaurantAuth, async (req, res) => {
       }
     });
 
+    // Only when price or availability actually moved — a row on every save
+    // would bury real pricing events in noise from description tweaks.
+    if (isTrackedChange(existing, updated)) {
+      await recordMenuSnapshot(updated, 'restaurant:edit');
+    }
+
     res.json(updated);
   } catch (error) {
     res.status(500).json({ error: 'Failed to update menu item', details: error.message });
@@ -171,14 +182,28 @@ menuRouter.patch('/bulk-availability', restaurantAuth, async (req, res) => {
       return res.status(400).json({ error: 'available (boolean) is required' });
     }
 
+    const scope = {
+      restaurantId,
+      isActive: true,
+      categoryId: categoryId === null || categoryId === undefined ? null : parseInt(categoryId)
+    };
+
+    // Read the items whose availability is actually flipping before the write,
+    // so each gets its own history row (updateMany can't report which rows it
+    // touched, and only the ones that changed deserve a snapshot).
+    const changing = await prisma.menuItem.findMany({
+      where: { ...scope, available: { not: available } },
+      select: { id: true, name: true, description: true, price: true, available: true, isActive: true }
+    });
+
     const result = await prisma.menuItem.updateMany({
-      where: {
-        restaurantId,
-        isActive: true,
-        categoryId: categoryId === null || categoryId === undefined ? null : parseInt(categoryId)
-      },
+      where: scope,
       data: { available, updatedAt: new Date() }
     });
+
+    await Promise.all(changing.map((item) =>
+      recordMenuSnapshot({ ...item, available }, 'restaurant:bulk-availability')
+    ));
 
     res.json({ message: 'Availability updated', count: result.count });
   } catch (error) {
