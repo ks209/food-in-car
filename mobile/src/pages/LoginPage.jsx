@@ -2,9 +2,11 @@ import { useState } from "react"
 import { useNavigate, useParams, Link } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
 import { useRestaurantTheme } from "../lib/theme"
+import { useRestaurantBase } from "../lib/restaurantPath"
 
 export default function LoginPage() {
   const { restaurantId } = useParams()
+  const base = useRestaurantBase()
   useRestaurantTheme(restaurantId)
   const { login, register } = useAuth()
   const navigate = useNavigate()
@@ -22,7 +24,7 @@ export default function LoginPage() {
     setError(""); setLoading(true)
     try {
       await login(loginForm.phoneNumber, loginForm.password)
-      navigate(`/restaurant/${restaurantId}/orders`)
+      navigate(`${base}/orders`)
     } catch (err) {
       setError(err.response?.data?.message || "Login failed")
     } finally { setLoading(false) }
@@ -34,7 +36,7 @@ export default function LoginPage() {
     try {
       await register(registerForm)
       await login(registerForm.phoneNumber, registerForm.password)
-      navigate(`/restaurant/${restaurantId}/orders`)
+      navigate(`${base}/orders`)
     } catch (err) {
       setError(err.response?.data?.message || "Registration failed")
     } finally { setLoading(false) }
@@ -44,7 +46,7 @@ export default function LoginPage() {
     <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column" }}>
       {/* Header */}
       <div style={{ background: "var(--primary)", padding: "1.5rem 1rem", color: "white" }}>
-        <Link to={`/restaurant/${restaurantId}`} style={{ color: "white", fontSize: "0.9rem", opacity: 0.9 }}>← Back to Menu</Link>
+        <Link to={base} style={{ color: "white", fontSize: "0.9rem", opacity: 0.9 }}>← Back to Menu</Link>
         <h1 style={{ fontSize: "1.5rem", fontWeight: 700, marginTop: "0.5rem" }}>
           {mode === "login" ? "Sign In" : "Create Account"}
         </h1>

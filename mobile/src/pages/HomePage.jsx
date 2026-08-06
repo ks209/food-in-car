@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { Link } from "react-router-dom"
-import { MapPin, Star, UtensilsCrossed, LocateFixed, Search, X, Download } from "lucide-react"
+import { MapPin, Star, UtensilsCrossed, LocateFixed, Search, X, Download, Share2 } from "lucide-react"
 import { restaurantApi, cityApi, configApi } from "../api"
 import { applyTheme, DEFAULT_HEX } from "../lib/theme"
 
@@ -34,8 +34,11 @@ function SkeletonRestCard() {
 
 function RestCard({ r }) {
   const distance = formatDistance(r.distance)
+  // Prefer the vanity URL so a customer who browses from here ends up on the
+  // same shareable address the restaurant's QR code points at. Falls back to
+  // the numeric form for a restaurant that has no slug set.
   return (
-    <Link to={`/restaurant/${r.id}`} className="rest-card card">
+    <Link to={r.slug ? `/${r.slug}` : `/restaurant/${r.id}`} className="rest-card card">
       <div className="rest-card-cover">
         {r.coverUrl ? (
           <img src={r.coverUrl} alt={r.name} />
@@ -79,17 +82,26 @@ export default function HomePage() {
   const skipNextSearchFetch = useRef(true)
 
   // "Add to Home Screen" test button — gated by a backend env flag so it can
-  // be toggled without a frontend redeploy, and only ever shows on browsers
-  // that actually support the install prompt (Chrome/Edge/Android — iOS
-  // Safari has no beforeinstallprompt event at all; there, Add to Home
-  // Screen is manual, via the browser's own Share menu).
+  // be toggled without a frontend redeploy. Two completely different paths:
+  // Chrome/Edge/Android fire beforeinstallprompt and can be triggered
+  // programmatically; iOS (every browser there is WebKit under the hood —
+  // Apple doesn't allow alternative engines) has no such event at all, so the
+  // best we can do is detect it and show the manual Share-sheet steps.
   const [installEnabled, setInstallEnabled] = useState(false)
   const [installPrompt, setInstallPrompt] = useState(null)
   const [installed, setInstalled] = useState(false)
+  const [isIOS, setIsIOS] = useState(false)
+  const [isStandalone, setIsStandalone] = useState(false)
+  const [showIOSHint, setShowIOSHint] = useState(false)
 
   useEffect(() => { applyTheme(DEFAULT_HEX) }, [])
   useEffect(() => { cityApi.all().then((r) => setCities(r.data)).catch(() => {}) }, [])
   useEffect(() => { configApi.get().then((r) => setInstallEnabled(!!r.data.pwaInstallButtonEnabled)).catch(() => {}) }, [])
+
+  useEffect(() => {
+    setIsIOS(/iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream)
+    setIsStandalone(window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches)
+  }, [])
 
   useEffect(() => {
     const onBeforeInstall = (e) => { e.preventDefault(); setInstallPrompt(e) }
@@ -110,6 +122,14 @@ export default function HomePage() {
   }
 
   const showInstallButton = installEnabled && !!installPrompt && !installed
+  const showIOSInstallHint = installEnabled && isIOS && !isStandalone
+
+  const iosHintRef = useRef(null)
+  useEffect(() => {
+    const close = (e) => { if (iosHintRef.current && !iosHintRef.current.contains(e.target)) setShowIOSHint(false) }
+    document.addEventListener("mousedown", close)
+    return () => document.removeEventListener("mousedown", close)
+  }, [])
 
   function loadRestaurants(pageNum, modeParams, searchTerm, { append = false } = {}) {
     const params = { page: pageNum, pageSize: PAGE_SIZE, ...modeParams }
@@ -213,6 +233,26 @@ export default function HomePage() {
           <button className="btn btn-outline btn-sm home-install-btn" onClick={handleInstallClick}>
             <Download size={14} /> Install App
           </button>
+        )}
+        {showIOSInstallHint && (
+          <div ref={iosHintRef} style={{ position: "relative" }}>
+            <button className="btn btn-outline btn-sm home-install-btn" onClick={() => setShowIOSHint((s) => !s)}>
+              <Share2 size={14} /> Add to Home Screen
+            </button>
+            {showIOSHint && (
+              <div className="anim-scale" style={{
+                position: "absolute", right: 0, top: "calc(100% + 0.5rem)", zIndex: 120, width: 230,
+                background: "var(--card)", borderRadius: 14, boxShadow: "var(--shadow-lg)",
+                border: "1px solid var(--border)", padding: "0.9rem 1rem",
+              }}>
+                <p style={{ fontSize: "0.82rem", fontWeight: 700, marginBottom: "0.5rem" }}>Add Carkhanaa to your Home Screen</p>
+                <ol style={{ fontSize: "0.78rem", color: "var(--text-secondary)", paddingLeft: "1.1rem", display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                  <li>Tap the <strong style={{ color: "var(--text)" }}>Share</strong> icon in the toolbar</li>
+                  <li>Scroll down and tap <strong style={{ color: "var(--text)" }}>"Add to Home Screen"</strong></li>
+                </ol>
+              </div>
+            )}
+          </div>
         )}
       </div>
 

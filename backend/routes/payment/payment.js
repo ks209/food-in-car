@@ -15,7 +15,11 @@ const BACKEND_URL  = process.env.BACKEND_URL  || 'http://localhost:5000';
 
 // `pricedItems`/`totalAmount` are the server-validated result of validateAndPriceCart
 // — never the client's raw cart — so the order and the PhonePe charge always agree.
-async function createOrder(restaurantId, { pricedItems, totalAmount, deliveryInstructions, guestName, guestVehicle, mobileNumber, deviceKey }) {
+//
+// `status` is PENDING for the real gateway flow (nothing is owed to the kitchen
+// until PhonePe confirms) but PAID in dev mode, where there is no gateway to
+// wait on and the order is final the moment it's created.
+async function createOrder(restaurantId, { pricedItems, totalAmount, deliveryInstructions, guestName, guestVehicle, mobileNumber, deviceKey, status = 'PENDING' }) {
   // Vehicle is optional: absent means pickup.
   const vehicle = guestVehicle && guestVehicle.trim() ? guestVehicle.trim().toUpperCase() : null;
   const customer = await resolveCustomerByPhone(mobileNumber, guestName, vehicle);
@@ -31,9 +35,9 @@ async function createOrder(restaurantId, { pricedItems, totalAmount, deliveryIns
       deliveryCode: genDeliveryCode(),
       deviceKey: deviceKey || null,
       deliveryInstructions: deliveryInstructions || '',
-      status: 'PENDING',
+      status,
       paymentMethod: 'PHONEPE',
-      orderStatusHistory: { create: { status: 'PENDING', updatedBy: 'customer' } },
+      orderStatusHistory: { create: { status, updatedBy: 'customer' } },
       orderItems: {
         create: pricedItems.map((i) => ({
           menuItemId: i.menuItemId,
@@ -63,16 +67,26 @@ paymentRouter.post('/initiate', async (req, res) => {
     const priced = await validateAndPriceCart(restaurantId, items);
     if (!priced.ok) return res.status(400).json({ error: priced.error });
 
+    // No PhonePe credentials configured for THIS restaurant — skip the gateway
+    // (matches the old global dev-mode fallback, just scoped per-tenant now).
+    //
+    // Such an order is created PAID, not PENDING. A dev-mode order has no
+    // gateway result to wait for, and nothing existed that could ever move it
+    // off PENDING: the reconciliation cron starts from MerchantTransaction,
+    // which this path never creates, and skips credential-less restaurants
+    // regardless. Since GET /api/order hides PENDING from every dashboard
+    // screen, those orders were stranded — invisible in Overview, Orders,
+    // Kitchen Display and Analytics alike, with no way to ever be fulfilled.
+    const devMode = isDevMode(restaurant);
+
     const order = await createOrder(restaurantId, {
       pricedItems: priced.items, totalAmount: priced.totalAmount,
       deliveryInstructions, guestName, guestVehicle, mobileNumber, deviceKey,
+      status: devMode ? 'PAID' : 'PENDING',
     });
 
-    // No PhonePe credentials configured for THIS restaurant — skip the
-    // gateway, go straight to order page (matches the old global dev-mode
-    // fallback, just scoped per-tenant now instead of platform-wide).
-    if (isDevMode(restaurant)) {
-      console.log(`[payment] restaurant ${restaurant.id} has no PhonePe credentials — order ${order.id} placed as PENDING, no charge`);
+    if (devMode) {
+      console.log(`[payment] restaurant ${restaurant.id} has no PhonePe credentials — order ${order.id} placed as PAID, no charge`);
       return res.json({ orderId: order.id, deliveryCode: order.deliveryCode, redirectUrl: null, devMode: true });
     }
 
@@ -93,15 +107,22 @@ paymentRouter.post('/initiate', async (req, res) => {
 
     const base64Payload = Buffer.from(JSON.stringify(payload)).toString('base64');
 
+    // Recorded BEFORE the gateway call, not after it. verifyPendingOrders finds
+    // stuck orders by walking MerchantTransaction rows, so an order without one
+    // is invisible to it — and if the call below throws (PhonePe unreachable,
+    // or a salt key mistyped in Settings), the order would sit PENDING forever,
+    // hidden from every dashboard screen with nothing able to resolve it.
+    // Writing the row first means anything that reached the gateway is always
+    // reconcilable, including the attempts that failed.
+    await prisma.merchantTransaction.create({
+      data: { orderId: order.id, txnId: merchantTransactionId, status: 'PENDING' },
+    });
+
     const phonePeRes = await axios.post(
       `${baseUrl(restaurant)}/pg/v1/pay`,
       { request: base64Payload },
       { headers: { 'Content-Type': 'application/json', 'X-VERIFY': xVerifyForPay(restaurant, base64Payload), accept: 'application/json' } }
     );
-
-    await prisma.merchantTransaction.create({
-      data: { orderId: order.id, txnId: merchantTransactionId, status: 'PENDING' },
-    });
 
     const redirectUrl = phonePeRes.data?.data?.instrumentResponse?.redirectInfo?.url;
     if (!redirectUrl) throw new Error('PhonePe did not return a payment URL');

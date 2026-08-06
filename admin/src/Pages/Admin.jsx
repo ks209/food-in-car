@@ -3,6 +3,7 @@ import { restaurantApi, cityApi } from '../api';
 
 const emptyForm = {
   name: '',
+  slug: '',
   domain: '',
   username: '',
   password: '',
@@ -79,6 +80,7 @@ const Admin = ({ onLogout }) => {
   const handleEdit = (r) => {
     setForm({
       name: r.name || '',
+      slug: r.slug || '',
       domain: r.domain,
       username: r.username,
       password: '',
@@ -183,6 +185,13 @@ const Admin = ({ onLogout }) => {
                 <input name="password" type="password" value={form.password} onChange={handleChange} placeholder="••••••••" />
               </div>
               <div className="field">
+                <label>Web address</label>
+                <input name="slug" value={form.slug} onChange={handleChange} placeholder="spice-garden" />
+                <small style={{ color: '#94a3b8' }}>
+                  Public ordering URL (/spice-garden). Leave blank on create to derive one from the name.
+                </small>
+              </div>
+              <div className="field">
                 <label>Domain *</label>
                 <input name="domain" value={form.domain} onChange={handleChange} placeholder="spicegarden.food" />
               </div>
@@ -262,6 +271,7 @@ const Admin = ({ onLogout }) => {
                   <th>ID</th>
                   <th>Name</th>
                   <th>Username</th>
+                  <th>Web address</th>
                   <th>Domain</th>
                   <th>Phone</th>
                   <th>Gateway</th>
@@ -272,13 +282,14 @@ const Admin = ({ onLogout }) => {
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan="9" style={{ textAlign: 'center', color: '#94a3b8', padding: '24px 0' }}>No restaurants found</td></tr>
+                  <tr><td colSpan="10" style={{ textAlign: 'center', color: '#94a3b8', padding: '24px 0' }}>No restaurants found</td></tr>
                 ) : (
                   filtered.map((r) => (
                     <tr key={r.id}>
                       <td style={{ color: '#94a3b8', fontFamily: 'monospace' }}>{r.id}</td>
                       <td style={{ fontWeight: 500 }}>{r.name || '—'}</td>
                       <td>{r.username}</td>
+                      <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{r.slug ? `/${r.slug}` : '—'}</td>
                       <td>{r.domain}</td>
                       <td style={{ whiteSpace: 'nowrap' }}>{r.phone || '—'}</td>
                       <td>{r.paymentGateway || '—'}</td>

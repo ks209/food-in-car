@@ -1,7 +1,21 @@
 import { PrismaClient } from '../generated/prisma/index.js';
 import bcrypt from 'bcryptjs';
+// Only the pure helper — utils/slug.js's DB-backed functions import the shared
+// client from config/prisma.js, and the seed deliberately runs its own.
+import { slugify } from '../utils/slug.js';
 
 const prisma = new PrismaClient();
+
+// First free slug at or after `base`, using the seed's own client.
+async function freeSlug(base) {
+  let candidate = base;
+  let n = 1;
+  while (await prisma.restaurant.findUnique({ where: { slug: candidate }, select: { id: true } })) {
+    n += 1;
+    candidate = `${base}-${n}`;
+  }
+  return candidate;
+}
 
 // Fixed list for the mobile app's city-picker fallback (no admin UI for this
 // yet — add rows here and re-run the seed to grow it).
@@ -189,6 +203,9 @@ async function main() {
     const restaurant = await prisma.restaurant.create({
       data: {
         name: r.name,
+        // Same derivation the API uses on create — seeded restaurants get the
+        // same /<slug> vanity URL a real one would.
+        slug: await freeSlug(slugify(r.name) || slugify(r.username)),
         username: r.username,
         password: hashedPassword,
         domain: r.domain,

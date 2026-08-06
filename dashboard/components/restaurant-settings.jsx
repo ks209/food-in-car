@@ -13,14 +13,20 @@ import { toast } from "sonner"
 import axios from "axios"
 import { API } from "@/lib/api"
 import { QrDownloadCard } from "@/components/qr-download"
+import { useRefreshRestaurant } from "@/lib/restaurant-context"
 
 export function RestaurantSettings() {
+  const refreshRestaurant = useRefreshRestaurant()
   const [form, setForm] = useState(null)
   const [original, setOriginal] = useState(null)
   const [saving, setSaving] = useState(false)
   const [savingKey, setSavingKey] = useState(null)
   const [cities, setCities] = useState([])
   const [phonepeConfigured, setPhonepeConfigured] = useState(false)
+  // Origin of the customer-facing ordering app, taken from the server-built
+  // orderingUrl rather than guessed — the dashboard and the ordering app are
+  // deployed on different hosts.
+  const [publicOrigin, setPublicOrigin] = useState("")
 
   useEffect(() => {
     axios
@@ -28,6 +34,7 @@ export function RestaurantSettings() {
       .then((r) => {
         const data = {
           name: r.data.name || "",
+          slug: r.data.slug || "",
           phone: r.data.phone || "",
           address: r.data.address || "",
           logoUrl: r.data.logoUrl || "",
@@ -49,6 +56,7 @@ export function RestaurantSettings() {
         setForm(data)
         setOriginal(data)
         setPhonepeConfigured(r.data.phonepeConfigured)
+        try { setPublicOrigin(new URL(r.data.orderingUrl).origin) } catch { /* keep the placeholder */ }
       })
       .catch(() => toast.error("Failed to load settings"))
     axios.get(`${API}/api/city`).then((r) => setCities(r.data)).catch(() => {})
@@ -94,10 +102,12 @@ export function RestaurantSettings() {
   const handleSave = async () => {
     if (!slaValid) { toast.error("The warning threshold must be less than the critical threshold"); return }
     if (!locationValid) { toast.error("Set both latitude and longitude, or leave both blank"); return }
+    if (!slugValid) { toast.error("That web address isn't valid — use lowercase letters, numbers and hyphens"); return }
     setSaving(true)
     try {
       const payload = {
         name: form.name,
+        slug: form.slug,
         phone: form.phone,
         address: form.address,
         logoUrl: form.logoUrl,
@@ -123,6 +133,10 @@ export function RestaurantSettings() {
       setOriginal({ ...form, phonepeSaltKey: "" })
       setField("phonepeSaltKey", "")
       setPhonepeConfigured(res.data.phonepeConfigured)
+      // The ordering QR code below renders from the shared context's
+      // orderingUrl — re-read it so a changed web address shows up immediately
+      // instead of on the next page load.
+      refreshRestaurant()
       toast.success("Settings saved")
     } catch (err) {
       toast.error(err?.response?.data?.message || "Failed to save settings")
@@ -142,6 +156,15 @@ export function RestaurantSettings() {
   }
 
   const initial = (form.name || form.username || "R")[0].toUpperCase()
+  // Mirrors validateSlug in backend/utils/slug.js — blank is allowed (means
+  // "no vanity URL"), and an all-numeric slug is not, since the API reads a
+  // numeric path segment as a restaurant id before it ever looks up a slug.
+  const slugValid = form.slug === "" || (
+    /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(form.slug) &&
+    form.slug.length >= 2 && form.slug.length <= 50 &&
+    !/^\d+$/.test(form.slug)
+  )
+
   const slaValid = Number(form.slaWarnMinutes) >= 1 && Number(form.slaCritMinutes) >= 1 && Number(form.slaWarnMinutes) < Number(form.slaCritMinutes)
   const latSet = form.latitude !== ""
   const lngSet = form.longitude !== ""
@@ -174,6 +197,28 @@ export function RestaurantSettings() {
               <div className="space-y-1.5">
                 <Label className="text-sm">Display name</Label>
                 <Input value={form.name} onChange={(e) => setField("name", e.target.value)} placeholder="Spice Garden" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm">Web address</Label>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm text-muted-foreground flex-shrink-0">{publicOrigin || "…"}/</span>
+                  <Input value={form.slug} onChange={(e) => setField("slug", e.target.value.toLowerCase())}
+                    placeholder="spice-garden" className="flex-1" />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Your public ordering link and QR code. Lowercase letters, numbers and hyphens.
+                  {" "}Leave blank to use the numeric address instead.
+                </p>
+                {!slugValid && (
+                  <p className="text-xs text-red-500">
+                    Use 2–50 lowercase letters, numbers and hyphens — and not numbers alone.
+                  </p>
+                )}
+                {form.slug !== original?.slug && slugValid && (
+                  <p className="text-xs text-amber-600">
+                    Changing this breaks any QR code or link already printed with the old address.
+                  </p>
+                )}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
@@ -446,7 +491,7 @@ export function RestaurantSettings() {
             <Button variant="outline" size="sm" className="bg-transparent border-amber-950/30 text-amber-950 hover:bg-amber-600/20" onClick={handleReset} disabled={saving}>
               Discard
             </Button>
-            <Button size="sm" className="bg-amber-950 text-white hover:bg-amber-900 min-w-28" onClick={handleSave} disabled={saving || !slaValid || !locationValid}>
+            <Button size="sm" className="bg-amber-950 text-white hover:bg-amber-900 min-w-28" onClick={handleSave} disabled={saving || !slaValid || !locationValid || !slugValid}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save changes"}
             </Button>
           </div>

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { ShoppingBag, IndianRupee, Timer, ChefHat, ArrowUp, ArrowDown, Minus } from "lucide-react"
+import { ShoppingBag, IndianRupee, Timer, Receipt, Flame, AlertTriangle, PackageCheck, Hourglass } from "lucide-react"
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
 } from "recharts"
@@ -10,17 +10,29 @@ import axios from "axios"
 import Link from "next/link"
 
 import { API } from "@/lib/api"
-import { CHART_TOOLTIP_STYLE, CHART_TOOLTIP_WRAPPER_STYLE, CHART_TOOLTIP_ITEM_STYLE, CHART_TOOLTIP_LABEL_STYLE, formatCurrency } from "@/lib/format"
+import { CHART_TOOLTIP_STYLE, CHART_TOOLTIP_WRAPPER_STYLE, CHART_TOOLTIP_ITEM_STYLE, CHART_TOOLTIP_LABEL_STYLE, formatCurrency, todayStr, daysAgoStr, localDateRange } from "@/lib/format"
 import { ORDER_STATUS_COLORS, ORDER_STATUS_LABELS } from "@/lib/status"
-import { totalMinutes } from "@/lib/sla"
+import { SLA_WARN_MIN, SLA_CRIT_MIN, totalMinutes, historyTime } from "@/lib/sla"
+import { sameWeekdayLastWeek, weekdayLabel } from "@/lib/compare"
 import { StatusDot } from "@/components/ui/status-dot"
+import { StatCard } from "@/components/ui/stat-card"
+import { useOrders } from "@/lib/orders-context"
+import { useRestaurant } from "@/lib/restaurant-context"
 
 // Only COMPLETED orders are real revenue — cancelled/not-fulfilled/in-flight orders don't count
 const REVENUE_STATES = ["COMPLETED"]
-const DAY_MS = 24 * 60 * 60 * 1000
+// Orders that still owe the customer something — the live queue
+const ACTIVE_STATES = ["PAID", "PREPARING", "READY"]
+// Enough history to cover the 15-day revenue chart, the 7-day sparklines, and
+// the same-weekday-last-week baseline — and, unlike the previous unbounded
+// fetch, it stays the same size as a restaurant's order history grows.
+const HISTORY_DAYS = 15
 // One row's worth at the widest (xl, 6-col) breakpoint — keeps this section's
 // height bounded and predictable so the whole page fits in one screen.
 const RECENT_ORDERS_LIMIT = 6
+// The live strip is minute-granular, so a 15s tick is plenty to keep it honest
+// between the 2s order polls in OrdersProvider.
+const CLOCK_TICK_MS = 15000
 
 function formatMinutes(mins) {
   if (mins == null) return "—"
@@ -30,137 +42,203 @@ function formatMinutes(mins) {
   return `${h}h ${m}m`
 }
 
+function ageLabel(ms) {
+  if (ms == null) return "—"
+  const mins = Math.floor(ms / 60000)
+  if (mins < 60) return `${mins}m`
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`
+}
+
 function avg(samples) {
   return samples.length ? samples.reduce((s, v) => s + v, 0) / samples.length : null
 }
 
-// null = no comparison possible (missing data, or both zero); Infinity = went
-// from zero/nothing to something ("New")
-function pctChange(current, previous) {
-  if (current == null || previous == null) return null
-  if (previous === 0) return current === 0 ? null : Infinity
-  return ((current - previous) / previous) * 100
+function summarizeDay(list) {
+  const committed = list.filter((o) => REVENUE_STATES.includes(o.status))
+  const revenue = committed.reduce((s, o) => s + o.totalAmount, 0)
+  return {
+    orders: list.length,
+    revenue,
+    aov: committed.length ? revenue / committed.length : 0,
+    wait: avg(list.map(totalMinutes).filter((m) => m != null)),
+  }
 }
 
-// `invert`: for metrics where going DOWN is the good direction (e.g. a
-// completion-time average) — the arrow still shows the real trend, only the
-// color flips.
-function ChangeBadge({ current, previous, invert = false }) {
-  const change = pctChange(current, previous)
-  if (change === null) return null
-  if (change === Infinity) {
-    return (
-      <span className={`inline-flex items-center gap-0.5 text-xs font-semibold ${invert ? "text-red-500" : "text-emerald-600"}`}>
-        <ArrowUp className="h-3 w-3" /> New
-      </span>
-    )
+// One cell of the live strip. Renders as a link so every number on the
+// "needs attention" row is one click from the screen that resolves it — a
+// count you can't act on is just decoration.
+function LiveTile({ href, label, value, icon: Icon, tone = "idle", hint }) {
+  const tones = {
+    idle: "text-slate-800",
+    active: "text-slate-900",
+    warn: "text-amber-600",
+    crit: "text-red-600",
   }
-  const rounded = Math.round(change)
-  if (rounded === 0) {
-    return (
-      <span className="inline-flex items-center gap-0.5 text-xs font-semibold text-slate-400">
-        <Minus className="h-3 w-3" /> 0%
-      </span>
-    )
-  }
-  const positive = rounded > 0
-  const good = invert ? !positive : positive
-  const Icon = positive ? ArrowUp : ArrowDown
   return (
-    <span className={`inline-flex items-center gap-0.5 text-xs font-semibold ${good ? "text-emerald-600" : "text-red-500"}`}>
-      <Icon className="h-3 w-3" /> {Math.abs(rounded)}%
-    </span>
+    <Link href={href} className="flex items-center gap-3 px-4 py-3 bg-card hover:bg-muted/50 transition-colors min-w-0">
+      <div className={`p-1.5 rounded-lg flex-shrink-0 ${tone === "crit" ? "bg-red-50" : tone === "warn" ? "bg-amber-50" : "bg-slate-100"}`}>
+        <Icon className={`h-4 w-4 ${tone === "crit" ? "text-red-500" : tone === "warn" ? "text-amber-500" : "text-slate-400"}`} />
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs font-medium text-slate-500 uppercase tracking-wide truncate">{label}</p>
+        <p className={`text-lg font-bold leading-tight ${tones[tone]}`}>
+          {value}
+          {hint && <span className="text-xs font-normal text-slate-400 ml-1.5">{hint}</span>}
+        </p>
+      </div>
+    </Link>
   )
 }
 
 export function DashboardOverview() {
-  const [orders, setOrders] = useState([])
+  const restaurant = useRestaurant()
+  const slaWarnMin = restaurant?.slaWarnMinutes ?? SLA_WARN_MIN
+  const slaCritMin = restaurant?.slaCritMinutes ?? SLA_CRIT_MIN
+
+  // Today's orders come from the dashboard-wide 2s poll rather than a fetch of
+  // our own, so the live strip is as fresh as the Kitchen Display.
+  const liveOrders = useOrders()?.orders ?? []
+
+  // Everything before today — static for the session, so it's fetched once.
+  const [history, setHistory] = useState([])
   const [menuItems, setMenuItems] = useState([])
+  const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
-    axios.get(`${API}/api/order`, { withCredentials: true }).then((r) => setOrders(r.data)).catch(() => {})
+    const params = localDateRange(daysAgoStr(HISTORY_DAYS - 1), daysAgoStr(1))
+    axios.get(`${API}/api/order`, { params, withCredentials: true }).then((r) => setHistory(r.data)).catch(() => {})
     axios.get(`${API}/api/menu/`, { withCredentials: true }).then((r) => setMenuItems(r.data)).catch(() => {})
   }, [])
 
-  const now = Date.now()
-  const yesterdayMoment = now - DAY_MS
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), CLOCK_TICK_MS)
+    return () => clearInterval(t)
+  }, [])
 
-  const today = new Date().toDateString()
-  const yesterdayStr = new Date(yesterdayMoment).toDateString()
+  // ── Live strip — what needs attention right now ────────────────────────────
+  const inQueue = liveOrders.filter((o) => ACTIVE_STATES.includes(o.status))
+  const oldestMs = inQueue.length
+    ? Math.max(...inQueue.map((o) => now - new Date(o.createdAt).getTime()))
+    : null
+  // Same rule the Kitchen Display flags on: time spent in PREPARING, falling
+  // back to updatedAt for orders whose history predates status tracking.
+  const overSla = liveOrders.filter((o) => {
+    if (o.status !== "PREPARING") return false
+    const started = historyTime(o, "PREPARING") ?? new Date(o.updatedAt).getTime()
+    return (now - started) / 60000 >= slaCritMin
+  }).length
+  const readyWaiting = liveOrders.filter((o) => o.status === "READY").length
 
-  const todayOrders = orders.filter((o) => new Date(o.createdAt).toDateString() === today)
-  const yesterdayOrders = orders.filter((o) => new Date(o.createdAt).toDateString() === yesterdayStr)
+  const oldestMins = oldestMs != null ? oldestMs / 60000 : null
+  const oldestTone = oldestMins == null ? "idle" : oldestMins >= slaCritMin ? "crit" : oldestMins >= slaWarnMin ? "warn" : "active"
 
-  const revenueToday = todayOrders.filter((o) => REVENUE_STATES.includes(o.status)).reduce((sum, o) => sum + o.totalAmount, 0)
-  const revenueYesterday = yesterdayOrders.filter((o) => REVENUE_STATES.includes(o.status)).reduce((sum, o) => sum + o.totalAmount, 0)
+  // Items switched off while the restaurant is taking orders — actionable in a
+  // way the old "Menu Items" count never was.
+  const unavailableCount = menuItems.filter((m) => m.isActive !== false && !m.available).length
 
-  // Avg time from order placed to COMPLETED — the customer's actual wait,
-  // a far more actionable number on a day-to-day basis than a live "orders
-  // currently in flight" gauge (which swings with volume, not performance).
-  const completionToday = avg(todayOrders.map(totalMinutes).filter((m) => m != null))
-  const completionYesterday = avg(yesterdayOrders.map(totalMinutes).filter((m) => m != null))
+  // ── Daily series over the history window, oldest → newest ──────────────────
+  const allOrders = [...history, ...liveOrders]
+  const byDay = new Map()
+  allOrders.forEach((o) => {
+    const key = new Date(o.createdAt).toDateString()
+    if (!byDay.has(key)) byDay.set(key, [])
+    byDay.get(key).push(o)
+  })
 
-  // Exclude soft-deleted items (isActive === false); split the rest by availability
-  const liveItems = menuItems.filter((m) => m.isActive !== false)
-  const activeItems = liveItems.filter((m) => m.available).length
-  const inactiveItems = liveItems.filter((m) => !m.available).length
-  // Approximation (no deletion history to work from): items already on the
-  // menu by this time yesterday, of what's currently live.
-  const liveItemsYesterday = liveItems.filter((m) => new Date(m.createdAt).getTime() <= yesterdayMoment).length
+  const days = Array.from({ length: HISTORY_DAYS }, (_, i) => {
+    const d = new Date()
+    d.setDate(d.getDate() - (HISTORY_DAYS - 1 - i))
+    return { date: d, ...summarizeDay(byDay.get(d.toDateString()) || []) }
+  })
+
+  const today = days[HISTORY_DAYS - 1]
+  // 7 days back — a fair baseline. Yesterday isn't: on a weekly-seasonal
+  // business, "Monday vs Sunday" mostly measures which day it is.
+  const baseline = days[HISTORY_DAYS - 8]
+  const last7 = days.slice(HISTORY_DAYS - 7)
+  const baselineLabel = `vs last ${weekdayLabel(sameWeekdayLastWeek())}`
 
   const stats = [
-    { title: "Orders Today", value: todayOrders.length, icon: ShoppingBag, tint: "brand", current: todayOrders.length, previous: yesterdayOrders.length },
-    { title: "Revenue Today", value: formatCurrency(revenueToday), icon: IndianRupee, tint: "brand-secondary", current: revenueToday, previous: revenueYesterday },
-    { title: "Avg Completion Time", value: formatMinutes(completionToday), icon: Timer, tint: "brand-accent",
-      current: completionToday, previous: completionYesterday, invert: true },
-    { title: "Menu Items", value: liveItems.length, icon: ChefHat, tint: "brand",
-      sub: `${activeItems} active · ${inactiveItems} inactive`, current: liveItems.length, previous: liveItemsYesterday },
+    {
+      title: "Orders Today", value: today.orders, icon: ShoppingBag, tint: "brand",
+      current: today.orders, previous: baseline?.orders, trend: last7.map((d) => d.orders),
+    },
+    {
+      title: "Revenue Today", value: formatCurrency(today.revenue), icon: IndianRupee, tint: "brand-secondary",
+      current: today.revenue, previous: baseline?.revenue, trend: last7.map((d) => d.revenue),
+    },
+    {
+      title: "Avg Order Value", value: formatCurrency(today.aov), icon: Receipt, tint: "brand-accent",
+      current: today.aov, previous: baseline?.aov, trend: last7.map((d) => d.aov),
+    },
+    {
+      title: "Avg Customer Wait", value: formatMinutes(today.wait), icon: Timer, tint: "brand",
+      current: today.wait, previous: baseline?.wait, invert: true, trend: last7.map((d) => d.wait),
+      tooltip: "Average time from order placed to COMPLETED, for orders that finished today.",
+    },
   ]
 
-  // Revenue for the last 15 days (committed orders), oldest → newest
-  const revenue15d = Array.from({ length: 15 }, (_, i) => {
-    const d = new Date()
-    d.setDate(d.getDate() - (14 - i))
-    const key = d.toDateString()
-    const revenue = orders
-      .filter((o) => REVENUE_STATES.includes(o.status) && new Date(o.createdAt).toDateString() === key)
-      .reduce((s, o) => s + o.totalAmount, 0)
-    return { day: d.toLocaleDateString([], { day: "numeric", month: "short" }), revenue }
-  })
+  const revenueSeries = days.map((d) => ({
+    day: d.date.toLocaleDateString([], { day: "numeric", month: "short" }),
+    revenue: d.revenue,
+  }))
+
+  const recentOrders = [...allOrders]
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .slice(0, RECENT_ORDERS_LIMIT)
 
   return (
     <div className="space-y-3">
-      {/* Stats — Card's own default py-6/gap-6 (see card.jsx) is dropped here
-          via py-0; with only one child (CardContent) that inherited padding
-          was pure unused height, not visual breathing room. */}
+      {/* ── Zone 1: right now ────────────────────────────────────────────────
+          Deliberately a different shape from the KPI tiles below — this row is
+          live operational state to act on, not performance to review. */}
+      <Card className="border-0 shadow-sm py-0 overflow-hidden">
+        <CardContent className="p-0">
+          <div className="flex items-center justify-between gap-2 px-4 pt-3 pb-1">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
+              </span>
+              Right now
+            </p>
+            {unavailableCount > 0 && (
+              <Link href="/dashboard/menu" className="text-xs font-medium text-amber-600 hover:text-amber-700">
+                {unavailableCount} item{unavailableCount === 1 ? "" : "s"} unavailable →
+              </Link>
+            )}
+          </div>
+          {/* Separators come from a 1px gap over a tinted container rather than
+              divide-x — on the 2-column layout `divide-x` also draws a border
+              down the left of the cell that starts the second row. */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-slate-100 border-t border-slate-100">
+            <LiveTile href="/dashboard/orders" label="In queue" value={inQueue.length} icon={Flame}
+              tone={inQueue.length > 0 ? "active" : "idle"} />
+            <LiveTile href="/dashboard/kitchen" label="Oldest waiting" value={ageLabel(oldestMs)} icon={Hourglass}
+              tone={oldestTone} />
+            <LiveTile href="/dashboard/kitchen" label={`Over ${slaCritMin}m SLA`} value={overSla} icon={AlertTriangle}
+              tone={overSla > 0 ? "crit" : "idle"} />
+            <LiveTile href="/dashboard/orders?status=READY" label="Ready & waiting" value={readyWaiting} icon={PackageCheck}
+              tone={readyWaiting > 0 ? "warn" : "idle"} hint={readyWaiting > 0 ? "to collect" : null} />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Zone 2: today's performance, against a same-weekday baseline ────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {stats.map((stat, i) => (
-          <Card key={stat.title} className="border-0 shadow-sm anim-fade-up py-0" style={{ animationDelay: `${i * 60}ms` }}>
-            <CardContent className="p-3">
-              <div className="flex items-start justify-between">
-                <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{stat.title}</p>
-                <div className={`p-1 rounded-lg ${stat.tint}-bg-subtle`}>
-                  <stat.icon className={`h-3.5 w-3.5 ${stat.tint}-text`} />
-                </div>
-              </div>
-              <div className="flex items-baseline gap-2 mt-1">
-                <p className="text-xl font-bold text-slate-900">{stat.value}</p>
-                <ChangeBadge current={stat.current} previous={stat.previous} invert={stat.invert} />
-              </div>
-              <p className="text-xs text-slate-400 mt-0.5">{stat.sub || "vs. yesterday"}</p>
-            </CardContent>
-          </Card>
+          <StatCard key={stat.title} {...stat} sub={baselineLabel} compact delay={i * 60} />
         ))}
       </div>
 
       {/* Revenue chart */}
       <Card className="border-0 shadow-sm py-3 gap-2">
         <CardHeader className="pb-0">
-          <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide">Revenue · last 15 days</CardTitle>
+          <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide">Revenue · last {HISTORY_DAYS} days</CardTitle>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={140}>
-            <AreaChart data={revenue15d} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
+            <AreaChart data={revenueSeries} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
               <defs>
                 <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="var(--brand, #f97316)" stopOpacity={0.55} />
@@ -190,19 +268,20 @@ export function DashboardOverview() {
           <CardTitle className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
             Recent Orders
           </CardTitle>
-          {orders.length > RECENT_ORDERS_LIMIT && (
+          {allOrders.length > RECENT_ORDERS_LIMIT && (
             <Link href="/dashboard/orders" className="text-xs font-medium text-slate-400 hover:text-slate-700">
               View all →
             </Link>
           )}
         </CardHeader>
         <CardContent>
-          {orders.length === 0 ? (
+          {recentOrders.length === 0 ? (
             <p className="text-slate-400 text-sm text-center py-8">No orders yet</p>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2.5">
-              {orders.slice(0, RECENT_ORDERS_LIMIT).map((order) => (
-                <div key={order.id} className="rounded-lg border border-slate-100 p-2.5 hover:border-slate-200 hover:bg-muted/40 transition-colors min-w-0">
+              {recentOrders.map((order) => (
+                <Link key={order.id} href="/dashboard/orders"
+                  className="rounded-lg border border-slate-100 p-2.5 hover:border-slate-200 hover:bg-muted/40 transition-colors min-w-0 block">
                   <div className="flex items-center justify-between gap-2 mb-1">
                     <span className="text-xs font-mono text-slate-400 flex-shrink-0">#{order.dailyOrderNumber ?? order.id}</span>
                     <span className="text-xs text-slate-400 flex-shrink-0">
@@ -223,7 +302,7 @@ export function DashboardOverview() {
                     </StatusDot>
                     <span className="text-sm font-semibold text-slate-800 flex-shrink-0">₹{order.totalAmount.toFixed(0)}</span>
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           )}

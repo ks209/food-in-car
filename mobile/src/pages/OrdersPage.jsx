@@ -4,6 +4,7 @@ import { Lock, ReceiptText } from "lucide-react"
 import { orderApi } from "../api"
 import { useAuth } from "../context/AuthContext"
 import { useRestaurantTheme } from "../lib/theme"
+import { useRestaurantBase } from "../lib/restaurantPath"
 
 const PILL = {
   PENDING:    { bg:"rgba(245,158,11,0.16)", color:"#fbbf24", label:"Placed" },
@@ -27,6 +28,7 @@ function StatusPill({ status }) {
 
 export default function OrdersPage() {
   const { restaurantId } = useParams()
+  const base = useRestaurantBase()
   useRestaurantTheme(restaurantId)
   const { user, loading: authLoading } = useAuth()
   const navigate = useNavigate()
@@ -46,7 +48,7 @@ export default function OrdersPage() {
     <div className="page" style={{ background:"var(--bg)" }}>
       {/* Header */}
       <div style={{ background:"linear-gradient(135deg, var(--primary), var(--primary-dark))", padding:"1.5rem 1.25rem 1.75rem", color:"white" }}>
-        <Link to={`/restaurant/${restaurantId}`} style={{ color:"rgba(255,255,255,0.85)", fontSize:"0.85rem" }}>← Back to Menu</Link>
+        <Link to={base} style={{ color:"rgba(255,255,255,0.85)", fontSize:"0.85rem" }}>← Back to Menu</Link>
         <h1 style={{ fontSize:"1.6rem", fontWeight:800, marginTop:"0.6rem" }}>My Orders</h1>
         {user && <p style={{ opacity:0.85, fontSize:"0.88rem" }}>Welcome back, {user.customerName}</p>}
       </div>
@@ -62,7 +64,7 @@ export default function OrdersPage() {
               Your order history and payments live behind your account.
             </p>
             <button className="btn btn-primary" style={{ borderRadius:12 }}
-              onClick={() => navigate(`/restaurant/${restaurantId}/login`)}>
+              onClick={() => navigate(`${base}/login`)}>
               Sign in or Register
             </button>
           </div>
@@ -71,11 +73,11 @@ export default function OrdersPage() {
             <ReceiptText size={36} strokeWidth={1.5} color="var(--muted)" style={{ margin:"0 auto 0.75rem" }} />
             <p style={{ fontWeight:700, marginBottom:"0.35rem" }}>No orders yet</p>
             <p style={{ color:"var(--muted)", fontSize:"0.85rem", marginBottom:"1.25rem" }}>Your past orders will show up here.</p>
-            <Link to={`/restaurant/${restaurantId}`} className="btn btn-primary" style={{ borderRadius:12 }}>Browse Menu</Link>
+            <Link to={base} className="btn btn-primary" style={{ borderRadius:12 }}>Browse Menu</Link>
           </div>
         ) : (
           orders.map((o, i) => (
-            <Link key={o.id} to={`/restaurant/${restaurantId}/order/${o.id}`}
+            <Link key={o.id} to={`${base}/order/${o.id}`}
               className="card anim-fade-up" style={{ padding:"1rem 1.1rem", display:"block", animationDelay: `${Math.min(i, 8) * 45}ms` }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"0.5rem" }}>
                 <span style={{ fontWeight:700, fontSize:"0.92rem" }}>Order #{o.dailyOrderNumber ?? o.id}</span>

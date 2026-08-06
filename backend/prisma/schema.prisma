@@ -11,6 +11,12 @@ datasource db {
 model Restaurant {
   id             Int         @id @default(autoincrement())
   name           String?
+  // URL-safe public identifier — the mobile app serves a restaurant at both
+  // /restaurant/<id> and the friendlier /<slug> ("spice-garden"), which is what
+  // QR codes and shared links point at. Nullable so a restaurant created before
+  // this existed (or one whose name yields no usable slug) still works on its
+  // numeric URL; unique because it has to resolve to exactly one tenant.
+  slug           String?     @unique
   domain         String
   username       String      @unique
   password       String

@@ -23,7 +23,7 @@ async function verifyPendingOrders() {
 
   if (stuckTxns.length === 0) return;
 
-  let paid = 0, cancelled = 0, stillPending = 0, skipped = 0;
+  let paid = 0, cancelled = 0, stillPending = 0, skipped = 0, errored = 0;
 
   for (const txn of stuckTxns) {
     // Credentials are per-restaurant — a restaurant with none configured has
@@ -31,33 +31,51 @@ async function verifyPendingOrders() {
     // dev mode), so there's nothing to reconcile.
     if (isDevMode(txn.order.restaurant)) { skipped++; continue; }
 
+    // Why the payment is not confirmed — recorded on the cancellation so a
+    // timed-out payment can be told apart from an unreachable gateway later.
+    let state;
     try {
       const result = await reconcileTransaction(txn.order.restaurant, txn);
       if (result.paid) { paid++; continue; }
+      state = result.state;
+    } catch (err) {
+      // A status lookup throws either because PhonePe has no record of this
+      // transaction (POST /initiate died before the gateway accepted it) or
+      // because PhonePe is temporarily unreachable. The error shape doesn't
+      // reliably separate the two, and both mean "not paid" — so the order
+      // follows the same abandon window as any other unpaid order instead of
+      // being retried forever, which is what used to strand these as PENDING
+      // and invisible on every dashboard screen.
+      console.error(`[verify-pending-orders] status check failed for order #${txn.orderId}:`, err.message);
+      state = `status-check-failed: ${String(err.message).slice(0, 80)}`;
+      errored++;
+    }
 
-      // Still unpaid after the abandon window — the customer never completed
-      // payment, so stop showing it as a live order in the restaurant's queue.
-      // (Edge case: if PhonePe's webhook arrives after this point claiming the
-      // payment DID go through, /callback will still flip it back to PAID —
-      // not fully closed off, just rare enough not to block on here.)
-      if (txn.order.createdAt <= abandonCutoff) {
+    // Still unpaid after the abandon window — the customer never completed
+    // payment, so stop showing it as a live order in the restaurant's queue.
+    // (Edge case: if PhonePe's webhook arrives after this point claiming the
+    // payment DID go through, /callback will still flip it back to PAID —
+    // not fully closed off, just rare enough not to block on here.)
+    if (txn.order.createdAt <= abandonCutoff) {
+      try {
         await prisma.order.update({
           where: { id: txn.orderId },
           data: {
             status: 'CANCELLED',
-            orderStatusHistory: { create: { status: 'CANCELLED', updatedBy: `cron:payment-timeout (${result.state})` } },
+            orderStatusHistory: { create: { status: 'CANCELLED', updatedBy: `cron:payment-timeout (${state})` } },
           },
         });
         cancelled++;
-      } else {
-        stillPending++;
+      } catch (err) {
+        // One un-updatable order must not abort the rest of the sweep.
+        console.error(`[verify-pending-orders] failed to cancel order #${txn.orderId}:`, err.message);
       }
-    } catch (err) {
-      console.error(`[verify-pending-orders] failed to reconcile order #${txn.orderId}:`, err.message);
+    } else {
+      stillPending++;
     }
   }
 
-  console.log(`[verify-pending-orders] checked ${stuckTxns.length} — paid ${paid}, cancelled ${cancelled}, still pending ${stillPending}, skipped (no gateway) ${skipped}`);
+  console.log(`[verify-pending-orders] checked ${stuckTxns.length} — paid ${paid}, cancelled ${cancelled}, still pending ${stillPending}, status-check errors ${errored}, skipped (no gateway) ${skipped}`);
 }
 
 export function startPendingOrderVerification() {

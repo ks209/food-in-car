@@ -5,12 +5,14 @@ import { useCart } from "../context/CartContext"
 import { useAuth } from "../context/AuthContext"
 import { getDeviceKey } from "../lib/device"
 import { saveActiveOrder } from "../lib/activeOrder"
+import { useRestaurantBase } from "../lib/restaurantPath"
 import api from "../api"
 
 export default function CartDrawer({ open, onClose, restaurant, restaurantId }) {
   const { cart, addItem, decrementItem, clearCart, total, itemCount } = useCart()
   const { user } = useAuth()
   const navigate = useNavigate()
+  const base = useRestaurantBase()
 
   const [name, setName] = useState("")
   const [vehicle, setVehicle] = useState("")
@@ -48,7 +50,9 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
   // validateAndPriceCart on the backend — so the cart's own price/quantity
   // here is just what the customer intends to buy, not what gets charged.
   const orderPayload = () => ({
-    restaurantId: parseInt(restaurantId),
+    // The resolved numeric id from the loaded restaurant, NOT the URL param —
+    // that param can be a slug ("spice-garden"), which parseInt turns into NaN.
+    restaurantId: restaurant.id,
     items: cart.map(i => ({
       id: i.id, name: i.name, quantity: i.quantity,
       selectedOptions: i.selectedOptions || [],
@@ -74,7 +78,7 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
         window.location.href = res.data.redirectUrl
       } else {
         // Dev mode or no credentials — order is placed, go straight to status page
-        navigate(`/restaurant/${restaurantId}/order/${res.data.orderId}?code=${res.data.deliveryCode}`)
+        navigate(`${base}/order/${res.data.orderId}?code=${res.data.deliveryCode}`)
       }
     } catch (err) {
       setError(err.response?.data?.error || "Payment initiation failed. Try again.")

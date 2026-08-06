@@ -14,6 +14,7 @@ import userRouter from './routes/user/user.js';
 import waiterRouter from './routes/waiter/waiter.js';
 import cityRouter from './routes/city/city.js';
 import configRouter from './routes/config/config.js';
+import analyticsRouter from './routes/analytics/analytics.js';
 import { startPendingOrderVerification } from './jobs/verifyPendingOrders.js';
 
 
@@ -72,6 +73,7 @@ app.use('/api/user', userRouter);
 app.use('/api/waiter', waiterRouter);
 app.use('/api/city', cityRouter);
 app.use('/api/config', configRouter);
+app.use('/api/analytics', analyticsRouter);
 
 
 app.get('/', async(req,res)=> res.send("Food Odering App"))
