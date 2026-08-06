@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import cookieParser from 'cookie-parser';
 import restaurantAuth from '../../middlewares/restaurant.auth.js';
 import supportAuth from '../../middlewares/support.auth.js';
+import { slugify, validateSlug, uniqueSlug, isSlugTaken, resolveRestaurantId, orderingUrlFor } from '../../utils/slug.js';
 
 const restaurantRouter = express.Router();
 restaurantRouter.use(cookieParser());
@@ -18,13 +19,13 @@ restaurantRouter.get('/me', restaurantAuth, async (req, res) => {
     try {
         const restaurant = await prisma.restaurant.findUnique({
             where: { id: req.restaurantId },
-            select: { id: true, name: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true, latitude: true, longitude: true, cityId: true, phonepeMerchantId: true, phonepeSaltIndex: true, phonepeSandbox: true, phonepeSaltKey: true },
+            select: { id: true, name: true, slug: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true, latitude: true, longitude: true, cityId: true, phonepeMerchantId: true, phonepeSaltIndex: true, phonepeSandbox: true, phonepeSaltKey: true },
         });
         if (!restaurant) return res.status(404).json({ message: 'Restaurant not found' });
         // phonepeSaltKey is fetched only to derive this flag — it must never
         // leave the server in a response body.
         const { phonepeSaltKey, ...safe } = restaurant;
-        res.json({ ...safe, phonepeConfigured: !!(restaurant.phonepeMerchantId && phonepeSaltKey), orderingUrl: `${FRONTEND_URL}/restaurant/${restaurant.id}` });
+        res.json({ ...safe, phonepeConfigured: !!(restaurant.phonepeMerchantId && phonepeSaltKey), orderingUrl: orderingUrlFor(restaurant, FRONTEND_URL) });
     } catch (err) {
         res.status(500).json({ message: 'Error fetching restaurant', error: err });
     }
@@ -35,10 +36,22 @@ const FONT_KEYS = ['manrope', 'inter', 'poppins', 'playfair', 'spacegrotesk', 'f
 const CARD_STYLES = ['rounded', 'sharp'];
 
 restaurantRouter.put('/me', restaurantAuth, async (req, res) => {
-    const { name, phone, address, themeColor, secondaryColor, accentColor, fontFamily, cardStyle, logoUrl, coverUrl, pickupEnabled, deliveryEnabled, isOpen, slaWarnMinutes, slaCritMinutes, latitude, longitude, cityId, phonepeMerchantId, phonepeSaltKey, phonepeSaltIndex, phonepeSandbox } = req.body;
+    const { name, slug, phone, address, themeColor, secondaryColor, accentColor, fontFamily, cardStyle, logoUrl, coverUrl, pickupEnabled, deliveryEnabled, isOpen, slaWarnMinutes, slaCritMinutes, latitude, longitude, cityId, phonepeMerchantId, phonepeSaltKey, phonepeSaltIndex, phonepeSandbox } = req.body;
     try {
         const data = {};
         if (name !== undefined) data.name = name || null;
+
+        // The owner picked this themselves, so a clash is reported back rather
+        // than silently suffixed the way a system-derived slug is — otherwise
+        // they'd print a QR code for an address they never chose.
+        if (slug !== undefined) {
+            const check = validateSlug(slug);
+            if (!check.ok) return res.status(400).json({ message: check.message });
+            if (await isSlugTaken(check.slug, req.restaurantId)) {
+                return res.status(409).json({ message: `The web address "${check.slug}" is already taken` });
+            }
+            data.slug = check.slug;
+        }
         if (phone !== undefined) data.phone = phone || null;
         if (address !== undefined) data.address = address;
         if (themeColor !== undefined) data.themeColor = themeColor || '#f97316';
@@ -115,10 +128,10 @@ restaurantRouter.put('/me', restaurantAuth, async (req, res) => {
         const updated = await prisma.restaurant.update({
             where: { id: req.restaurantId },
             data,
-            select: { id: true, name: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true, latitude: true, longitude: true, cityId: true, phonepeMerchantId: true, phonepeSaltIndex: true, phonepeSandbox: true, phonepeSaltKey: true },
+            select: { id: true, name: true, slug: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true, latitude: true, longitude: true, cityId: true, phonepeMerchantId: true, phonepeSaltIndex: true, phonepeSandbox: true, phonepeSaltKey: true },
         });
         const { phonepeSaltKey: _saltKey, ...safeUpdated } = updated;
-        res.json({ ...safeUpdated, phonepeConfigured: !!(updated.phonepeMerchantId && _saltKey) });
+        res.json({ ...safeUpdated, phonepeConfigured: !!(updated.phonepeMerchantId && _saltKey), orderingUrl: orderingUrlFor(updated, FRONTEND_URL) });
     } catch (err) {
         res.status(500).json({ message: 'Error updating restaurant', error: err });
     }
@@ -166,7 +179,7 @@ restaurantRouter.get('/nearby', async (req, res) => {
         const rows = hasCoords
             ? await prisma.$queryRawUnsafe(
                 `
-                SELECT id, name, "logoUrl", "coverUrl", cuisines, rating, "ratingCount", "isOpen", address,
+                SELECT id, name, slug, "logoUrl", "coverUrl", cuisines, rating, "ratingCount", "isOpen", address,
                   (6371 * acos(LEAST(1, GREATEST(-1,
                     cos(radians($1)) * cos(radians(latitude)) * cos(radians(longitude) - radians($2))
                     + sin(radians($1)) * sin(radians(latitude))
@@ -182,7 +195,7 @@ restaurantRouter.get('/nearby', async (req, res) => {
               )
             : await prisma.$queryRawUnsafe(
                 `
-                SELECT id, name, "logoUrl", "coverUrl", cuisines, rating, "ratingCount", "isOpen", address,
+                SELECT id, name, slug, "logoUrl", "coverUrl", cuisines, rating, "ratingCount", "isOpen", address,
                   NULL::float AS distance,
                   COUNT(*) OVER()::int AS "totalCount"
                 FROM "Restaurant"
@@ -210,9 +223,15 @@ restaurantRouter.get('/nearby', async (req, res) => {
     }
 });
 
-restaurantRouter.get('/:id', async (req, res) => {
-    const id = Number(req.params.id);
+// Public lookup. The path segment is either the numeric id (/restaurant/12) or
+// the slug (/restaurant/spice-garden) — the ordering app's vanity URL /<slug>
+// resolves through here too. Declared after /me, /all and /nearby so those keep
+// matching first; they're reserved slugs, so nothing can shadow them.
+restaurantRouter.get('/:idOrSlug', async (req, res) => {
     try {
+        const id = await resolveRestaurantId(req.params.idOrSlug);
+        if (id === null) return res.status(404).json({ message: 'Restaurant not found' });
+
         const restaurant = await prisma.restaurant.findUnique({
             where: { id },
             include: {
@@ -282,6 +301,7 @@ function parseCityId(cityId) {
 restaurantRouter.post('/create', supportAuth, async (req, res) => {
     const {
         name,
+        slug,
         domain,
         username,
         password,
@@ -310,12 +330,30 @@ restaurantRouter.post('/create', supportAuth, async (req, res) => {
         return res.status(400).json({ message: 'Invalid city' });
     }
 
+    // An explicit slug is held to the rules and reported back if taken; an
+    // omitted one is derived from the name (falling back to the username) and
+    // auto-suffixed on collision, so every new restaurant gets a vanity URL
+    // without support staff having to think about it.
+    let resolvedSlug;
+    if (slug !== undefined && String(slug).trim() !== '') {
+        const check = validateSlug(slug);
+        if (!check.ok) return res.status(400).json({ message: check.message });
+        if (await isSlugTaken(check.slug)) {
+            return res.status(409).json({ message: `The web address "${check.slug}" is already taken` });
+        }
+        resolvedSlug = check.slug;
+    } else {
+        const derived = validateSlug(slugify(name) || slugify(username));
+        resolvedSlug = derived.ok && derived.slug ? await uniqueSlug(derived.slug) : null;
+    }
+
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
 
         const restaurant = await prisma.restaurant.create({
             data: {
                 name: name || null,
+                slug: resolvedSlug,
                 domain,
                 username,
                 password: hashedPassword,
@@ -340,7 +378,7 @@ restaurantRouter.post('/create', supportAuth, async (req, res) => {
 
 restaurantRouter.put('/update/:id', supportAuth, async (req, res) => {
     const id = Number(req.params.id);
-    const { name, domain, username, paymentGateway, address, phone, themeColor, logoUrl, latitude, longitude, cityId } = req.body;
+    const { name, slug, domain, username, paymentGateway, address, phone, themeColor, logoUrl, latitude, longitude, cityId } = req.body;
 
     const coords = parseCoordinates(latitude, longitude);
     if (!coords.ok) {
@@ -351,6 +389,19 @@ restaurantRouter.put('/update/:id', supportAuth, async (req, res) => {
         return res.status(400).json({ message: 'Invalid city' });
     }
 
+    // Omitting slug leaves the existing one alone — changing a restaurant's
+    // public address breaks every QR code already printed, so it only ever
+    // moves when someone explicitly sends a new one.
+    const slugData = {};
+    if (slug !== undefined) {
+        const check = validateSlug(slug);
+        if (!check.ok) return res.status(400).json({ message: check.message });
+        if (await isSlugTaken(check.slug, id)) {
+            return res.status(409).json({ message: `The web address "${check.slug}" is already taken` });
+        }
+        slugData.slug = check.slug;
+    }
+
     try {
         const existing = await prisma.restaurant.findUnique({ where: { id } });
         if (!existing || !existing.isActive) {
@@ -359,7 +410,7 @@ restaurantRouter.put('/update/:id', supportAuth, async (req, res) => {
 
         const updated = await prisma.restaurant.update({
             where: { id },
-            data: { name, domain, username, paymentGateway, address, phone, themeColor, logoUrl, ...coords.data, ...city.data },
+            data: { name, domain, username, paymentGateway, address, phone, themeColor, logoUrl, ...slugData, ...coords.data, ...city.data },
         });
 
         res.json(updated);

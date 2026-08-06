@@ -4,6 +4,7 @@ import { QRCodeSVG } from "qrcode.react"
 import { Clock, CreditCard, ChefHat, Package, PartyPopper, XCircle, Bike, StickyNote, Phone, Frown } from "lucide-react"
 import { orderApi } from "../api"
 import { useRestaurantTheme } from "../lib/theme"
+import { useRestaurantBase } from "../lib/restaurantPath"
 import { useAuth } from "../context/AuthContext"
 
 // Short ascending 3-note chime — same melody the restaurant dashboard uses for
@@ -80,6 +81,7 @@ const STATUS_ICON = {
 
 export default function OrderStatusPage() {
   const { orderId, restaurantId } = useParams()
+  const base = useRestaurantBase()
   const [searchParams] = useSearchParams()
   const { user } = useAuth()
   useRestaurantTheme(restaurantId)
@@ -155,7 +157,7 @@ export default function OrderStatusPage() {
     <div style={{ display:"flex", alignItems:"center", justifyContent:"center", minHeight:"100dvh", flexDirection:"column", gap:"0.75rem" }}>
       <Frown size={40} strokeWidth={1.5} color="var(--muted)" />
       <p style={{ color:"var(--error)", fontWeight:600 }}>Order not found</p>
-      <Link to={`/restaurant/${restaurantId}`} className="btn btn-outline">Back to Menu</Link>
+      <Link to={base} className="btn btn-outline">Back to Menu</Link>
     </div>
   )
 
@@ -186,7 +188,7 @@ export default function OrderStatusPage() {
         <div style={{ position:"absolute", top:"-20px", right:"-20px", width:120, height:120, borderRadius:"50%", background:"rgba(255,255,255,0.08)" }} />
         <div style={{ position:"absolute", bottom:"-25px", left:"5px", width:80, height:80, borderRadius:"50%", background:"rgba(255,255,255,0.06)" }} />
 
-        <Link to={`/restaurant/${restaurantId}`}
+        <Link to={base}
           style={{ color:"rgba(255,255,255,0.8)", fontSize:"0.85rem", display:"inline-flex", alignItems:"center", gap:"0.35rem", position:"relative" }}>
           ← Back to Menu
         </Link>
@@ -354,7 +356,7 @@ export default function OrderStatusPage() {
         {!user && (
           <p style={{ textAlign:"center", color:"var(--muted)", fontSize:"0.75rem" }}>
             Lost this page?{" "}
-            <Link to={`/restaurant/${restaurantId}/login`} style={{ color:"var(--primary)", fontWeight:700 }}>
+            <Link to={`${base}/login`} style={{ color:"var(--primary)", fontWeight:700 }}>
               Sign in
             </Link>{" "}
             to find your orders anytime.

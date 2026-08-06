@@ -1,6 +1,7 @@
 import express from 'express';
 import prisma from '../../config/prisma.js';
 import restaurantAuth from '../../middlewares/restaurant.auth.js';
+import { resolveRestaurantId } from '../../utils/slug.js';
 
 
 const categoryRouter = express.Router();
@@ -102,9 +103,14 @@ categoryRouter.delete('/:id', restaurantAuth, async (req, res) => {
     }
 });
 
-categoryRouter.get('/restaurant/:restaurantId', async (req, res) => {
+// Accepts the numeric id or the slug, matching GET /api/restaurant/:idOrSlug —
+// the ordering app loads the restaurant and its categories in parallel off the
+// same URL segment, so both have to understand both forms.
+categoryRouter.get('/restaurant/:idOrSlug', async (req, res) => {
   try {
-    const restaurantId = parseInt(req.params.restaurantId);
+    const restaurantId = await resolveRestaurantId(req.params.idOrSlug);
+    if (restaurantId === null) return res.status(404).json({ error: 'Restaurant not found' });
+
     const categories = await prisma.category.findMany({
       where: { restaurantId: restaurantId, isActive: true },
       include: {

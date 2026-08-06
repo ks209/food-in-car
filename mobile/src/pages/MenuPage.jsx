@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from "react"
-import { useParams } from "react-router-dom"
+import { useParams, Navigate } from "react-router-dom"
 import { Search, Mic, Star, MapPin, UtensilsCrossed, ShoppingBag, X, ArrowUpDown, Timer } from "lucide-react"
 import { restaurantApi, categoryApi } from "../api"
 import { useCart } from "../context/CartContext"
@@ -32,12 +32,20 @@ export default function MenuPage() {
   const tabsRef = useRef(null)
   useRestaurantTheme(restaurantId)
 
+  const [restaurant, setRestaurant] = useState(null)
+  const [notFound, setNotFound] = useState(false)
+
   // A stale cart from a different restaurant (the shared CartProvider is a
   // single global instance) gets cleared the moment this restaurant's menu
   // is the one actually being browsed — see CartContext.setActiveRestaurant.
-  useEffect(() => { setActiveRestaurant(restaurantId) }, [restaurantId, setActiveRestaurant])
+  //
+  // Keyed on the resolved numeric id rather than the URL param: the same
+  // restaurant reached via /restaurant/1 and via /spice-garden must not look
+  // like two different restaurants and wipe a cart the customer was filling.
+  useEffect(() => {
+    if (restaurant?.id) setActiveRestaurant(restaurant.id)
+  }, [restaurant?.id, setActiveRestaurant])
 
-  const [restaurant, setRestaurant] = useState(null)
   const [categories, setCategories] = useState([])
   const [activeCategory, setActiveCategory] = useState(null)
   const [cartOpen, setCartOpen] = useState(false)
@@ -56,7 +64,14 @@ export default function MenuPage() {
         setCategories(cats)
         setActiveCategory(ALL_ID)
       })
-      .catch(() => setError("Couldn't load menu. Please try again."))
+      .catch((err) => {
+        // The vanity /<slug> route sits at the root, so any unmatched
+        // single-segment path lands on this page. A 404 means there is no such
+        // restaurant — that's a bad URL, not a failed load, so send them to the
+        // homepage instead of showing a retry for something that can't succeed.
+        if (err?.response?.status === 404) setNotFound(true)
+        else setError("Couldn't load menu. Please try again.")
+      })
       .finally(() => setLoading(false))
   }, [restaurantId])
 
@@ -119,6 +134,8 @@ export default function MenuPage() {
 
   const cycleSortBy = () => setSortBy(s => (s === "default" ? "price-asc" : s === "price-asc" ? "price-desc" : "default"))
   const sortLabel = sortBy === "price-asc" ? "Price: Low to High" : sortBy === "price-desc" ? "Price: High to Low" : "Sort"
+
+  if (notFound) return <Navigate to="/" replace />
 
   if (error) return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100dvh", padding: "2rem", flexDirection: "column", gap: "0.9rem" }}>

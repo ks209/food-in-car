@@ -2,11 +2,13 @@ import { useState, useRef, useEffect } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import { User, ReceiptText, LogOut } from "lucide-react"
 import { useAuth } from "../context/AuthContext"
+import { useRestaurantBase } from "../lib/restaurantPath"
 
 // Floating account control for the menu hero. Logged out → "Sign in" pill.
 // Logged in → avatar with a small dropdown (My Orders / Sign out).
 export default function AccountMenu({ onLight = true }) {
   const { restaurantId } = useParams()
+  const base = useRestaurantBase()
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
@@ -21,7 +23,7 @@ export default function AccountMenu({ onLight = true }) {
   if (!user) {
     return (
       <button
-        onClick={() => navigate(`/restaurant/${restaurantId}/login`)}
+        onClick={() => navigate(`${base}/login`)}
         style={{
           display:"inline-flex", alignItems:"center", gap:"0.4rem",
           background:"rgba(8,10,15,0.55)", color:"#fff", borderRadius:999,
@@ -61,7 +63,7 @@ export default function AccountMenu({ onLight = true }) {
             <p style={{ fontWeight:700, fontSize:"0.9rem", color:"var(--text)" }}>{user.customerName}</p>
             {user.vehicles?.[0] && <p style={{ fontSize:"0.75rem", color:"var(--muted)", letterSpacing:"0.04em" }}>{user.vehicles[0]}</p>}
           </div>
-          <button onClick={() => { setOpen(false); navigate(`/restaurant/${restaurantId}/orders`) }}
+          <button onClick={() => { setOpen(false); navigate(`${base}/orders`) }}
             style={menuItemStyle}><ReceiptText size={15} strokeWidth={2} /> My Orders</button>
           <button onClick={async () => { setOpen(false); await logout() }}
             style={{ ...menuItemStyle, color:"var(--error)", borderTop:"1px solid var(--border)" }}><LogOut size={15} strokeWidth={2} /> Sign out</button>

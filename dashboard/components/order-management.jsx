@@ -49,6 +49,14 @@ export function OrderManagement() {
     return () => clearInterval(t)
   }, [fromDate, toDate])
 
+  // Lets other screens deep-link into a pre-filtered view (?status=READY from
+  // the Overview live strip). Read off window rather than useSearchParams so
+  // this page doesn't need a Suspense boundary to stay statically renderable.
+  useEffect(() => {
+    const status = new URLSearchParams(window.location.search).get("status")
+    if (status && STATUS_KEYS.includes(status)) setStatusFilter(status)
+  }, [])
+
   const updateOrderStatus = async (orderId, status) => {
     // Optimistic — flip the status locally right away so the badge/buttons don't
     // sit on the old status for the round trip; fetchOrders() reconciles after.
