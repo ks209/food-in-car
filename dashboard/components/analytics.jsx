@@ -31,11 +31,14 @@ const STATUS_FILTER_OPTIONS = ["PENDING", "PAID", "PREPARING", "READY", "COMPLET
 
 // Menu-engineering quadrants (Kasavana-Smith). The label is the decision, not
 // the jargon — an owner should be able to act on the card without a glossary.
+// Menu-engineering groups. The textbook names for these are Stars, Plowhorses,
+// Puzzles and Dogs — accurate but jargon, and "Dogs" reads as an insult to
+// someone's menu. These say what the group IS, so the card needs no glossary.
 const QUADRANTS = {
-  star:      { label: "Stars",      color: "#10b981", action: "Sell well and earn well — keep quality up and feature them" },
-  plowhorse: { label: "Plowhorses", color: "#f59e0b", action: "Popular but cheap — nudge the price up or cut portion cost" },
-  puzzle:    { label: "Puzzles",    color: "#8b5cf6", action: "Earn well but rarely ordered — promote or move up the menu" },
-  dog:       { label: "Dogs",       color: "#94a3b8", action: "Low sales and low value — candidates to drop" },
+  star:      { label: "Winners",         color: "#10b981", action: "Sell well and earn well — keep quality up and feature them" },
+  plowhorse: { label: "Crowd-pullers",   color: "#f59e0b", action: "Popular but cheap — nudge the price up or trim portion cost" },
+  puzzle:    { label: "Hidden gems",     color: "#8b5cf6", action: "Earn well but rarely ordered — promote or move up the menu" },
+  dog:       { label: "Underperformers", color: "#94a3b8", action: "Low sales and low value — candidates to drop" },
 }
 
 function fmtMin(mins) {
@@ -162,6 +165,9 @@ export function Analytics() {
 
   const topItemMax = data.topItems[0]?.units || 1
   const daypart = data.categoryDaypart
+  // Bars are scaled to the slowest category, which is already first — the
+  // endpoint returns these sorted by p90 descending.
+  const categoryP90Max = prep.byCategory[0]?.p90 || 0
 
   const exportSections = [
     { title: "KPIs", rows: [
@@ -399,28 +405,36 @@ export function Analytics() {
                 {/* Ranked by p90, not average — a station that is usually fine
                     but occasionally catastrophic is exactly what an average buries. */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-5 pt-4 border-t border-slate-100">
+                  {/* A list, not a bar chart. The chart needed a fixed pixel
+                      height that rarely matched its row count — leaving dead
+                      space with few categories — and Recharts silently drops
+                      category ticks when the plot area is short, so a category
+                      could render as an unlabelled bar. This sizes itself and
+                      every row is always named. */}
                   <div>
-                    <p className="text-xs font-medium text-slate-500 mb-2">Slowest categories — by p90</p>
+                    <p className="text-xs font-medium text-slate-500 mb-3">Slowest categories — by p90</p>
                     {prep.byCategory.length === 0 ? (
                       <p className="text-slate-400 text-sm py-4">Not enough timed orders</p>
                     ) : (
-                      <ResponsiveContainer width="100%" height={Math.max(120, prep.byCategory.length * 30)}>
-                        <BarChart data={prep.byCategory} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 18 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" horizontal={false} />
-                          <XAxis type="number" tickLine={false} axisLine={false} fontSize={12} stroke="#71717a"
-                            label={{ value: "p90 minutes", position: "insideBottom", offset: -4, fontSize: 11, fill: "#71717a" }} />
-                          <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} fontSize={12} stroke="#71717a" width={100} />
-                          <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }}
-                            contentStyle={tooltipStyle} wrapperStyle={tooltipWrapperStyle}
-                            itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle}
-                            formatter={(v, _n, p) => [`p90 ${fmtMin(v)} · median ${fmtMin(p.payload.p50)} · ${p.payload.orders} order${p.payload.orders === 1 ? "" : "s"}`, p.payload.name]} />
-                          <Bar dataKey="p90" radius={[0, 6, 6, 0]} maxBarSize={22}>
-                            {prep.byCategory.map((c) => (
-                              <Cell key={c.name} fill={c.p90 >= sla.critMinutes ? "#ef4444" : c.p90 >= sla.warnMinutes ? "#f59e0b" : "#94a3b8"} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
+                      <div className="space-y-2.5">
+                        {prep.byCategory.map((c) => {
+                          const width = categoryP90Max ? (c.p90 / categoryP90Max) * 100 : 0
+                          const color = c.p90 >= sla.critMinutes ? "#ef4444" : c.p90 >= sla.warnMinutes ? "#f59e0b" : "#94a3b8"
+                          return (
+                            <div key={c.name} title={`${c.name} · p90 ${fmtMin(c.p90)} · median ${fmtMin(c.p50)} · ${c.orders} order${c.orders === 1 ? "" : "s"}`}>
+                              <div className="flex items-center justify-between gap-2 mb-1">
+                                <span className="text-sm text-slate-800 truncate">{c.name}</span>
+                                <span className="text-xs text-slate-500 flex-shrink-0">
+                                  {fmtMin(c.p90)} <span className="text-slate-400">· {c.orders}</span>
+                                </span>
+                              </div>
+                              <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                                <div className="h-full rounded-full" style={{ width: `${width}%`, backgroundColor: color }} />
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
                     )}
                   </div>
 
