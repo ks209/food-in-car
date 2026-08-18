@@ -128,16 +128,51 @@ menuRouter.put('/:id', restaurantAuth, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized to update this menu item' });
     }
 
-    const updated = await prisma.menuItem.update({
-      where: { id: menuItemId },
-      data: {
-        name: req.body.name,
-        description: req.body.description,
-        price: req.body.price !== undefined ? parseFloat(req.body.price) : undefined,
-        available: req.body.available,
-        imageUrl: req.body.imageUrl,
-        isActive: req.body.isActive
+    // optionGroups is only sent by the full Edit Item form — calls like the
+    // availability toggle omit it entirely, so `undefined` here must mean
+    // "leave the existing groups alone", not "clear them".
+    const updated = await prisma.$transaction(async (tx) => {
+      if (req.body.optionGroups !== undefined) {
+        // No historical order ever references an Option/OptionGroup row by id
+        // (OrderItemOption stores a name/priceDelta snapshot at order time),
+        // so a full replace is safe and far simpler than diffing.
+        const oldGroups = await tx.optionGroup.findMany({
+          where: { menuItemId },
+          select: { id: true }
+        });
+        await tx.option.deleteMany({ where: { optionGroupId: { in: oldGroups.map(g => g.id) } } });
+        await tx.optionGroup.deleteMany({ where: { menuItemId } });
       }
+
+      return tx.menuItem.update({
+        where: { id: menuItemId },
+        data: {
+          name: req.body.name,
+          description: req.body.description,
+          price: req.body.price !== undefined ? parseFloat(req.body.price) : undefined,
+          available: req.body.available,
+          imageUrl: req.body.imageUrl,
+          isActive: req.body.isActive,
+          optionGroups: req.body.optionGroups !== undefined
+            ? {
+                create: req.body.optionGroups.map(group => ({
+                  title: group.title,
+                  required: group.required,
+                  multiple: group.multiple,
+                  options: {
+                    create: group.options.map(opt => ({
+                      name: opt.name,
+                      priceDelta: parseFloat(opt.priceDelta)
+                    }))
+                  }
+                }))
+              }
+            : undefined
+        },
+        include: {
+          optionGroups: { include: { options: true } }
+        }
+      });
     });
 
     // Only when price or availability actually moved — a row on every save

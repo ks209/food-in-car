@@ -55,24 +55,24 @@ export function MenuManagement() {
 
   useEffect(() => { fetchMenu(); fetchCategories() }, [])
 
-  // ── Option groups (Add Item form) ────────────────────────────────────────────
-  const addOptionGroup = () =>
-    setNewItem((p) => ({ ...p, optionGroups: [...p.optionGroups, { title: "", required: false, multiple: false, options: [] }] }))
+  // ── Option groups (shared by Add Item and Edit Item forms) ─────────────────────
+  const optionGroupEditor = (setState) => ({
+    addGroup: () =>
+      setState((p) => ({ ...p, optionGroups: [...p.optionGroups, { title: "", required: false, multiple: false, options: [] }] })),
+    updateGroup: (gIdx, field, value) =>
+      setState((p) => { const g = [...p.optionGroups]; g[gIdx] = { ...g[gIdx], [field]: value }; return { ...p, optionGroups: g } }),
+    removeGroup: (gIdx) =>
+      setState((p) => ({ ...p, optionGroups: p.optionGroups.filter((_, i) => i !== gIdx) })),
+    addOption: (gIdx) =>
+      setState((p) => { const g = [...p.optionGroups]; g[gIdx] = { ...g[gIdx], options: [...g[gIdx].options, { name: "", priceDelta: 0 }] }; return { ...p, optionGroups: g } }),
+    updateOption: (gIdx, oIdx, field, value) =>
+      setState((p) => { const g = [...p.optionGroups]; const o = [...g[gIdx].options]; o[oIdx] = { ...o[oIdx], [field]: value }; g[gIdx] = { ...g[gIdx], options: o }; return { ...p, optionGroups: g } }),
+    removeOption: (gIdx, oIdx) =>
+      setState((p) => { const g = [...p.optionGroups]; g[gIdx] = { ...g[gIdx], options: g[gIdx].options.filter((_, i) => i !== oIdx) }; return { ...p, optionGroups: g } }),
+  })
 
-  const updateOptionGroup = (gIdx, field, value) =>
-    setNewItem((p) => { const g = [...p.optionGroups]; g[gIdx] = { ...g[gIdx], [field]: value }; return { ...p, optionGroups: g } })
-
-  const removeOptionGroup = (gIdx) =>
-    setNewItem((p) => ({ ...p, optionGroups: p.optionGroups.filter((_, i) => i !== gIdx) }))
-
-  const addOption = (gIdx) =>
-    setNewItem((p) => { const g = [...p.optionGroups]; g[gIdx] = { ...g[gIdx], options: [...g[gIdx].options, { name: "", priceDelta: 0 }] }; return { ...p, optionGroups: g } })
-
-  const updateOption = (gIdx, oIdx, field, value) =>
-    setNewItem((p) => { const g = [...p.optionGroups]; const o = [...g[gIdx].options]; o[oIdx] = { ...o[oIdx], [field]: value }; g[gIdx] = { ...g[gIdx], options: o }; return { ...p, optionGroups: g } })
-
-  const removeOption = (gIdx, oIdx) =>
-    setNewItem((p) => { const g = [...p.optionGroups]; g[gIdx] = { ...g[gIdx], options: g[gIdx].options.filter((_, i) => i !== oIdx) }; return { ...p, optionGroups: g } })
+  const newItemOptionEditor = optionGroupEditor(setNewItem)
+  const editItemOptionEditor = optionGroupEditor(setSelectedItem)
 
   // ── Menu item CRUD ────────────────────────────────────────────────────────────
   const openAddItem = (categoryId) => {
@@ -101,6 +101,7 @@ export function MenuManagement() {
         name: selectedItem.name, description: selectedItem.description,
         price: selectedItem.price, available: selectedItem.available,
         isActive: selectedItem.isActive,
+        optionGroups: selectedItem.optionGroups,
       }, { withCredentials: true })
       toast.success("Item updated"); setIsEditItemOpen(false); setSelectedItem(null); fetchMenu()
     } catch { toast.error("Failed to update item") }
@@ -290,7 +291,15 @@ export function MenuManagement() {
                         key={item.id}
                         item={item}
                         onToggleAvailability={() => toggleAvailability(item)}
-                        onEdit={() => { setSelectedItem({ ...item }); setIsEditItemOpen(true) }}
+                        onEdit={() => {
+                          setSelectedItem({
+                            ...item,
+                            // Deep-ish clone so the editor's per-level spreads never
+                            // mutate the row still shown in the list behind the dialog.
+                            optionGroups: (item.optionGroups || []).map((g) => ({ ...g, options: g.options.map((o) => ({ ...o })) })),
+                          })
+                          setIsEditItemOpen(true)
+                        }}
                         onDelete={() => handleDeleteItem(item.id)}
                       />
                     ))}
@@ -336,41 +345,7 @@ export function MenuManagement() {
               <Label className="text-sm">Available for ordering</Label>
             </div>
 
-            {/* Option groups */}
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <Label className="text-sm font-semibold">Option Groups</Label>
-                <Button variant="outline" size="sm" onClick={addOptionGroup}>+ Add Group</Button>
-              </div>
-              {newItem.optionGroups.map((group, gIdx) => (
-                <div key={gIdx} className="border border-slate-200 p-3 rounded-lg space-y-2 bg-slate-50">
-                  <div className="flex items-center gap-2">
-                    <Input placeholder="Group title" value={group.title} onChange={(e) => updateOptionGroup(gIdx, "title", e.target.value)} />
-                    <Button variant="ghost" size="sm" onClick={() => removeOptionGroup(gIdx)}><X className="h-4 w-4" /></Button>
-                  </div>
-                  <div className="flex items-center gap-4 text-sm">
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input type="checkbox" checked={group.required} onChange={(e) => updateOptionGroup(gIdx, "required", e.target.checked)} />
-                      Required
-                    </label>
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input type="checkbox" checked={group.multiple} onChange={(e) => updateOptionGroup(gIdx, "multiple", e.target.checked)} />
-                      Multiple
-                    </label>
-                  </div>
-                  <div className="space-y-2">
-                    {group.options.map((opt, oIdx) => (
-                      <div key={oIdx} className="flex items-center gap-2">
-                        <Input placeholder="Option name" value={opt.name} onChange={(e) => updateOption(gIdx, oIdx, "name", e.target.value)} />
-                        <Input type="number" step="0.01" placeholder="₹ delta" value={opt.priceDelta} onChange={(e) => updateOption(gIdx, oIdx, "priceDelta", parseFloat(e.target.value))} className="w-28" />
-                        <Button variant="ghost" size="sm" onClick={() => removeOption(gIdx, oIdx)}><X className="h-4 w-4" /></Button>
-                      </div>
-                    ))}
-                    <Button variant="outline" size="sm" onClick={() => addOption(gIdx)}>+ Option</Button>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <OptionGroupsEditor groups={newItem.optionGroups} editor={newItemOptionEditor} />
 
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={() => setIsAddItemOpen(false)}>Cancel</Button>
@@ -382,7 +357,7 @@ export function MenuManagement() {
 
       {/* Edit Item dialog */}
       <Dialog open={isEditItemOpen} onOpenChange={(open) => { setIsEditItemOpen(open); if (!open) setSelectedItem(null) }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Edit Item</DialogTitle></DialogHeader>
           {selectedItem && (
             <div className="space-y-4 pt-2">
@@ -404,6 +379,9 @@ export function MenuManagement() {
                 <Switch checked={selectedItem.available} onCheckedChange={(v) => setSelectedItem({ ...selectedItem, available: v })} />
                 <Label className="text-sm">Available</Label>
               </div>
+
+              <OptionGroupsEditor groups={selectedItem.optionGroups || []} editor={editItemOptionEditor} />
+
               <div className="flex justify-end gap-2 pt-2">
                 <Button variant="outline" size="sm" onClick={() => setIsEditItemOpen(false)}>Cancel</Button>
                 <Button size="sm" onClick={handleEditItem} className="brand-bg text-white">Save</Button>
@@ -452,6 +430,45 @@ export function MenuManagement() {
           )}
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+function OptionGroupsEditor({ groups, editor }) {
+  return (
+    <div className="space-y-3">
+      <div className="flex justify-between items-center">
+        <Label className="text-sm font-semibold">Option Groups</Label>
+        <Button variant="outline" size="sm" onClick={editor.addGroup}>+ Add Group</Button>
+      </div>
+      {groups.map((group, gIdx) => (
+        <div key={gIdx} className="border border-slate-200 p-3 rounded-lg space-y-2 bg-slate-50">
+          <div className="flex items-center gap-2">
+            <Input placeholder="Group title" value={group.title} onChange={(e) => editor.updateGroup(gIdx, "title", e.target.value)} />
+            <Button variant="ghost" size="sm" onClick={() => editor.removeGroup(gIdx)}><X className="h-4 w-4" /></Button>
+          </div>
+          <div className="flex items-center gap-4 text-sm">
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input type="checkbox" checked={group.required} onChange={(e) => editor.updateGroup(gIdx, "required", e.target.checked)} />
+              Required
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input type="checkbox" checked={group.multiple} onChange={(e) => editor.updateGroup(gIdx, "multiple", e.target.checked)} />
+              Multiple
+            </label>
+          </div>
+          <div className="space-y-2">
+            {group.options.map((opt, oIdx) => (
+              <div key={oIdx} className="flex items-center gap-2">
+                <Input placeholder="Option name" value={opt.name} onChange={(e) => editor.updateOption(gIdx, oIdx, "name", e.target.value)} />
+                <Input type="number" step="0.01" placeholder="₹ delta" value={opt.priceDelta} onChange={(e) => editor.updateOption(gIdx, oIdx, "priceDelta", parseFloat(e.target.value))} className="w-28" />
+                <Button variant="ghost" size="sm" onClick={() => editor.removeOption(gIdx, oIdx)}><X className="h-4 w-4" /></Button>
+              </div>
+            ))}
+            <Button variant="outline" size="sm" onClick={() => editor.addOption(gIdx)}>+ Option</Button>
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
