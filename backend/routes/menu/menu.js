@@ -2,6 +2,7 @@ import express from 'express';
 import prisma from '../../config/prisma.js';
 import restaurantAuth from '../../middlewares/restaurant.auth.js';
 import { recordMenuSnapshot, isTrackedChange } from '../../utils/menuHistory.js';
+import { stripVegIcon } from '../../utils/vegIcon.js';
 const menuRouter = express.Router();
 
 menuRouter.post('/create', restaurantAuth, async (req, res) => {
@@ -15,10 +16,13 @@ menuRouter.post('/create', restaurantAuth, async (req, res) => {
 
     const menuItem = await prisma.menuItem.create({
       data: {
-        name: req.body.name,
+        // Strip any hand-typed veg/non-veg marker (🟢/🔴/"(Veg)") now that
+        // isVeg is a real, dashboard-editable field — see utils/vegIcon.js.
+        name: stripVegIcon(req.body.name),
         description: req.body.description,
         price: parseFloat(req.body.price),
         available: req.body.available ?? true,
+        isVeg: req.body.isVeg ?? null,
         imageUrl: req.body.imageUrl || null,
         position: (maxPosition._max.position ?? -1) + 1,
         isActive: true,
@@ -147,10 +151,15 @@ menuRouter.put('/:id', restaurantAuth, async (req, res) => {
       return tx.menuItem.update({
         where: { id: menuItemId },
         data: {
-          name: req.body.name,
+          // Strip any hand-typed veg/non-veg marker (🟢/🔴/"(Veg)") now that
+          // isVeg is a real, dashboard-editable field — see utils/vegIcon.js.
+          // Calls that omit `name` (e.g. the availability toggle) pass
+          // `undefined` through untouched, same as every other field here.
+          name: req.body.name !== undefined ? stripVegIcon(req.body.name) : undefined,
           description: req.body.description,
           price: req.body.price !== undefined ? parseFloat(req.body.price) : undefined,
           available: req.body.available,
+          isVeg: req.body.isVeg,
           imageUrl: req.body.imageUrl,
           isActive: req.body.isActive,
           optionGroups: req.body.optionGroups !== undefined

@@ -18,8 +18,38 @@ import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from 
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 
-const emptyItem = { name: "", description: "", price: 0, categoryId: "", available: true, optionGroups: [] }
+const emptyItem = { name: "", description: "", price: 0, categoryId: "", available: true, isVeg: null, optionGroups: [] }
 const emptyCategory = { name: "", isActive: true }
+
+// Mirrors backend/utils/vegIcon.js — used only to pre-fill the Edit dialog
+// (strip a legacy hand-typed icon from the name preview, infer the veg
+// toggle from it) so the restaurant sees the change before hitting Save.
+// The server re-runs the same cleanup on every save regardless.
+const LEADING_ICON_STRIP_RE = /^[\s]*[\p{Extended_Pictographic}‍️]+[\s\-–—:•]*/u
+const LEADING_BRACKET_STRIP_RE = /^[([]\s*(non[\s-]?veg(?:etarian)?|veg(?:etarian)?|nv|v)\s*[)\]]\s*[\-–—:•]?\s*/i
+const GREEN_ICON_RE = /^[\u{1F7E2}\u{1F49A}\u{2705}]/u
+const RED_ICON_RE = /^[\u{1F534}\u{1F7E5}\u{274C}]/u
+const BRACKET_NONVEG_RE = /^[([]\s*(non[\s-]?veg(?:etarian)?|nv)\s*[)\]]/i
+const BRACKET_VEG_RE = /^[([]\s*veg(?:etarian)?\s*[)\]]/i
+
+function detectVegFromIcon(name) {
+  if (!name) return null
+  const trimmed = name.trim()
+  if (GREEN_ICON_RE.test(trimmed)) return true
+  if (RED_ICON_RE.test(trimmed)) return false
+  if (BRACKET_NONVEG_RE.test(trimmed)) return false
+  if (BRACKET_VEG_RE.test(trimmed)) return true
+  return null
+}
+
+function stripVegIconClient(name) {
+  if (!name) return name
+  let cleaned = name.trim()
+  for (let i = 0; i < 2; i++) {
+    cleaned = cleaned.replace(LEADING_ICON_STRIP_RE, "").replace(LEADING_BRACKET_STRIP_RE, "")
+  }
+  return cleaned.trim()
+}
 
 export function MenuManagement() {
   const [searchTerm, setSearchTerm] = useState("")
@@ -85,7 +115,7 @@ export function MenuManagement() {
     try {
       await axios.post(`${API}/api/menu/create`, {
         name: newItem.name, description: newItem.description, price: newItem.price,
-        available: newItem.available,
+        available: newItem.available, isVeg: newItem.isVeg,
         categoryId: newItem.categoryId ? parseInt(newItem.categoryId) : undefined,
         optionGroups: newItem.optionGroups.length > 0 ? newItem.optionGroups : undefined,
       }, { withCredentials: true })
@@ -100,7 +130,7 @@ export function MenuManagement() {
       await axios.put(`${API}/api/menu/${selectedItem.id}`, {
         name: selectedItem.name, description: selectedItem.description,
         price: selectedItem.price, available: selectedItem.available,
-        isActive: selectedItem.isActive,
+        isActive: selectedItem.isActive, isVeg: selectedItem.isVeg,
         optionGroups: selectedItem.optionGroups,
       }, { withCredentials: true })
       toast.success("Item updated"); setIsEditItemOpen(false); setSelectedItem(null); fetchMenu()
@@ -294,6 +324,12 @@ export function MenuManagement() {
                         onEdit={() => {
                           setSelectedItem({
                             ...item,
+                            // Legacy items had veg/non-veg hand-typed into the name
+                            // before isVeg existed — surface it in the toggle and
+                            // preview the cleaned name; the server strips it either
+                            // way on Save, this just makes the change visible first.
+                            name: stripVegIconClient(item.name),
+                            isVeg: item.isVeg ?? detectVegFromIcon(item.name),
                             // Deep-ish clone so the editor's per-level spreads never
                             // mutate the row still shown in the list behind the dialog.
                             optionGroups: (item.optionGroups || []).map((g) => ({ ...g, options: g.options.map((o) => ({ ...o })) })),
@@ -345,6 +381,11 @@ export function MenuManagement() {
               <Label className="text-sm">Available for ordering</Label>
             </div>
 
+            <div>
+              <Label className="text-sm">Type</Label>
+              <VegToggle value={newItem.isVeg} onChange={(v) => setNewItem({ ...newItem, isVeg: v })} />
+            </div>
+
             <OptionGroupsEditor groups={newItem.optionGroups} editor={newItemOptionEditor} />
 
             <div className="flex justify-end gap-2 pt-2">
@@ -378,6 +419,11 @@ export function MenuManagement() {
               <div className="flex items-center gap-2">
                 <Switch checked={selectedItem.available} onCheckedChange={(v) => setSelectedItem({ ...selectedItem, available: v })} />
                 <Label className="text-sm">Available</Label>
+              </div>
+
+              <div>
+                <Label className="text-sm">Type</Label>
+                <VegToggle value={selectedItem.isVeg} onChange={(v) => setSelectedItem({ ...selectedItem, isVeg: v })} />
               </div>
 
               <OptionGroupsEditor groups={selectedItem.optionGroups || []} editor={editItemOptionEditor} />
@@ -473,6 +519,53 @@ function OptionGroupsEditor({ groups, editor }) {
   )
 }
 
+// Same tri-state (Not set / Veg / Non-Veg) as MenuItem.isVeg: null | true | false.
+function VegToggle({ value, onChange }) {
+  const options = [
+    { v: null, label: "Not set" },
+    { v: true, label: "Veg" },
+    { v: false, label: "Non-Veg" },
+  ]
+  return (
+    <div className="flex gap-1.5 mt-1">
+      {options.map((opt) => (
+        <button
+          key={String(opt.v)}
+          type="button"
+          onClick={() => onChange(opt.v)}
+          className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
+            value === opt.v
+              ? opt.v === true
+                ? "bg-emerald-50 border-emerald-400 text-emerald-700"
+                : opt.v === false
+                ? "bg-red-50 border-red-400 text-red-700"
+                : "bg-slate-100 border-slate-300 text-slate-700"
+              : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// Small bordered dot matching the mobile app's veg/non-veg mark — hidden
+// entirely when isVeg is unset (null), same as the mobile app.
+function VegDot({ isVeg }) {
+  if (isVeg === null || isVeg === undefined) return null
+  const color = isVeg ? "#10b981" : "#ef4444"
+  return (
+    <span
+      title={isVeg ? "Vegetarian" : "Non-Vegetarian"}
+      className="inline-flex items-center justify-center flex-shrink-0"
+      style={{ width: 14, height: 14, border: `1.5px solid ${color}`, borderRadius: 3 }}
+    >
+      <span style={{ width: 7, height: 7, borderRadius: "50%", background: color }} />
+    </span>
+  )
+}
+
 function SortableMenuItemRow({ item, onToggleAvailability, onEdit, onDelete }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id })
   const style = {
@@ -490,6 +583,7 @@ function SortableMenuItemRow({ item, onToggleAvailability, onEdit, onDelete }) {
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
+            <VegDot isVeg={item.isVeg} />
             <h3 className="font-semibold text-slate-800 text-sm truncate">{item.name}</h3>
             <StatusDot color={item.available ? "#10b981" : "#94a3b8"}>{item.available ? "Available" : "Off"}</StatusDot>
           </div>
