@@ -73,6 +73,11 @@ model Restaurant {
 model Category {
   id           Int        @id @default(autoincrement())
   name         String
+  // Display order of the category itself, set by the restaurant in the
+  // dashboard (drag to reorder) — mirrors MenuItem.position, which orders
+  // items *within* a category. Every read that feeds a menu sorts by this,
+  // then by id so pre-existing categories (all position 0) keep a stable order.
+  position     Int        @default(0)
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
   restaurantId Int
   menuItems    MenuItem[]

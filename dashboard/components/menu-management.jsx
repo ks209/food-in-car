@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Search, Plus, Edit, Trash2, X, GripVertical, FolderPlus } from "lucide-react"
+import { Search, Plus, Edit, Trash2, X, GripVertical, FolderPlus, ArrowUpDown } from "lucide-react"
 import { Switch } from "@/components/ui/switch"
 import { toast } from "sonner"
 import axios from "axios"
@@ -64,6 +64,7 @@ export function MenuManagement() {
 
   const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false)
   const [isEditCategoryOpen, setIsEditCategoryOpen] = useState(false)
+  const [isReorderCategoriesOpen, setIsReorderCategoriesOpen] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState(null)
   const [newCategory, setNewCategory] = useState(emptyCategory)
 
@@ -184,6 +185,32 @@ export function MenuManagement() {
     } catch { toast.error("Failed to update availability") }
   }
 
+  // ── Reordering the categories themselves ──────────────────────────────────────
+  // Done in a dialog rather than by dragging the section headers in place: a
+  // category with 80 items is taller than the viewport, so dragging one past
+  // another on the page would be unusable. The dialog shows just the names.
+  const reorderCategories = async (ordered) => {
+    const previous = categories
+    setCategories(ordered) // optimistic — the drag should feel instant
+    try {
+      await axios.patch(`${API}/api/category/reorder`, {
+        categories: ordered.map((c, idx) => ({ id: c.id, position: idx })),
+      }, { withCredentials: true })
+    } catch {
+      toast.error("Failed to save category order")
+      setCategories(previous)
+    }
+  }
+
+  const handleCategoryDragEnd = (event) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = categories.findIndex((c) => c.id === active.id)
+    const newIndex = categories.findIndex((c) => c.id === over.id)
+    if (oldIndex === -1 || newIndex === -1) return
+    reorderCategories(arrayMove(categories, oldIndex, newIndex))
+  }
+
   // ── Reordering within a category group ────────────────────────────────────────
   const reorderGroup = async (categoryKey, orderedItems) => {
     // Optimistic local update
@@ -237,6 +264,11 @@ export function MenuManagement() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-slate-500 text-sm">{menuItems.length} items · {categories.length} categories</p>
         <div className="flex flex-wrap gap-2">
+          {categories.length > 1 && (
+            <Button variant="outline" className="h-9 text-sm" onClick={() => setIsReorderCategoriesOpen(true)}>
+              <ArrowUpDown className="h-4 w-4 mr-1.5" />Reorder Categories
+            </Button>
+          )}
           <Button variant="outline" className="h-9 text-sm" onClick={() => { setNewCategory(emptyCategory); setIsAddCategoryOpen(true) }}>
             <FolderPlus className="h-4 w-4 mr-1.5" />Add Category
           </Button>
@@ -454,6 +486,28 @@ export function MenuManagement() {
         </DialogContent>
       </Dialog>
 
+      {/* Reorder Categories dialog */}
+      <Dialog open={isReorderCategoriesOpen} onOpenChange={setIsReorderCategoriesOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Reorder Categories</DialogTitle></DialogHeader>
+          <p className="text-xs text-slate-500 -mt-1">
+            Drag to set the order customers see on the menu. Saved as you drop.
+          </p>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleCategoryDragEnd}>
+            <SortableContext items={categories.map((c) => c.id)} strategy={verticalListSortingStrategy}>
+              <div className="space-y-2 pt-1 max-h-[60vh] overflow-y-auto">
+                {categories.map((category, idx) => (
+                  <SortableCategoryRow key={category.id} category={category} index={idx} />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
+          <div className="flex justify-end pt-2">
+            <Button size="sm" variant="outline" onClick={() => setIsReorderCategoriesOpen(false)}>Done</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Edit Category dialog */}
       <Dialog open={isEditCategoryOpen} onOpenChange={(open) => { setIsEditCategoryOpen(open); if (!open) setSelectedCategory(null) }}>
         <DialogContent className="max-w-sm">
@@ -563,6 +617,30 @@ function VegDot({ isVeg }) {
     >
       <span style={{ width: 7, height: 7, borderRadius: "50%", background: color }} />
     </span>
+  )
+}
+
+function SortableCategoryRow({ category, index }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: category.id })
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  }
+  const itemCount = category.menuItems?.length ?? 0
+
+  return (
+    <div ref={setNodeRef} style={style}
+      className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2">
+      <button {...attributes} {...listeners}
+        className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500 touch-none" aria-label="Reorder">
+        <GripVertical className="h-4 w-4" />
+      </button>
+      <span className="text-xs text-slate-400 w-4 flex-shrink-0">{index + 1}</span>
+      <span className="text-sm font-medium text-slate-800 truncate flex-1">{category.name}</span>
+      {!category.isActive && <StatusDot color="#94a3b8">Inactive</StatusDot>}
+      <span className="text-xs text-slate-400 flex-shrink-0">{itemCount}</span>
+    </div>
   )
 }
 

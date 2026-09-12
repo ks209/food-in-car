@@ -153,13 +153,20 @@ restaurantRouter.get('/all', supportAuth, async (req, res) => {
     }
 });
 
+// How far a customer will be shown restaurants from. The mobile home page is
+// GPS-only, so in practice this is the whole catalogue a customer ever sees —
+// env-overridable to tune it per deployment without a code change.
+const NEARBY_RADIUS_KM = Number(process.env.NEARBY_RADIUS_KM) || 3;
+
 // Public, unauthenticated — the mobile app's homepage. Registered before
 // GET /:id (Express matches routes in order; /:id would otherwise swallow
 // this path). Distance-sorted when ?lat=&lng= are given and valid (GPS
-// takes priority over ?cityId= if both are somehow sent); otherwise falls
-// back to rating-sorted, optionally narrowed to one city (the customer
-// picked a city instead of granting location). ?search= matches name or
-// cuisines and layers onto either mode. Only restaurants with saved
+// takes priority over ?cityId= if both are somehow sent), and capped at
+// NEARBY_RADIUS_KM — anything further away is not returned at all, not just
+// sorted last. Without coordinates it falls back to rating-sorted, optionally
+// narrowed to one city; the mobile app no longer uses that path (location is
+// mandatory there), but it stays for any other caller. ?search= matches name
+// or cuisines and layers onto either mode. Only restaurants with saved
 // coordinates are eligible for distance sort — one without them just
 // doesn't show up until an admin sets them.
 restaurantRouter.get('/nearby', async (req, res) => {
@@ -177,21 +184,27 @@ restaurantRouter.get('/nearby', async (req, res) => {
 
     try {
         const rows = hasCoords
+            // The Haversine distance is computed in a subquery so the radius
+            // cut and the COUNT(*) OVER() total can both be applied to it —
+            // a bare SELECT alias isn't referenceable from its own WHERE.
             ? await prisma.$queryRawUnsafe(
                 `
-                SELECT id, name, slug, "logoUrl", "coverUrl", cuisines, rating, "ratingCount", "isOpen", address,
-                  (6371 * acos(LEAST(1, GREATEST(-1,
-                    cos(radians($1)) * cos(radians(latitude)) * cos(radians(longitude) - radians($2))
-                    + sin(radians($1)) * sin(radians(latitude))
-                  )))) AS distance,
-                  COUNT(*) OVER()::int AS "totalCount"
-                FROM "Restaurant"
-                WHERE "isActive" = true AND latitude IS NOT NULL AND longitude IS NOT NULL
-                  AND ($3 = '' OR name ILIKE '%' || $3 || '%' OR cuisines ILIKE '%' || $3 || '%')
+                SELECT *, COUNT(*) OVER()::int AS "totalCount"
+                FROM (
+                  SELECT id, name, slug, "logoUrl", "coverUrl", cuisines, rating, "ratingCount", "isOpen", address,
+                    (6371 * acos(LEAST(1, GREATEST(-1,
+                      cos(radians($1)) * cos(radians(latitude)) * cos(radians(longitude) - radians($2))
+                      + sin(radians($1)) * sin(radians(latitude))
+                    )))) AS distance
+                  FROM "Restaurant"
+                  WHERE "isActive" = true AND latitude IS NOT NULL AND longitude IS NOT NULL
+                    AND ($3 = '' OR name ILIKE '%' || $3 || '%' OR cuisines ILIKE '%' || $3 || '%')
+                ) nearby
+                WHERE distance <= $6
                 ORDER BY distance ASC
                 LIMIT $4 OFFSET $5
                 `,
-                lat, lng, search, pageSize, offset
+                lat, lng, search, pageSize, offset, NEARBY_RADIUS_KM
               )
             : await prisma.$queryRawUnsafe(
                 `
@@ -217,6 +230,7 @@ restaurantRouter.get('/nearby', async (req, res) => {
             total,
             totalPages: Math.max(1, Math.ceil(total / pageSize)),
             sortedBy: hasCoords ? 'distance' : 'rating',
+            radiusKm: hasCoords ? NEARBY_RADIUS_KM : null,
         });
     } catch (err) {
         res.status(500).json({ message: 'Error fetching nearby restaurants', error: err.message });

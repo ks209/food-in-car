@@ -6,13 +6,25 @@ import { resolveRestaurantId } from '../../utils/slug.js';
 
 const categoryRouter = express.Router();
 
+// Categories are shown in `position` order everywhere a menu is rendered;
+// ties (and rows predating the column) fall back to id so the order is at
+// least stable. Kept in one place so no read forgets it.
+const CATEGORY_ORDER = [{ position: 'asc' }, { id: 'asc' }];
+
 categoryRouter.post('/create', restaurantAuth, async (req, res) => {
   try {
     const restaurantId = req.restaurantId;
+    // New categories land at the end of this restaurant's list rather than
+    // jumping to the front on the shared default of 0.
+    const maxPosition = await prisma.category.aggregate({
+      where: { restaurantId },
+      _max: { position: true }
+    });
     const category = await prisma.category.create({
       data: {
         name: req.body.name,
         menuItems: req.body.menuItems || undefined,
+        position: (maxPosition._max.position ?? -1) + 1,
         isActive: true,
         restaurant: {
           connect: { id: restaurantId }
@@ -28,11 +40,55 @@ categoryRouter.post('/create', restaurantAuth, async (req, res) => {
   }
 });
 
+// Drag-to-reorder from the dashboard. Mirrors PATCH /api/menu/reorder: the
+// client sends the categories in their new order and every position is
+// rewritten in one transaction, so a partial save can't leave a mixed order.
+// Declared above PUT/DELETE '/:id' for readability — PATCH can't collide with
+// them anyway.
+categoryRouter.patch('/reorder', restaurantAuth, async (req, res) => {
+  try {
+    const restaurantId = req.restaurantId;
+    const categories = req.body.categories;
+    if (!Array.isArray(categories) || categories.length === 0) {
+      return res.status(400).json({ error: 'categories array is required' });
+    }
+
+    const uniqueIds = [...new Set(categories.map(c => parseInt(c.id)))];
+    if (uniqueIds.some(id => !Number.isInteger(id))) {
+      return res.status(400).json({ error: 'Every category needs a numeric id' });
+    }
+
+    // Ownership check before any write — otherwise one tenant could reposition
+    // another's categories by guessing ids.
+    const owned = await prisma.category.findMany({
+      where: { id: { in: uniqueIds }, restaurantId },
+      select: { id: true }
+    });
+    if (owned.length !== uniqueIds.length) {
+      return res.status(403).json({ error: 'Not authorized to reorder one or more of these categories' });
+    }
+
+    await prisma.$transaction(
+      categories.map((c, idx) =>
+        prisma.category.update({
+          where: { id: parseInt(c.id) },
+          data: { position: Number.isInteger(parseInt(c.position)) ? parseInt(c.position) : idx }
+        })
+      )
+    );
+
+    res.json({ message: 'Categories reordered successfully' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to reorder categories', details: error.message });
+  }
+});
+
 categoryRouter.get('/all', restaurantAuth, async (req, res) => {
   try {
     const categories = await prisma.category.findMany({
       where: { restaurantId: req.restaurantId, isActive: true },
-      select: { id: true, name: true }
+      select: { id: true, name: true, position: true },
+      orderBy: CATEGORY_ORDER
     });
     res.status(200).json(categories);
   } catch (error) {
@@ -62,7 +118,8 @@ categoryRouter.get('/', restaurantAuth, async (req, res) => {
   try {
     const categories = await prisma.category.findMany({
       where: { restaurantId: req.restaurantId },
-      include: { menuItems: { where: { isActive: true } } }
+      include: { menuItems: { where: { isActive: true } } },
+      orderBy: CATEGORY_ORDER
     });
     res.status(200).json(categories);
   } catch (error) {
@@ -120,9 +177,12 @@ categoryRouter.get('/restaurant/:idOrSlug', async (req, res) => {
             optionGroups: {
               include: { options: true }
             }
-          }
+          },
+          // Same order the dashboard's drag-to-reorder writes (MenuItem.position).
+          orderBy: [{ position: 'asc' }, { id: 'asc' }]
         }
-      }
+      },
+      orderBy: CATEGORY_ORDER
     });
     res.status(200).json(categories);
     } catch (error) {

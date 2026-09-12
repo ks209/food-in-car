@@ -267,6 +267,48 @@ a.card:active, .card:active { transform: scale(0.99); }
 .cat-chip.active .cat-count { background: rgba(0,0,0,0.16); color: #06281d; }
 
 /* ════════════════════════════════════════════
+   MENU SECTIONS
+   One continuous list, one heading per category. --sticky-stack is the
+   search bar (71px, = .cat-bar's top) plus the chip row; STICKY_STACK in
+   MenuPage.jsx must stay in sync with it.
+   ════════════════════════════════════════════ */
+:root { --sticky-stack: 130px; }
+
+.menu-section { scroll-margin-top: var(--sticky-stack); }
+.menu-section-head {
+  position: sticky; top: var(--sticky-stack); z-index: 45;
+  display: flex; align-items: center; justify-content: space-between; gap: 0.6rem;
+  margin: 0 0.15rem; padding: 0.7rem 0 0.6rem;
+  background: var(--bg);
+  font-size: 1.06rem; font-weight: 800; letter-spacing: -0.01em;
+}
+.menu-section-count { font-size: 0.76rem; font-weight: 700; color: var(--muted); }
+.menu-item-list { display: flex; flex-direction: column; gap: 0.75rem; padding-bottom: 0.4rem; }
+/* Skips layout and paint for offscreen cards — the whole point on an 80-item
+   menu. `auto` in contain-intrinsic-size means the browser remembers each
+   card's real height once rendered, so the scrollbar stops drifting. */
+.menu-item-slot { content-visibility: auto; contain-intrinsic-size: auto 150px; }
+
+/* Floating category index (long menus only) */
+.menu-index-fab {
+  position: fixed; right: 1rem; z-index: 90;
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.7rem 1rem; border-radius: 14px;
+  background: var(--card); color: var(--text);
+  border: 1px solid var(--border-strong);
+  font-size: 0.82rem; font-weight: 800; letter-spacing: -0.01em;
+  box-shadow: var(--shadow-md);
+}
+.menu-index-fab:active { transform: scale(0.96); }
+.menu-index-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+  width: 100%; padding: 0.85rem 1rem; border-radius: 12px;
+  font-size: 0.92rem; font-weight: 700; text-align: left; color: var(--text);
+}
+.menu-index-row:active { background: var(--surface); }
+.menu-index-count { font-size: 0.76rem; font-weight: 700; color: var(--muted); }
+
+/* ════════════════════════════════════════════
    MENU ITEM CARD (no image — typographic)
    ════════════════════════════════════════════ */
 .item-card {
@@ -369,9 +411,15 @@ a.card:active, .card:active { transform: scale(0.99); }
 .home-hero { padding: 0.75rem 1.1rem 0.5rem; }
 .home-hero h1 { font-size: 1.4rem; font-weight: 800; line-height: 1.2; }
 .home-location-status { color: var(--text-secondary); font-size: 0.85rem; margin-top: 0.3rem; }
-.home-fallback-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin-top: 0.7rem; }
 .home-locate-btn { padding: 0.5rem 0.9rem; flex-shrink: 0; }
-.home-city-select { width: auto; min-width: 168px; padding: 0.55rem 0.8rem; font-size: 0.85rem; font-weight: 600; }
+
+/* Location gate — the whole page when GPS is denied or unavailable. */
+.home-geo-gate { padding: 3.5rem 1.6rem; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 0.7rem; }
+.home-geo-gate-icon { width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--surface); color: var(--primary); margin-bottom: 0.2rem; }
+.home-geo-gate h1 { font-size: 1.25rem; font-weight: 800; letter-spacing: -0.01em; }
+.home-geo-gate p { color: var(--text-secondary); font-size: 0.88rem; line-height: 1.5; max-width: 30ch; }
+.home-geo-gate .home-locate-btn { margin-top: 0.4rem; padding: 0.65rem 1.2rem; }
+.home-geo-gate-hint { font-size: 0.78rem !important; color: var(--muted) !important; max-width: 34ch; margin-top: 0.5rem; }
 
 .home-search-wrap { padding: 0.4rem 1.1rem 0.2rem; }
 .search-clear-btn { display: flex; align-items: center; justify-content: center; color: var(--muted); flex-shrink: 0; }

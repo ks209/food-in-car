@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState } from "react"
 import { Link } from "react-router-dom"
 import { MapPin, Star, UtensilsCrossed, LocateFixed, Search, X, Download, Share2 } from "lucide-react"
-import { restaurantApi, cityApi, configApi } from "../api"
+import { restaurantApi, configApi } from "../api"
 import { applyTheme, DEFAULT_HEX } from "../lib/theme"
 
 const PAGE_SIZE = 10
 const SEARCH_DEBOUNCE_MS = 400
-// Session-only — avoids re-hitting the GPS hardware (or re-asking a customer
-// to pick a city) on every visit to "/" (e.g. navigating back from a
-// restaurant's menu), without persisting either any longer than this browser
-// tab stays open.
+// Session-only — avoids re-hitting the GPS hardware on every visit to "/"
+// (e.g. navigating back from a restaurant's menu), without persisting the
+// customer's coordinates any longer than this browser tab stays open.
 const COORDS_CACHE_KEY = "ck_last_coords"
-const CITY_CACHE_KEY = "ck_last_city"
 const COORDS_CACHE_TTL = 10 * 60 * 1000
+// Mirrors NEARBY_RADIUS_KM in backend/routes/restaurant/restaurant.js — only
+// used for copy until the first response comes back carrying the real value.
+const DEFAULT_RADIUS_KM = 3
 
 function formatDistance(km) {
   if (km == null) return null
@@ -65,10 +66,11 @@ function RestCard({ r }) {
 }
 
 export default function HomePage() {
+  // Location is mandatory: "denied" is a dead end that shows the enable-location
+  // screen instead of a restaurant list — there is no city fallback any more.
   const [geoStatus, setGeoStatus] = useState("locating") // locating | granted | denied
   const [coords, setCoords] = useState(null)
-  const [cities, setCities] = useState([])
-  const [selectedCityId, setSelectedCityId] = useState(null)
+  const [radiusKm, setRadiusKm] = useState(DEFAULT_RADIUS_KM)
   const [searchInput, setSearchInput] = useState("")
   const [debouncedSearch, setDebouncedSearch] = useState("")
 
@@ -95,7 +97,6 @@ export default function HomePage() {
   const [showIOSHint, setShowIOSHint] = useState(false)
 
   useEffect(() => { applyTheme(DEFAULT_HEX) }, [])
-  useEffect(() => { cityApi.all().then((r) => setCities(r.data)).catch(() => {}) }, [])
   useEffect(() => { configApi.get().then((r) => setInstallEnabled(!!r.data.pwaInstallButtonEnabled)).catch(() => {}) }, [])
 
   useEffect(() => {
@@ -131,8 +132,10 @@ export default function HomePage() {
     return () => document.removeEventListener("mousedown", close)
   }, [])
 
-  function loadRestaurants(pageNum, modeParams, searchTerm, { append = false } = {}) {
-    const params = { page: pageNum, pageSize: PAGE_SIZE, ...modeParams }
+  // Every call is coordinate-scoped — without location there is nothing to
+  // show, so callers only reach this once geoStatus is "granted".
+  function loadRestaurants(pageNum, position, searchTerm, { append = false } = {}) {
+    const params = { page: pageNum, pageSize: PAGE_SIZE, lat: position.lat, lng: position.lng }
     if (searchTerm) params.search = searchTerm
     ;(append ? setLoadingMore : setLoading)(true)
     setError("")
@@ -141,6 +144,7 @@ export default function HomePage() {
         setRestaurants((prev) => append ? [...prev, ...r.data.restaurants] : r.data.restaurants)
         setPage(r.data.page)
         setTotalPages(r.data.totalPages)
+        if (r.data.radiusKm) setRadiusKm(r.data.radiusKm)
       })
       .catch(() => setError("Couldn't load restaurants. Please try again."))
       .finally(() => (append ? setLoadingMore : setLoading)(false))
@@ -150,35 +154,25 @@ export default function HomePage() {
     setGeoStatus("locating")
     if (!navigator.geolocation) {
       setGeoStatus("denied")
-      loadRestaurants(1, {}, debouncedSearch)
       return
     }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const next = { lat: pos.coords.latitude, lng: pos.coords.longitude }
         try { sessionStorage.setItem(COORDS_CACHE_KEY, JSON.stringify({ ...next, ts: Date.now() })) } catch {}
-        try { sessionStorage.removeItem(CITY_CACHE_KEY) } catch {}
-        setSelectedCityId(null)
         setCoords(next)
         setGeoStatus("granted")
-        loadRestaurants(1, { lat: next.lat, lng: next.lng }, debouncedSearch)
+        loadRestaurants(1, next, debouncedSearch)
       },
       () => {
+        // Denied, unavailable or timed out — all equally blocking. The list is
+        // cleared so a previous grant's results can't linger on screen.
+        setCoords(null)
+        setRestaurants([])
         setGeoStatus("denied")
-        loadRestaurants(1, {}, debouncedSearch)
       },
       { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 }
     )
-  }
-
-  function handleSelectCity(e) {
-    const id = e.target.value ? Number(e.target.value) : null
-    setSelectedCityId(id)
-    try {
-      if (id) sessionStorage.setItem(CITY_CACHE_KEY, String(id))
-      else sessionStorage.removeItem(CITY_CACHE_KEY)
-    } catch {}
-    loadRestaurants(1, id ? { cityId: id } : {}, debouncedSearch)
   }
 
   useEffect(() => {
@@ -187,14 +181,7 @@ export default function HomePage() {
       if (cachedCoords && Date.now() - cachedCoords.ts < COORDS_CACHE_TTL) {
         setCoords(cachedCoords)
         setGeoStatus("granted")
-        loadRestaurants(1, { lat: cachedCoords.lat, lng: cachedCoords.lng }, "")
-        return
-      }
-      const cachedCityId = sessionStorage.getItem(CITY_CACHE_KEY)
-      if (cachedCityId) {
-        setGeoStatus("denied")
-        setSelectedCityId(Number(cachedCityId))
-        loadRestaurants(1, { cityId: Number(cachedCityId) }, "")
+        loadRestaurants(1, cachedCoords, "")
         return
       }
     } catch {}
@@ -212,14 +199,14 @@ export default function HomePage() {
   // mount since the location/city effect above already triggers the first load.
   useEffect(() => {
     if (skipNextSearchFetch.current) { skipNextSearchFetch.current = false; return }
-    const modeParams = coords ? { lat: coords.lat, lng: coords.lng } : selectedCityId ? { cityId: selectedCityId } : {}
-    loadRestaurants(1, modeParams, debouncedSearch)
+    if (!coords) return
+    loadRestaurants(1, coords, debouncedSearch)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearch])
 
   function handleLoadMore() {
-    const modeParams = coords ? { lat: coords.lat, lng: coords.lng } : selectedCityId ? { cityId: selectedCityId } : {}
-    loadRestaurants(page + 1, modeParams, debouncedSearch, { append: true })
+    if (!coords) return
+    loadRestaurants(page + 1, coords, debouncedSearch, { append: true })
   }
 
   return (
@@ -256,25 +243,32 @@ export default function HomePage() {
         )}
       </div>
 
+      {/* Location is mandatory — without it the page is this screen and
+          nothing else: no search box, no list, no city fallback. */}
+      {geoStatus === "denied" ? (
+        <div className="home-geo-gate">
+          <div className="home-geo-gate-icon"><MapPin size={26} /></div>
+          <h1>We need your location</h1>
+          <p>
+            Carkhanaa shows you restaurants within {radiusKm} km of where you're parked,
+            so we can't load anything until location is on.
+          </p>
+          <button className="btn btn-primary home-locate-btn" onClick={requestLocation}>
+            <LocateFixed size={16} /> Enable location
+          </button>
+          <p className="home-geo-gate-hint">
+            Already blocked it? Tap the lock or <strong>⋮</strong> icon next to the address bar,
+            then allow Location for this site and try again.
+          </p>
+        </div>
+      ) : (
+      <>
       <div className="home-hero">
         <h1>Restaurants near you</h1>
         <p className="home-location-status">
           {geoStatus === "locating" && "Finding your location…"}
-          {geoStatus === "granted" && "Sorted by distance, closest first"}
-          {geoStatus === "denied" && !selectedCityId && "Showing top-rated restaurants — enable location for distance sorting"}
-          {geoStatus === "denied" && selectedCityId && "Showing top-rated restaurants in your city"}
+          {geoStatus === "granted" && `Within ${radiusKm} km — closest first`}
         </p>
-        {geoStatus === "denied" && (
-          <div className="home-fallback-row">
-            <button className="btn btn-outline btn-sm home-locate-btn" onClick={requestLocation}>
-              <LocateFixed size={14} /> Enable location
-            </button>
-            <select className="input home-city-select" value={selectedCityId || ""} onChange={handleSelectCity}>
-              <option value="">Or choose your city…</option>
-              {cities.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
-        )}
       </div>
 
       <div className="home-search-wrap">
@@ -297,10 +291,14 @@ export default function HomePage() {
         ) : error ? (
           <div className="home-empty">
             <p>{error}</p>
-            <button className="btn btn-outline btn-sm" onClick={() => loadRestaurants(1, coords ? { lat: coords.lat, lng: coords.lng } : selectedCityId ? { cityId: selectedCityId } : {}, debouncedSearch)}>Retry</button>
+            <button className="btn btn-outline btn-sm" onClick={() => coords && loadRestaurants(1, coords, debouncedSearch)}>Retry</button>
           </div>
         ) : restaurants.length === 0 ? (
-          <div className="home-empty"><p>{debouncedSearch ? `No restaurants matching "${debouncedSearch}".` : "No restaurants found nearby yet."}</p></div>
+          <div className="home-empty">
+            <p>{debouncedSearch
+              ? `No restaurants matching "${debouncedSearch}" within ${radiusKm} km.`
+              : `No restaurants within ${radiusKm} km of you yet.`}</p>
+          </div>
         ) : (
           restaurants.map((r) => <RestCard key={r.id} r={r} />)
         )}
@@ -310,6 +308,8 @@ export default function HomePage() {
         <button className="btn btn-outline home-load-more" onClick={handleLoadMore} disabled={loadingMore}>
           {loadingMore ? <span className="spinner" style={{ width: 18, height: 18 }} /> : "Load more"}
         </button>
+      )}
+      </>
       )}
     </div>
   )
