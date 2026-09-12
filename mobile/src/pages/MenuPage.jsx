@@ -105,9 +105,13 @@ export default function MenuPage() {
     setSearch("")
     setActiveCategory(id)
     setIndexOpen(false)
-    // The spy would otherwise flick the chip through every section the page
-    // passes on the way down; released by the settle pass below.
+    // Stops the spy from flicking the chip through every section the page
+    // passes on the way. Released by a timer rather than by a corrective
+    // scroll — nothing here may move the page after the customer's own
+    // finger has taken over.
     jumpingRef.current = true
+    clearTimeout(settleTimer.current)
+    settleTimer.current = setTimeout(() => { jumpingRef.current = false }, 700)
 
     if (id === ALL_ID) {
       window.scrollTo({ top: 0, behavior: "smooth" })
@@ -116,29 +120,27 @@ export default function MenuPage() {
       // of the sticky search + chip bars.
       sectionRefs.current[id]?.scrollIntoView({ behavior: "smooth", block: "start" })
     }
-
-    // Cards are content-visibility:auto, so rows above the target only get
-    // their real height as they render — which can leave a long smooth scroll
-    // a little short. Re-check once it has settled and close the gap.
-    clearTimeout(settleTimer.current)
-    settleTimer.current = setTimeout(() => {
-      const el = id === ALL_ID ? null : sectionRefs.current[id]
-      if (el && Math.abs(el.getBoundingClientRect().top - STICKY_STACK) > 4) {
-        el.scrollIntoView({ block: "start" })
-      }
-      jumpingRef.current = false
-    }, 550)
   }
 
   useEffect(() => () => clearTimeout(settleTimer.current), [])
 
-  // Keep the active chip in view as the spy moves it (and after a jump).
+  // Keep the active chip in view as the spy moves it. Deliberately NOT
+  // scrollIntoView: that walks up to every scrollable ancestor, including the
+  // document, so a spy update mid-scroll would yank the page out from under
+  // the customer. Only this row's own scrollLeft is ever touched.
   useEffect(() => {
     if (activeCategory == null) return
-    const el = tabsRef.current?.querySelector(`[data-cat="${activeCategory}"]`)
-    // "nearest" (not "center") — only scrolls if the chip isn't already fully
-    // visible, instead of re-centering the whole row on every change.
-    el?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" })
+    const scroller = tabsRef.current
+    const chip = scroller?.querySelector(`[data-cat="${activeCategory}"]`)
+    if (!scroller || !chip) return
+    const left = chip.offsetLeft - scroller.offsetLeft
+    const right = left + chip.offsetWidth
+    const pad = 16
+    if (left < scroller.scrollLeft + pad) {
+      scroller.scrollTo({ left: Math.max(0, left - pad), behavior: "smooth" })
+    } else if (right > scroller.scrollLeft + scroller.clientWidth - pad) {
+      scroller.scrollTo({ left: right - scroller.clientWidth + pad, behavior: "smooth" })
+    }
   }, [activeCategory])
 
   // Voice search via the Web Speech API (graceful no-op if unsupported)
@@ -388,7 +390,7 @@ export default function MenuPage() {
         ) : q ? (
           <div className="menu-item-list">
             {searchResults.map((item, i) => (
-              <div key={item.id} className="anim-fade-up menu-item-slot" style={{ animationDelay: `${Math.min(i, 8) * 45}ms` }}>
+              <div key={item.id} className="anim-fade-up" style={{ animationDelay: `${Math.min(i, 8) * 45}ms` }}>
                 <MenuItemCard item={item} />
               </div>
             ))}
@@ -406,7 +408,7 @@ export default function MenuPage() {
               </h2>
               <div className="menu-item-list">
                 {section.items.map((item, i) => (
-                  <div key={item.id} className="anim-fade-up menu-item-slot" style={{ animationDelay: `${Math.min(i, 6) * 45}ms` }}>
+                  <div key={item.id} className="anim-fade-up" style={{ animationDelay: `${Math.min(i, 6) * 45}ms` }}>
                     <MenuItemCard item={item} />
                   </div>
                 ))}

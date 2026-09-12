@@ -66,9 +66,18 @@ function RestCard({ r }) {
 }
 
 export default function HomePage() {
-  // Location is mandatory: "denied" is a dead end that shows the enable-location
-  // screen instead of a restaurant list — there is no city fallback any more.
-  const [geoStatus, setGeoStatus] = useState("locating") // locating | granted | denied
+  // Location is mandatory, so every reason it can fail needs its own screen —
+  // a customer stuck behind one dead-end "enable location" message with no way
+  // forward is the worst outcome here.
+  //   checking  — reading the stored permission, before anything is asked
+  //   prompt    — permission never decided; we show a primer and only call
+  //               the API from the button's click (see requestLocation)
+  //   locating  — the browser is working on a fix
+  //   granted   — got coordinates
+  //   blocked   — permission previously denied; the browser will not re-ask
+  //   failed    — position unavailable or timed out; retrying can work
+  //   insecure  — page isn't https/localhost, so the API is unavailable
+  const [geoStatus, setGeoStatus] = useState("checking")
   const [coords, setCoords] = useState(null)
   const [radiusKm, setRadiusKm] = useState(DEFAULT_RADIUS_KM)
   const [searchInput, setSearchInput] = useState("")
@@ -150,12 +159,15 @@ export default function HomePage() {
       .finally(() => (append ? setLoadingMore : setLoading)(false))
   }
 
+  // Called straight from a button click whenever the permission hasn't already
+  // been granted. Browsers are far more willing to show the prompt during a
+  // user gesture than during page load, and Safari in particular can drop a
+  // load-time request without ever asking.
   function requestLocation() {
+    if (!window.isSecureContext) { setGeoStatus("insecure"); return }
+    if (!navigator.geolocation) { setGeoStatus("insecure"); return }
+
     setGeoStatus("locating")
-    if (!navigator.geolocation) {
-      setGeoStatus("denied")
-      return
-    }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const next = { lat: pos.coords.latitude, lng: pos.coords.longitude }
@@ -164,18 +176,21 @@ export default function HomePage() {
         setGeoStatus("granted")
         loadRestaurants(1, next, debouncedSearch)
       },
-      () => {
-        // Denied, unavailable or timed out — all equally blocking. The list is
-        // cleared so a previous grant's results can't linger on screen.
+      (err) => {
+        // The list is cleared so an earlier grant's results can't linger.
         setCoords(null)
         setRestaurants([])
-        setGeoStatus("denied")
+        // PERMISSION_DENIED is the only one the browser won't re-ask for; a
+        // failed fix or a timeout is worth another try, so they get a retry
+        // screen instead of the "you blocked us" instructions.
+        setGeoStatus(err?.code === 1 ? "blocked" : "failed")
       },
-      { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 }
+      { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 }
     )
   }
 
   useEffect(() => {
+    let cancelled = false
     try {
       const cachedCoords = JSON.parse(sessionStorage.getItem(COORDS_CACHE_KEY) || "null")
       if (cachedCoords && Date.now() - cachedCoords.ts < COORDS_CACHE_TTL) {
@@ -185,7 +200,28 @@ export default function HomePage() {
         return
       }
     } catch {}
-    requestLocation()
+
+    if (!window.isSecureContext || !navigator.geolocation) { setGeoStatus("insecure"); return }
+
+    // Ask the Permissions API what state we're in before touching geolocation:
+    // "granted" can be fetched silently, but "prompt" and "denied" both deserve
+    // a screen explaining why we're asking rather than a bare browser dialog
+    // over an empty page — and for "denied" there is no dialog to show at all.
+    if (navigator.permissions?.query) {
+      navigator.permissions.query({ name: "geolocation" })
+        .then((status) => {
+          if (cancelled) return
+          if (status.state === "granted") requestLocation()
+          else if (status.state === "denied") setGeoStatus("blocked")
+          else setGeoStatus("prompt")
+        })
+        .catch(() => { if (!cancelled) setGeoStatus("prompt") })
+    } else {
+      // Older Safari has no Permissions API — the primer is the safe default,
+      // since a load-time request there can fail silently.
+      setGeoStatus("prompt")
+    }
+    return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -243,23 +279,74 @@ export default function HomePage() {
         )}
       </div>
 
-      {/* Location is mandatory — without it the page is this screen and
+      {/* Location is mandatory — until it's granted the page is this screen and
           nothing else: no search box, no list, no city fallback. */}
-      {geoStatus === "denied" ? (
+      {geoStatus !== "granted" && geoStatus !== "locating" ? (
         <div className="home-geo-gate">
           <div className="home-geo-gate-icon"><MapPin size={26} /></div>
-          <h1>We need your location</h1>
-          <p>
-            Carkhanaa shows you restaurants within {radiusKm} km of where you're parked,
-            so we can't load anything until location is on.
-          </p>
-          <button className="btn btn-primary home-locate-btn" onClick={requestLocation}>
-            <LocateFixed size={16} /> Enable location
-          </button>
-          <p className="home-geo-gate-hint">
-            Already blocked it? Tap the lock or <strong>⋮</strong> icon next to the address bar,
-            then allow Location for this site and try again.
-          </p>
+
+          {geoStatus === "checking" && <h1>Just a moment…</h1>}
+
+          {geoStatus === "prompt" && (
+            <>
+              <h1>Find food near you</h1>
+              <p>
+                Carkhanaa shows restaurants within {radiusKm} km of where you're parked.
+                Allow location and we'll pull up the ones closest to you.
+              </p>
+              <button className="btn btn-primary home-locate-btn" onClick={requestLocation}>
+                <LocateFixed size={16} /> Allow location
+              </button>
+              <p className="home-geo-gate-hint">
+                Your browser will ask for permission. We only use it to sort restaurants by distance.
+              </p>
+            </>
+          )}
+
+          {geoStatus === "blocked" && (
+            <>
+              <h1>Location is blocked</h1>
+              <p>
+                This site's location permission is turned off, so your browser won't ask again
+                until you switch it back on.
+              </p>
+              <ol className="home-geo-gate-steps">
+                <li>Tap the <strong>lock</strong> or <strong>⋮</strong> icon next to the web address</li>
+                <li>Open <strong>Permissions</strong> (or Site settings) and allow <strong>Location</strong></li>
+                <li>Come back and tap Try again</li>
+              </ol>
+              <button className="btn btn-primary home-locate-btn" onClick={requestLocation}>
+                <LocateFixed size={16} /> Try again
+              </button>
+            </>
+          )}
+
+          {geoStatus === "failed" && (
+            <>
+              <h1>Couldn't find your location</h1>
+              <p>
+                Your device didn't return a position. Check that location is switched on
+                in your phone's settings, then try once more.
+              </p>
+              <button className="btn btn-primary home-locate-btn" onClick={requestLocation}>
+                <LocateFixed size={16} /> Try again
+              </button>
+            </>
+          )}
+
+          {geoStatus === "insecure" && (
+            <>
+              <h1>Location isn't available here</h1>
+              <p>
+                Browsers only share location over a secure (https) connection. Open Carkhanaa
+                at its https address and this will work.
+              </p>
+              <p className="home-geo-gate-hint">
+                Already scanned a restaurant's QR code? That link takes you straight to their
+                menu — you can order without this screen.
+              </p>
+            </>
+          )}
         </div>
       ) : (
       <>
@@ -286,7 +373,7 @@ export default function HomePage() {
       </div>
 
       <div className="rest-list">
-        {loading ? (
+        {loading || geoStatus === "locating" ? (
           Array.from({ length: 4 }).map((_, i) => <SkeletonRestCard key={i} />)
         ) : error ? (
           <div className="home-empty">
