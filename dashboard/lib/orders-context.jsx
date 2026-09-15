@@ -35,7 +35,8 @@ const playChime = (ctx) => playTone(ctx, [660, 880, 1046])
 // so a kitchen-display SLA breach doesn't get mistaken for "new order arrived".
 const playAlertTone = (ctx) => playTone(ctx, [440, 440], { type: "square", noteDur: 0.11, gap: 0.09, volume: 0.25 })
 
-// Polls TODAY's orders for the whole dashboard (not just the Orders page) so a
+// Polls TODAY's orders (the restaurant's business day — see lib/business-day.js)
+// plus every order still open from earlier days, for the whole dashboard (not just the Orders page) so a
 // new-order toast + sound fires no matter which screen the restaurant is looking
 // at. Bounded to today server-side — a new order is always created today, so
 // there's no need to keep re-fetching the full order history every 2s just to
@@ -93,7 +94,9 @@ export function OrdersProvider({ children }) {
       const today = todayStr()
       const dayChanged = today !== dayRef.current
       const { from, to } = localDateRange(today, today)
-      const res = await axios.get(`${API}/api/order`, { params: { from, to }, withCredentials: true })
+      // includeOpen: an order the kitchen hasn't finished must never vanish from
+      // the Kitchen Display just because the day rolled over.
+      const res = await axios.get(`${API}/api/order`, { params: { from, to, includeOpen: true }, withCredentials: true })
       const data = res.data
 
       const incomingIds = data.map((o) => o.id)

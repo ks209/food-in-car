@@ -6,6 +6,7 @@ import cookieParser from 'cookie-parser';
 import restaurantAuth from '../../middlewares/restaurant.auth.js';
 import supportAuth from '../../middlewares/support.auth.js';
 import { slugify, validateSlug, uniqueSlug, isSlugTaken, resolveRestaurantId, orderingUrlFor } from '../../utils/slug.js';
+import { validateHours, customerOpenState } from '../../utils/businessHours.js';
 
 const restaurantRouter = express.Router();
 restaurantRouter.use(cookieParser());
@@ -19,7 +20,7 @@ restaurantRouter.get('/me', restaurantAuth, async (req, res) => {
     try {
         const restaurant = await prisma.restaurant.findUnique({
             where: { id: req.restaurantId },
-            select: { id: true, name: true, slug: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true, latitude: true, longitude: true, cityId: true, phonepeMerchantId: true, phonepeSaltIndex: true, phonepeSandbox: true, phonepeSaltKey: true },
+            select: { id: true, name: true, slug: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true, openingTime: true, closingTime: true, latitude: true, longitude: true, cityId: true, phonepeMerchantId: true, phonepeSaltIndex: true, phonepeSandbox: true, phonepeSaltKey: true },
         });
         if (!restaurant) return res.status(404).json({ message: 'Restaurant not found' });
         // phonepeSaltKey is fetched only to derive this flag — it must never
@@ -36,7 +37,7 @@ const FONT_KEYS = ['manrope', 'inter', 'poppins', 'playfair', 'spacegrotesk', 'f
 const CARD_STYLES = ['rounded', 'sharp'];
 
 restaurantRouter.put('/me', restaurantAuth, async (req, res) => {
-    const { name, slug, phone, address, themeColor, secondaryColor, accentColor, fontFamily, cardStyle, logoUrl, coverUrl, pickupEnabled, deliveryEnabled, isOpen, slaWarnMinutes, slaCritMinutes, latitude, longitude, cityId, phonepeMerchantId, phonepeSaltKey, phonepeSaltIndex, phonepeSandbox } = req.body;
+    const { name, slug, phone, address, themeColor, secondaryColor, accentColor, fontFamily, cardStyle, logoUrl, coverUrl, pickupEnabled, deliveryEnabled, isOpen, slaWarnMinutes, slaCritMinutes, openingTime, closingTime, latitude, longitude, cityId, phonepeMerchantId, phonepeSaltKey, phonepeSaltIndex, phonepeSandbox } = req.body;
     try {
         const data = {};
         if (name !== undefined) data.name = name || null;
@@ -100,6 +101,13 @@ restaurantRouter.put('/me', restaurantAuth, async (req, res) => {
             data.slaCritMinutes = nextCrit;
         }
 
+        // Opening hours — validated as a pair so a request can't leave just one set.
+        if (openingTime !== undefined || closingTime !== undefined) {
+            const hours = validateHours(openingTime ?? null, closingTime ?? null);
+            if (!hours.ok) return res.status(400).json({ message: hours.message });
+            Object.assign(data, hours.data);
+        }
+
         // Pickup and delivery-in-car are validated together — at least one must stay
         // enabled, whether this request is touching one of them or both at once.
         if (pickupEnabled !== undefined || deliveryEnabled !== undefined) {
@@ -128,7 +136,7 @@ restaurantRouter.put('/me', restaurantAuth, async (req, res) => {
         const updated = await prisma.restaurant.update({
             where: { id: req.restaurantId },
             data,
-            select: { id: true, name: true, slug: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true, latitude: true, longitude: true, cityId: true, phonepeMerchantId: true, phonepeSaltIndex: true, phonepeSandbox: true, phonepeSaltKey: true },
+            select: { id: true, name: true, slug: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true, openingTime: true, closingTime: true, latitude: true, longitude: true, cityId: true, phonepeMerchantId: true, phonepeSaltIndex: true, phonepeSandbox: true, phonepeSaltKey: true },
         });
         const { phonepeSaltKey: _saltKey, ...safeUpdated } = updated;
         res.json({ ...safeUpdated, phonepeConfigured: !!(updated.phonepeMerchantId && _saltKey), orderingUrl: orderingUrlFor(updated, FRONTEND_URL) });
@@ -137,15 +145,21 @@ restaurantRouter.put('/me', restaurantAuth, async (req, res) => {
     }
 });
 
+// Admin portal list — every restaurant, deactivated ones included (they need
+// to be visible to be reactivated), active first. An explicit select rather
+// than full rows: this used to ship every restaurant's password hash, PhonePe
+// salt key, refresh token and entire order history to the browser.
 restaurantRouter.get('/all', supportAuth, async (req, res) => {
     try {
         const restaurants = await prisma.restaurant.findMany({
-            where: { isActive: true },
-            include: {
-                menu: true,
-                orders: true,
-                category: true,
+            select: {
+                id: true, name: true, slug: true, domain: true, username: true, address: true, phone: true,
+                paymentGateway: true, themeColor: true, logoUrl: true, latitude: true, longitude: true, cityId: true,
+                isActive: true, isOpen: true, createdAt: true, parkingSpotRequired: true,
+                parkingSpots: { where: { isActive: true }, select: { id: true, name: true }, orderBy: [{ position: 'asc' }, { id: 'asc' }] },
+                _count: { select: { menu: true, orders: true } },
             },
+            orderBy: [{ isActive: 'desc' }, { id: 'asc' }],
         });
         res.json(restaurants);
     } catch (err) {
@@ -191,7 +205,7 @@ restaurantRouter.get('/nearby', async (req, res) => {
                 `
                 SELECT *, COUNT(*) OVER()::int AS "totalCount"
                 FROM (
-                  SELECT id, name, slug, "logoUrl", "coverUrl", cuisines, rating, "ratingCount", "isOpen", address,
+                  SELECT id, name, slug, "logoUrl", "coverUrl", cuisines, rating, "ratingCount", "isOpen", "openingTime", "closingTime", address,
                     (6371 * acos(LEAST(1, GREATEST(-1,
                       cos(radians($1)) * cos(radians(latitude)) * cos(radians(longitude) - radians($2))
                       + sin(radians($1)) * sin(radians(latitude))
@@ -208,7 +222,7 @@ restaurantRouter.get('/nearby', async (req, res) => {
               )
             : await prisma.$queryRawUnsafe(
                 `
-                SELECT id, name, slug, "logoUrl", "coverUrl", cuisines, rating, "ratingCount", "isOpen", address,
+                SELECT id, name, slug, "logoUrl", "coverUrl", cuisines, rating, "ratingCount", "isOpen", "openingTime", "closingTime", address,
                   NULL::float AS distance,
                   COUNT(*) OVER()::int AS "totalCount"
                 FROM "Restaurant"
@@ -222,7 +236,8 @@ restaurantRouter.get('/nearby', async (req, res) => {
               );
 
         const total = rows[0]?.totalCount ?? 0;
-        const restaurants = rows.map(({ totalCount, ...r }) => r);
+        // isOpen as customers see it: the manual switch AND the opening hours.
+        const restaurants = rows.map(({ totalCount, ...r }) => ({ ...r, ...customerOpenState(r) }));
         res.json({
             restaurants,
             page,
@@ -248,9 +263,13 @@ restaurantRouter.get('/:idOrSlug', async (req, res) => {
 
         const restaurant = await prisma.restaurant.findUnique({
             where: { id },
+            // Public endpoint — credentials must never be part of the response.
+            omit: { password: true, refreshToken: true, phonepeSaltKey: true, phonepeMerchantId: true, phonepeSaltIndex: true },
             include: {
                 menu: true,
                 category: true,
+                // Checkout's "Where are you parked?" dropdown.
+                parkingSpots: { where: { isActive: true }, select: { id: true, name: true }, orderBy: [{ position: 'asc' }, { id: 'asc' }] },
             },
         });
 
@@ -277,7 +296,7 @@ restaurantRouter.get('/:idOrSlug', async (req, res) => {
         );
         const avgWaitMinutes = waitRows[0]?.avgMinutes != null ? Math.round(Number(waitRows[0].avgMinutes)) : null;
 
-        res.json({ ...restaurant, avgWaitMinutes });
+        res.json({ ...restaurant, ...customerOpenState(restaurant), avgWaitMinutes });
     } catch (err) {
         res.status(500).json({ message: 'Error fetching restaurant', error: err });
     }
@@ -392,7 +411,19 @@ restaurantRouter.post('/create', supportAuth, async (req, res) => {
 
 restaurantRouter.put('/update/:id', supportAuth, async (req, res) => {
     const id = Number(req.params.id);
-    const { name, slug, domain, username, paymentGateway, address, phone, themeColor, logoUrl, latitude, longitude, cityId } = req.body;
+    const { name, slug, domain, username, password, paymentGateway, address, phone, themeColor, logoUrl, latitude, longitude, cityId } = req.body;
+
+    // Blank password means "keep the current one" (the admin form's label says
+    // so). This field used to be dropped entirely, so a password "changed"
+    // from the admin portal silently stayed the same.
+    const passwordData = {};
+    if (typeof password === 'string' && password !== '') {
+        if (password.length < 6) {
+            return res.status(400).json({ message: 'Password must be at least 6 characters' });
+        }
+        passwordData.password = await bcrypt.hash(password, 10);
+        passwordData.refreshToken = null;
+    }
 
     const coords = parseCoordinates(latitude, longitude);
     if (!coords.ok) {
@@ -417,18 +448,23 @@ restaurantRouter.put('/update/:id', supportAuth, async (req, res) => {
     }
 
     try {
+        // Deactivated restaurants are editable too — the admin list shows them.
         const existing = await prisma.restaurant.findUnique({ where: { id } });
-        if (!existing || !existing.isActive) {
+        if (!existing) {
             return res.status(404).json({ message: 'Restaurant not found' });
         }
 
         const updated = await prisma.restaurant.update({
             where: { id },
-            data: { name, domain, username, paymentGateway, address, phone, themeColor, logoUrl, ...slugData, ...coords.data, ...city.data },
+            data: { name, domain, username, paymentGateway, address, phone, themeColor, logoUrl, ...slugData, ...coords.data, ...city.data, ...passwordData },
+            select: { id: true, name: true, slug: true, username: true, isActive: true },
         });
 
-        res.json(updated);
+        res.json({ ...updated, passwordChanged: !!passwordData.password });
     } catch (err) {
+        if (err.code === 'P2002') {
+            return res.status(409).json({ message: 'That username is already taken' });
+        }
         res.status(500).json({ message: 'Error updating restaurant', error: err });
     }
 });
@@ -473,14 +509,24 @@ restaurantRouter.delete('/delete/:id', supportAuth, async (req, res) => {
 });
 
 restaurantRouter.post('/login',async(req,res)=>{
-    const {username,password}=req.body;
+    const {username,password}=req.body || {};
+    if(!username || !password) return res.status(400).json({code:400, message:"Missing fields"});
+
     const existing = await prisma.restaurant.findUnique({where:{username:username}})
-    
-    
-    if(await bcrypt.compare(password,existing.password)){
+
+    // Real HTTP status codes, not just a `code` field in a 200 body — the
+    // dashboard (axios) decides success from the HTTP status, so a 200 here
+    // showed "Signed in" for a wrong password. Unknown username gets the same
+    // 401 as a wrong password so usernames can't be probed.
+    if(existing && existing.password && await bcrypt.compare(password,existing.password)){
+        // Checked only after the password matches, so this can't be used to
+        // find out which usernames exist.
+        if(!existing.isActive){
+            return res.status(403).json({code:403, message:"This restaurant has been deactivated. Contact support."});
+        }
         const accessToken=jwt.sign({ id: existing.id }, process.env.JWT_SECRET || "s3cret", { expiresIn: '24h' });
         const refreshToken=jwt.sign({ id: existing.id }, process.env.JWT_SECRET || "s3cret", { expiresIn:'7d' });
-        prisma.restaurant.update({
+        await prisma.restaurant.update({
             where: { id: existing.id },
             data: {
                 refreshToken: refreshToken,
@@ -494,7 +540,7 @@ restaurantRouter.post('/login',async(req,res)=>{
         });
         res.json({code:200,message:"loggedIn"});
     }else{
-        res.json({code:401, message:"Wrong Credentials"})
+        res.status(401).json({code:401, message:"Wrong Credentials"})
     }
 
 })

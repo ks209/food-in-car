@@ -1,6 +1,7 @@
 import express from 'express';
 import prisma from '../../config/prisma.js';
 import restaurantAuth from '../../middlewares/restaurant.auth.js';
+import { dayStartMinutes } from '../../utils/businessHours.js';
 
 const analyticsRouter = express.Router();
 
@@ -190,6 +191,12 @@ analyticsRouter.get('/summary', restaurantAuth, async (req, res) => {
       ? Math.max(-840, Math.min(840, Number(req.query.tzOffsetMinutes)))
       : 0;
 
+    // Day boundaries follow the restaurant's business day (a 1 AM order at a
+    // restaurant closing at 2 AM belongs to the previous day). Hour-of-day
+    // charts keep using the real clock via offsetMin.
+    const hoursRow = await prisma.restaurant.findUnique({ where: { id: req.restaurantId }, select: { openingTime: true, closingTime: true } });
+    const dayOffsetMin = offsetMin - dayStartMinutes(hoursRow);
+
     const days = daysBetween(from, to);
     // The equal-length window immediately before the selection.
     const prevTo = addDays(from, -1);
@@ -203,7 +210,7 @@ analyticsRouter.get('/summary', restaurantAuth, async (req, res) => {
       where: {
         restaurantId: req.restaurantId,
         status: { not: 'PENDING' },
-        createdAt: { gte: startOfLocalDay(prevFrom, offsetMin), lte: endOfLocalDay(to, offsetMin) },
+        createdAt: { gte: startOfLocalDay(prevFrom, dayOffsetMin), lte: endOfLocalDay(to, dayOffsetMin) },
       },
       select: {
         id: true, userId: true, guestName: true, guestVehicle: true, waiterId: true,
@@ -218,7 +225,7 @@ analyticsRouter.get('/summary', restaurantAuth, async (req, res) => {
       },
     });
 
-    const periodStart = startOfLocalDay(from, offsetMin).getTime();
+    const periodStart = startOfLocalDay(from, dayOffsetMin).getTime();
     const current = rows.filter((o) => new Date(o.createdAt).getTime() >= periodStart);
     const previous = rows.filter((o) => new Date(o.createdAt).getTime() < periodStart);
 
@@ -246,7 +253,7 @@ analyticsRouter.get('/summary', restaurantAuth, async (req, res) => {
     // ── Daily series, zero-filled ───────────────────────────────────────────
     const byDay = new Map();
     filtered.forEach((o) => {
-      const key = localDateStr(o.createdAt, offsetMin);
+      const key = localDateStr(o.createdAt, dayOffsetMin);
       if (!byDay.has(key)) byDay.set(key, []);
       byDay.get(key).push(o);
     });
@@ -465,8 +472,8 @@ analyticsRouter.get('/summary', restaurantAuth, async (req, res) => {
     //
     // Both sides are measured as a per-DAY rate, because the windows either
     // side of a change are almost never the same length.
-    const rangeStartMs = startOfLocalDay(from, offsetMin).getTime();
-    const rangeEndMs = endOfLocalDay(to, offsetMin).getTime();
+    const rangeStartMs = startOfLocalDay(from, dayOffsetMin).getTime();
+    const rangeEndMs = endOfLocalDay(to, dayOffsetMin).getTime();
 
     const history = await prisma.menuItemHistory.findMany({
       where: { menuItem: { restaurantId: req.restaurantId } },

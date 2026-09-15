@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { verifyWaiterToken } from '../utils/waiterToken.js';
+import { waiterTokenFrom, waiterAccessError } from './waiter.auth.js';
 
 const SECRET = process.env.JWT_SECRET || 's3cret';
 
@@ -8,21 +9,25 @@ const SECRET = process.env.JWT_SECRET || 's3cret';
 //    → sets req.restaurantId + req.waiterId
 //  - the restaurant session cookie (dashboard manual completion)
 //    → sets req.restaurantId, req.waiterId = null
-const scanAuth = (req, res, next) => {
-  const waiterToken =
-    req.query?.token ||
-    req.headers['x-waiter-token'] ||
-    (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : null);
+const scanAuth = async (req, res, next) => {
+  const waiterToken = waiterTokenFrom(req);
 
   if (waiterToken) {
+    let decoded;
     try {
-      const decoded = verifyWaiterToken(waiterToken);
-      req.restaurantId = decoded.restaurantId;
-      req.waiterId = decoded.waiterId;
-      return next();
+      decoded = verifyWaiterToken(waiterToken);
     } catch {
       return res.status(403).json({ error: 'Invalid or expired scan token' });
     }
+    try {
+      const denied = await waiterAccessError(decoded);
+      if (denied) return res.status(403).json({ error: denied });
+    } catch {
+      return res.status(500).json({ error: 'Failed to verify waiter' });
+    }
+    req.restaurantId = decoded.restaurantId;
+    req.waiterId = decoded.waiterId;
+    return next();
   }
 
   const cookieToken = req.cookies?.token;

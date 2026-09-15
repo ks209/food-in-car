@@ -15,6 +15,8 @@ import waiterRouter from './routes/waiter/waiter.js';
 import cityRouter from './routes/city/city.js';
 import configRouter from './routes/config/config.js';
 import analyticsRouter from './routes/analytics/analytics.js';
+import parkingRouter from './routes/parking/parking.js';
+import waiterAppRouter from './routes/waiterApp/waiterApp.js';
 import { startPendingOrderVerification } from './jobs/verifyPendingOrders.js';
 
 
@@ -75,6 +77,8 @@ app.use('/api/waiter', waiterRouter);
 app.use('/api/city', cityRouter);
 app.use('/api/config', configRouter);
 app.use('/api/analytics', analyticsRouter);
+app.use('/api/parking', parkingRouter);
+app.use('/api/waiter-app', waiterAppRouter);
 
 
 app.get('/', async(req,res)=> res.send("Food Odering App"))

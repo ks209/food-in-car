@@ -310,7 +310,11 @@ export default function MenuPage() {
           background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)",
           display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: "0.35rem" }}>
           <p style={{ fontWeight: 800, color: "var(--error)", fontSize: "1rem" }}>Restaurant is currently closed.</p>
-          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>Please check back later.</p>
+          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+            {restaurant.closedReason === "hours" && restaurant.opensAt
+              ? `Opens at ${restaurant.opensAt}.`
+              : "Please check back later."}
+          </p>
         </div>
       )}
 

@@ -194,6 +194,7 @@ export function OrderManagement() {
                           {order.guestVehicle
                             ? order.guestVehicle
                             : <span className="text-amber-600 font-medium">Pickup</span>}
+                          {order.parkingSpot && ` · ${order.parkingSpot}`}
                           {" · "}
                           <span className={order.paymentMethod === "PHONEPE" ? "text-violet-600 font-medium" : "text-slate-500 font-medium"}>
                             {order.paymentMethod === "PHONEPE" ? "PhonePe" : "COD"}
@@ -237,6 +238,9 @@ export function OrderManagement() {
                               <p className="text-sm text-slate-500">
                                 {selectedOrder.guestVehicle ? `Vehicle: ${selectedOrder.guestVehicle}` : "Pickup order"}
                               </p>
+                              {selectedOrder.parkingSpot && (
+                                <p className="text-sm text-slate-500">Parked at: {selectedOrder.parkingSpot}</p>
+                              )}
                               <p className="text-sm text-slate-500">
                                 Payment: {PAYMENT_METHOD_LABELS[selectedOrder.paymentMethod] || "Cash on Delivery"}
                               </p>

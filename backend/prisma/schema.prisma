@@ -55,15 +55,26 @@ model Restaurant {
   pickupEnabled  Boolean     @default(false)
   deliveryEnabled Boolean    @default(true)
   isOpen         Boolean     @default(true)
+  // Opening hours, "HH:MM" 24h IST (see utils/businessHours.js). Customers can
+  // only order inside them, and they define the business day: when closing is
+  // after midnight the day ends at closing, not at midnight. Both null = no
+  // hours (always open, midnight-to-midnight day).
+  openingTime    String?
+  closingTime    String?
   // Kitchen SLA thresholds (minutes) — Analytics + Kitchen Display flag a
   // PREPARING order "slow" past slaWarnMinutes and "over SLA" past slaCritMinutes.
   slaWarnMinutes Int         @default(8)
   slaCritMinutes Int         @default(15)
+  // Whether a "Deliver in Car" customer MUST pick one of parkingSpots at
+  // checkout. Only takes effect once the restaurant has at least one active
+  // spot — with none configured the app never asks.
+  parkingSpotRequired Boolean @default(true)
   refreshToken   String?
   menu           MenuItem[]
   orders         Order[]
   category       Category[]
   waiters        Waiter[]
+  parkingSpots   ParkingSpot[]
   dailyCounters  DailyCounter[]
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
@@ -135,12 +146,21 @@ model Order {
   restaurantId         Int
   user                 User?                @relation(fields: [userId], references: [id])
   userId               Int?
-  waiter               Waiter?              @relation(fields: [waiterId], references: [id])
+  waiter               Waiter?              @relation("DeliveredOrders", fields: [waiterId], references: [id])
   waiterId             Int?
+  // Waiter who said "I'm taking this" on a READY order in the waiter app, so
+  // two waiters don't walk to the same car. waiterId is still only set when
+  // the delivery scan actually completes the order.
+  claimedBy            Waiter?              @relation("ClaimedOrders", fields: [claimedByWaiterId], references: [id])
+  claimedByWaiterId    Int?
+  claimedAt            DateTime?
   dailyOrderNumber     Int?
   idempotencyKey       String?              @unique
   guestName            String?
   guestVehicle         String?
+  // Name of the parking spot the customer picked, copied at order time (like
+  // OrderItem.name) so renaming or removing a spot never rewrites past orders.
+  parkingSpot          String?
   totalAmount          Float
   status               OrderStatus
   paymentMethod        PaymentMethod        @default(COD)
@@ -268,11 +288,29 @@ model Waiter {
   phone        String?
   isActive     Boolean    @default(true)
   deletedAt    DateTime?
-  orders       Order[]
+  orders       Order[]    @relation("DeliveredOrders")
+  claimedOrders Order[]   @relation("ClaimedOrders")
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 }
 
+
+// Where a "Deliver in Car" customer can say they are parked ("Basement B2",
+// "Gate 3 – Row A"). Managed by the restaurant from dashboard Settings; the
+// ordering app shows the active ones as a dropdown at checkout. Removing a
+// spot only deactivates it — orders keep their own copy of the name.
+model ParkingSpot {
+  id           Int        @id @default(autoincrement())
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  restaurantId Int
+  name         String
+  position     Int        @default(0)
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([restaurantId])
+}
 
 // Fallback grouping for the mobile app's homepage when a customer's GPS is
 // unavailable/denied — they pick a city instead of getting distance-sorted

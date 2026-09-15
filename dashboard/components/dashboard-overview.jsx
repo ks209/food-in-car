@@ -10,7 +10,7 @@ import axios from "axios"
 import Link from "next/link"
 
 import { API } from "@/lib/api"
-import { CHART_TOOLTIP_STYLE, CHART_TOOLTIP_WRAPPER_STYLE, CHART_TOOLTIP_ITEM_STYLE, CHART_TOOLTIP_LABEL_STYLE, formatCurrency, todayStr, daysAgoStr, localDateRange } from "@/lib/format"
+import { CHART_TOOLTIP_STYLE, CHART_TOOLTIP_WRAPPER_STYLE, CHART_TOOLTIP_ITEM_STYLE, CHART_TOOLTIP_LABEL_STYLE, formatCurrency, todayStr, daysAgoStr, localDateRange, businessDateStr } from "@/lib/format"
 import { ORDER_STATUS_COLORS, ORDER_STATUS_LABELS } from "@/lib/status"
 import { SLA_WARN_MIN, SLA_CRIT_MIN, totalMinutes, historyTime } from "@/lib/sla"
 import { sameWeekdayLastWeek, weekdayLabel } from "@/lib/compare"
@@ -137,18 +137,21 @@ export function DashboardOverview() {
   const unavailableCount = menuItems.filter((m) => m.isActive !== false && !m.available).length
 
   // ── Daily series over the history window, oldest → newest ──────────────────
-  const allOrders = [...history, ...liveOrders]
+  // liveOrders also carries still-open orders from earlier days, which the
+  // history fetch may already include — keep one copy of each.
+  const allOrders = [...new Map([...history, ...liveOrders].map((o) => [o.id, o])).values()]
   const byDay = new Map()
   allOrders.forEach((o) => {
-    const key = new Date(o.createdAt).toDateString()
+    // Business day, not calendar day — a 1 AM order at a restaurant open past
+    // midnight belongs to the evening it was part of.
+    const key = businessDateStr(o.createdAt)
     if (!byDay.has(key)) byDay.set(key, [])
     byDay.get(key).push(o)
   })
 
   const days = Array.from({ length: HISTORY_DAYS }, (_, i) => {
-    const d = new Date()
-    d.setDate(d.getDate() - (HISTORY_DAYS - 1 - i))
-    return { date: d, ...summarizeDay(byDay.get(d.toDateString()) || []) }
+    const key = daysAgoStr(HISTORY_DAYS - 1 - i)
+    return { date: new Date(`${key}T12:00:00`), ...summarizeDay(byDay.get(key) || []) }
   })
 
   const today = days[HISTORY_DAYS - 1]
@@ -298,6 +301,7 @@ export function DashboardOverview() {
                     {order.guestVehicle
                       ? order.guestVehicle
                       : <span className="text-amber-600 font-medium">Pickup</span>}
+                    {order.parkingSpot && ` · ${order.parkingSpot}`}
                   </p>
                   <div className="flex items-center justify-between gap-2">
                     <StatusDot color={ORDER_STATUS_COLORS[order.status] || "#94a3b8"} className="min-w-0">

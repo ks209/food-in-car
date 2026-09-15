@@ -13,10 +13,15 @@ const orderRouter = express.Router();
 const ORDER_INCLUDE = {
   user: { select: { id: true, customerName: true, phoneNumber: true, vehicles: { select: { vehicleNo: true } } } },
   waiter: { select: { id: true, name: true } },
+  claimedBy: { select: { id: true, name: true } },
   restaurant: { select: { id: true, name: true, phone: true, address: true } },
   orderItems: { include: { options: true }, orderBy: { id: 'asc' } },
   orderStatusHistory: { orderBy: { updatedAt: 'desc' } },
 };
+
+// Orders the kitchen still has to finish. These never drop off the Kitchen
+// Display just because the day changed — only completing/cancelling clears them.
+const OPEN_STATUSES = ['PAID', 'PREPARING', 'READY'];
 
 const VALID_STATUSES = ['PENDING', 'PAID', 'PREPARING', 'READY', 'COMPLETED', 'CANCELLED', 'NOT_FULFILLED'];
 
@@ -30,6 +35,9 @@ const REVENUE_STATES = ['COMPLETED'];
 orderRouter.get('/', restaurantAuth, async (req, res) => {
   try {
     const { from, to } = req.query;
+    // ?includeOpen=true also returns every still-open order outside the range
+    // (e.g. yesterday's unfinished ones) — the Kitchen Display needs those.
+    const includeOpen = req.query.includeOpen === 'true';
     // PENDING = payment not yet confirmed (or, before checkout was PhonePe-only,
     // a COD order not yet accepted). Never a real, actionable order — excluded
     // everywhere the dashboard reads orders from (this is the one shared source
@@ -50,7 +58,9 @@ orderRouter.get('/', restaurantAuth, async (req, res) => {
     }
 
     const orders = await prisma.order.findMany({
-      where,
+      where: includeOpen && where.createdAt
+        ? { restaurantId: req.restaurantId, OR: [where, { status: { in: OPEN_STATUSES } }] }
+        : where,
       include: ORDER_INCLUDE,
       orderBy: { createdAt: 'desc' },
     });
@@ -323,6 +333,24 @@ orderRouter.post('/pos', restaurantAuth, async (req, res) => {
       if (existing) return res.status(200).json(existing);
     }
     res.status(500).json({ error: 'Failed to create bill', details: error.message });
+  }
+});
+
+// Restaurant: mark every open order COMPLETED in one go — the Kitchen Display's
+// "Complete all" after closing time. Nothing calls this automatically.
+orderRouter.put('/complete-open', restaurantAuth, async (req, res) => {
+  try {
+    const open = await prisma.order.findMany({
+      where: { restaurantId: req.restaurantId, status: { in: OPEN_STATUSES } },
+      select: { id: true },
+    });
+    await prisma.$transaction(open.map(({ id }) => prisma.order.update({
+      where: { id },
+      data: { status: 'COMPLETED', orderStatusHistory: { create: { status: 'COMPLETED', updatedBy: 'restaurant (closing)' } } },
+    })));
+    res.json({ completed: open.length });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to complete open orders', details: error.message });
   }
 });
 

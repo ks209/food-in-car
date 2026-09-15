@@ -1,3 +1,5 @@
+import { dayStartMinutes } from "@/lib/business-day"
+
 export const CHART_TOOLTIP_STYLE = {
   background: "#1c1c1f", border: "1px solid rgba(255,255,255,0.16)",
   borderRadius: 10, color: "#fafafa", fontSize: 12,
@@ -40,21 +42,29 @@ export function toLocalDateStr(d) {
   return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10)
 }
 
-export function todayStr() {
-  return toLocalDateStr(new Date())
+// The restaurant business day (see lib/business-day.js) a moment belongs to —
+// the calendar date, unless closing is after midnight and it's before closing.
+export function businessDateStr(date) {
+  return toLocalDateStr(new Date(new Date(date).getTime() - dayStartMinutes() * 60000))
 }
 
-// Local calendar-day boundaries (inclusive) as UTC ISO timestamps, for the
-// backend's ?from=&to= order query params — safe regardless of server timezone.
+export function todayStr() {
+  return businessDateStr(new Date())
+}
+
+// Business-day boundaries (inclusive) as UTC ISO timestamps, for the backend's
+// ?from=&to= order query params — safe regardless of server timezone. Plain
+// local midnight-to-midnight unless the restaurant closes after midnight.
 export function localDateRange(fromDateStr, toDateStr) {
+  const shiftMs = dayStartMinutes() * 60000
   return {
-    from: new Date(`${fromDateStr}T00:00:00`).toISOString(),
-    to: new Date(`${toDateStr}T23:59:59.999`).toISOString(),
+    from: new Date(new Date(`${fromDateStr}T00:00:00`).getTime() + shiftMs).toISOString(),
+    to: new Date(new Date(`${toDateStr}T23:59:59.999`).getTime() + shiftMs).toISOString(),
   }
 }
 
 export function daysAgoStr(n) {
-  const d = new Date()
+  const d = new Date(`${todayStr()}T12:00:00`)
   d.setDate(d.getDate() - n)
   return toLocalDateStr(d)
 }

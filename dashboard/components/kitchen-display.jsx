@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Clock, Flame, CheckCircle2, ScanLine, ChefHat, Timer } from "lucide-react"
+import { Clock, Flame, CheckCircle2, ScanLine, ChefHat, Timer, AlertTriangle } from "lucide-react"
 import { toast } from "sonner"
 import axios from "axios"
 
@@ -12,6 +12,8 @@ import { useOrders } from "@/lib/orders-context"
 import { useRestaurant } from "@/lib/restaurant-context"
 import { StatusDot } from "@/components/ui/status-dot"
 import { SLA_WARN_MIN, SLA_CRIT_MIN, slaColor, historyTime, prepMinutes } from "@/lib/sla"
+import { businessDateStr, todayStr } from "@/lib/format"
+import { hasHours, isWithinHours, formatTime12 } from "@/lib/business-day"
 
 function elapsedLabel(ms) {
   const totalSec = Math.max(0, Math.floor(ms / 1000))
@@ -22,6 +24,18 @@ function elapsedLabel(ms) {
 
 function itemsLine(order) {
   return order.orderItems?.map((i) => `${i.quantity}× ${i.name}`).join(", ") || "—"
+}
+
+// Open orders from an earlier business day stay on the board until finished;
+// this badge makes sure they don't blend in with tonight's queue.
+function EarlierDayBadge({ order }) {
+  if (businessDateStr(order.createdAt) === todayStr()) return null
+  const label = new Date(order.createdAt).toLocaleDateString([], { day: "numeric", month: "short" })
+  return (
+    <span className="inline-flex items-center rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-semibold px-1.5 py-0.5">
+      From {label}
+    </span>
+  )
 }
 
 export function KitchenDisplay() {
@@ -53,6 +67,22 @@ export function KitchenDisplay() {
     }
   }
 
+  const [completingAll, setCompletingAll] = useState(false)
+
+  const completeAll = async (count) => {
+    if (!window.confirm(`Mark all ${count} open order${count === 1 ? "" : "s"} as completed?`)) return
+    setCompletingAll(true)
+    try {
+      const res = await axios.put(`${API}/api/order/complete-open`, {}, { withCredentials: true })
+      toast.success(`${res.data.completed} order${res.data.completed === 1 ? "" : "s"} marked completed`)
+      refetch()
+    } catch {
+      toast.error("Failed to complete orders")
+    } finally {
+      setCompletingAll(false)
+    }
+  }
+
   const queued = orders
     .filter((o) => ["PENDING", "PAID"].includes(o.status))
     .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
@@ -65,6 +95,8 @@ export function KitchenDisplay() {
   const ready = orders
     .filter((o) => o.status === "READY")
     .sort((a, b) => new Date(a.updatedAt) - new Date(b.updatedAt))
+
+  const openCount = orders.filter((o) => ["PAID", "PREPARING", "READY"].includes(o.status)).length
 
   // Avg prep time today, from any order that has both a PREPARING and READY
   // timestamp in its history (regardless of current status)
@@ -102,8 +134,30 @@ export function KitchenDisplay() {
         <h2 className="text-lg font-semibold tracking-tight text-slate-800 flex items-center gap-2">
           <ChefHat className="h-5 w-5" /> Kitchen Display
         </h2>
-        <p className="text-sm text-muted-foreground mt-0.5">Live view of what's cooking, refreshed automatically.</p>
+        <p className="text-sm text-muted-foreground mt-0.5">
+          Live view of what's cooking, refreshed automatically.
+          {hasHours() && ` Open ${formatTime12(restaurant?.openingTime)} – ${formatTime12(restaurant?.closingTime)}.`}
+        </p>
       </div>
+
+      {/* After closing time: a reminder, never an automatic change — the
+          kitchen decides when the remaining orders are really done. */}
+      {hasHours() && !isWithinHours(new Date(now)) && openCount > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
+          <div className="flex items-start gap-2.5 text-amber-700">
+            <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-semibold">
+                Kitchen closed at {formatTime12(restaurant?.closingTime)} — {openCount} order{openCount === 1 ? "" : "s"} still open
+              </p>
+              <p className="text-xs text-slate-600">Finish or complete them before the next opening so the next day starts clean.</p>
+            </div>
+          </div>
+          <Button size="sm" className="bg-amber-900 hover:bg-amber-950 text-white" disabled={completingAll} onClick={() => completeAll(openCount)}>
+            {completingAll ? "Completing…" : "Complete all"}
+          </Button>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -139,14 +193,14 @@ export function KitchenDisplay() {
               queued.map((order) => (
                 <div key={order.id} className="rounded-lg border border-slate-200 p-3 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono text-slate-400">#{order.dailyOrderNumber ?? order.id}</span>
+                    <span className="text-xs font-mono text-slate-400 inline-flex items-center gap-1.5">#{order.dailyOrderNumber ?? order.id} <EarlierDayBadge order={order} /></span>
                     <span className="text-xs text-slate-400">
                       {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     </span>
                   </div>
                   <p className="text-xs text-slate-600 leading-snug">{itemsLine(order)}</p>
                   <p className="text-xs text-slate-400">
-                    {order.guestVehicle ? order.guestVehicle : <span className="text-amber-600 font-medium">Pickup</span>}
+                    {order.guestVehicle ? order.guestVehicle : <span className="text-amber-600 font-medium">Pickup</span>}{order.parkingSpot && ` · ${order.parkingSpot}`}
                   </p>
                   <Button size="sm" className="w-full text-xs brand-bg text-white"
                     onClick={() => updateStatus(order.id, "PREPARING")}>
@@ -180,7 +234,7 @@ export function KitchenDisplay() {
                     isCritical ? "border-red-300 kds-critical-pulse" : "border-slate-200"
                   }`}>
                     <div className="flex items-center justify-between">
-                      <span className="text-sm font-mono text-slate-500">#{order.dailyOrderNumber ?? order.id}</span>
+                      <span className="text-sm font-mono text-slate-500 inline-flex items-center gap-1.5">#{order.dailyOrderNumber ?? order.id} <EarlierDayBadge order={order} /></span>
                       <StatusDot color={urgency} className="font-mono">{elapsedLabel(elapsedMs)}</StatusDot>
                     </div>
                     <div>
@@ -188,7 +242,7 @@ export function KitchenDisplay() {
                       <p className="text-xs text-slate-400 mt-1">
                         {order.user?.customerName || order.guestName || "Guest"}
                         {" · "}
-                        {order.guestVehicle ? order.guestVehicle : <span className="text-amber-600 font-medium">Pickup</span>}
+                        {order.guestVehicle ? order.guestVehicle : <span className="text-amber-600 font-medium">Pickup</span>}{order.parkingSpot && ` · ${order.parkingSpot}`}
                       </p>
                     </div>
                     <Button size="sm" className="w-full text-xs bg-sky-600 hover:bg-sky-700 text-white"
@@ -217,14 +271,14 @@ export function KitchenDisplay() {
               ready.map((order) => (
                 <div key={order.id} className="rounded-lg border border-slate-200 p-3 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono text-slate-400">#{order.dailyOrderNumber ?? order.id}</span>
+                    <span className="text-xs font-mono text-slate-400 inline-flex items-center gap-1.5">#{order.dailyOrderNumber ?? order.id} <EarlierDayBadge order={order} /></span>
                     <span className="text-xs text-sky-600 inline-flex items-center gap-1 font-medium">
-                      <ScanLine className="h-3 w-3" /> Awaiting scan
+                      <ScanLine className="h-3 w-3" /> {order.claimedBy ? `${order.claimedBy.name} on the way` : "Awaiting scan"}
                     </span>
                   </div>
                   <p className="text-xs text-slate-600 leading-snug">{itemsLine(order)}</p>
                   <p className="text-xs text-slate-400">
-                    {order.guestVehicle ? order.guestVehicle : <span className="text-amber-600 font-medium">Pickup</span>}
+                    {order.guestVehicle ? order.guestVehicle : <span className="text-amber-600 font-medium">Pickup</span>}{order.parkingSpot && ` · ${order.parkingSpot}`}
                   </p>
                 </div>
               ))

@@ -52,6 +52,7 @@ function InvoiceBody({ order, className }) {
         <Row label="Customer" value={customer} />
         <Row label="Phone" value={phone} />
         <Row label={vehicle ? "Vehicle" : "Fulfilment"} value={vehicle || "Pickup"} />
+        {order.parkingSpot && <Row label="Parked at" value={order.parkingSpot} />}
         <Row label="Payment" value={paymentLabel} />
         {order.waiter?.name && <Row label="Delivered by" value={order.waiter.name} />}
       </div>

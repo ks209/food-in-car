@@ -212,11 +212,13 @@ export function WaiterManagement() {
       {/* Scan link dialog */}
       <Dialog open={!!tokenInfo} onOpenChange={(o) => !o && setTokenInfo(null)}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Scan link · {tokenInfo?.waiter?.name}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Waiter app link · {tokenInfo?.waiter?.name}</DialogTitle></DialogHeader>
           {tokenInfo && (
             <div className="space-y-4 text-center">
               <p className="text-xs text-slate-500">
-                Have the waiter open this on their phone. Valid for 24 hours.
+                Have the waiter open this on their phone — they&apos;ll see orders ready to deliver, can take one,
+                and scan the customer&apos;s QR to complete it. Valid for 24 hours; deactivating or deleting the
+                waiter stops it immediately.
               </p>
               <div className="flex justify-center">
                 <div className="p-3 bg-white rounded-xl border">

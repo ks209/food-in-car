@@ -301,6 +301,12 @@ export default function OrderStatusPage() {
                   {isPickup ? "Pickup" : vehicleNo}
                 </p>
               </div>
+              {!isPickup && order.parkingSpot && (
+                <div style={{ flex:1 }}>
+                  <p style={{ fontSize:"0.72rem", fontWeight:600, color:"var(--muted)", textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:"0.2rem" }}>Parked at</p>
+                  <p style={{ fontWeight:700, fontSize:"0.95rem" }}>{order.parkingSpot}</p>
+                </div>
+              )}
             </div>
           </div>
         )}

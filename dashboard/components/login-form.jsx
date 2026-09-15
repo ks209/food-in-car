@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -9,11 +9,20 @@ import { toast } from "sonner"
 import axios from "axios"
 import { API } from "@/lib/api"
 
+const DEACTIVATED_MESSAGE = "This restaurant has been deactivated. Contact support."
+
 export function LoginForm() {
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
+
+  // Sent here by the dashboard after the API reported the restaurant deactivated.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("deactivated")) {
+      toast.error(DEACTIVATED_MESSAGE)
+    }
+  }, [])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -30,14 +39,17 @@ export function LoginForm() {
         { username, password },
         { withCredentials: true }
       )
-      if (data.status === 200) {
+      // Check the body's code too: older backends answered a wrong password
+      // with HTTP 200 + { code: 401 }.
+      if (data.status === 200 && data.data?.code === 200) {
         toast.success("Signed in")
         router.push("/dashboard")
       } else {
         toast.error("Invalid credentials")
       }
-    } catch {
-      toast.error("Invalid credentials")
+    } catch (err) {
+      // 403 = right credentials, but the restaurant is deactivated.
+      toast.error(err?.response?.status === 403 ? (err.response.data?.message || DEACTIVATED_MESSAGE) : "Invalid credentials")
     } finally {
       setIsLoading(false)
     }

@@ -16,6 +16,7 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
 
   const [name, setName] = useState("")
   const [vehicle, setVehicle] = useState("")
+  const [parkingSpotId, setParkingSpotId] = useState("")
   const [phone, setPhone] = useState("")
   const [orderType, setOrderType] = useState("car") // "car" (deliver to vehicle) | "pickup"
   const [instructions, setInstructions] = useState("")
@@ -36,7 +37,12 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
   const deliveryAllowed = restaurant?.deliveryEnabled ?? true
   const showFulfilmentToggle = pickupAllowed && deliveryAllowed
   const needsVehicle = deliveryAllowed && (!pickupAllowed || orderType === "car")
-  const canOrder = name.trim() && phoneValid && cart.length > 0 && (!needsVehicle || vehicle.trim())
+  // "Where are you parked?" — only asked for in-car delivery, and only when the
+  // restaurant has set up spots. Whether it's mandatory is the restaurant's call.
+  const parkingSpots = restaurant?.parkingSpots || []
+  const askParking = needsVehicle && parkingSpots.length > 0
+  const parkingRequired = askParking && (restaurant?.parkingSpotRequired ?? true)
+  const canOrder = name.trim() && phoneValid && cart.length > 0 && (!needsVehicle || vehicle.trim()) && (!parkingRequired || parkingSpotId)
 
   // Snap orderType to whichever single mode is actually allowed once the
   // restaurant's fulfilment settings load (defaults to "car" before that).
@@ -61,6 +67,7 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
     guestName: name.trim(),
     // Vehicle only for in-car delivery; empty means "pickup" (backend treats absent as pickup)
     guestVehicle: needsVehicle ? vehicle.trim().toUpperCase() : "",
+    parkingSpotId: askParking && parkingSpotId ? Number(parkingSpotId) : null,
     mobileNumber: phone.trim(),
     deviceKey: getDeviceKey(),
   })
@@ -209,6 +216,19 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
                         style={{ background:"var(--surface-2)", textTransform:"uppercase", letterSpacing:"0.05em" }} />
                     </div>
                   )}
+                  {askParking && (
+                    <div className="field">
+                      <label>
+                        Where are you parked?{" "}
+                        {!parkingRequired && <span style={{ color:"var(--muted)", fontWeight:400 }}>(optional)</span>}
+                      </label>
+                      <select className="input" value={parkingSpotId} onChange={e => setParkingSpotId(e.target.value)}
+                        style={{ background:"var(--surface-2)", color: parkingSpotId ? "var(--text)" : "var(--muted)" }}>
+                        <option value="">{parkingRequired ? "Select parking spot" : "Not sure / skip"}</option>
+                        {parkingSpots.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -263,7 +283,9 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
 
             {!canOrder && cart.length > 0 && (
               <p style={{ textAlign:"center", fontSize:"0.78rem", color:"var(--muted)" }}>
-                {needsVehicle
+                {parkingRequired
+                  ? "Enter your name, mobile number, vehicle and parking spot to continue"
+                  : needsVehicle
                   ? "Enter your name, mobile number and vehicle to continue"
                   : "Enter your name and mobile number to continue"}
               </p>

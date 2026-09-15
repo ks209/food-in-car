@@ -19,6 +19,18 @@ const emptyForm = {
 
 const GATEWAYS = ['PHONEPE', 'razorpay', 'COD'];
 
+const STATUS_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'active', label: 'Active' },
+  { key: 'inactive', label: 'Deactivated' },
+];
+
+// The API's own message when it sent one (e.g. "That username is already taken").
+const apiError = (err, fallback) => {
+  const message = err?.response?.data?.message;
+  return message ? `Error: ${message}` : fallback;
+};
+
 const Admin = ({ onLogout }) => {
   const [restaurants, setRestaurants] = useState([]);
   const [cities, setCities] = useState([]);
@@ -27,6 +39,7 @@ const Admin = ({ onLogout }) => {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   const fetchRestaurants = async () => {
     try {
@@ -55,8 +68,8 @@ const Admin = ({ onLogout }) => {
       setForm(emptyForm);
       setMsg('Restaurant created');
       fetchRestaurants();
-    } catch {
-      setMsg('Error creating restaurant');
+    } catch (err) {
+      setMsg(apiError(err, 'Error creating restaurant'));
     } finally {
       setLoading(false);
     }
@@ -65,13 +78,13 @@ const Admin = ({ onLogout }) => {
   const handleUpdate = async () => {
     setLoading(true);
     try {
-      await restaurantApi.update(editingId, form);
+      const res = await restaurantApi.update(editingId, form);
       setForm(emptyForm);
       setEditingId(null);
-      setMsg('Restaurant updated');
+      setMsg(res.data?.passwordChanged ? 'Restaurant updated — password changed' : 'Restaurant updated');
       fetchRestaurants();
-    } catch {
-      setMsg('Error updating restaurant');
+    } catch (err) {
+      setMsg(apiError(err, 'Error updating restaurant'));
     } finally {
       setLoading(false);
     }
@@ -99,12 +112,12 @@ const Admin = ({ onLogout }) => {
   };
 
   const handleDeactivate = async (id) => {
-    if (!window.confirm('Deactivate this restaurant?')) return;
+    if (!window.confirm('Deactivate this restaurant? It will be hidden from customers and its dashboard login will stop working.')) return;
     try {
       await restaurantApi.deactivate(id);
       fetchRestaurants();
-    } catch {
-      setMsg('Error deactivating restaurant');
+    } catch (err) {
+      setMsg(apiError(err, 'Error deactivating restaurant'));
     }
   };
 
@@ -112,20 +125,26 @@ const Admin = ({ onLogout }) => {
     try {
       await restaurantApi.activate(id);
       fetchRestaurants();
-    } catch {
-      setMsg('Error reactivating restaurant');
+    } catch (err) {
+      setMsg(apiError(err, 'Error reactivating restaurant'));
     }
   };
 
   const cancelEdit = () => { setForm(emptyForm); setEditingId(null); setMsg(''); };
 
+  const counts = {
+    all: restaurants.length,
+    active: restaurants.filter((r) => r.isActive).length,
+    inactive: restaurants.filter((r) => !r.isActive).length,
+  };
+
   const q = search.trim().toLowerCase();
-  const filtered = q
-    ? restaurants.filter((r) =>
-        (r.name || '').toLowerCase().includes(q) ||
-        r.username.toLowerCase().includes(q) ||
-        r.domain.toLowerCase().includes(q))
-    : restaurants;
+  const filtered = restaurants
+    .filter((r) => statusFilter === 'all' || (statusFilter === 'active' ? r.isActive : !r.isActive))
+    .filter((r) => !q ||
+      (r.name || '').toLowerCase().includes(q) ||
+      r.username.toLowerCase().includes(q) ||
+      r.domain.toLowerCase().includes(q));
 
   return (
     <div className="app-shell">
@@ -181,7 +200,7 @@ const Admin = ({ onLogout }) => {
                 <input name="username" value={form.username} onChange={handleChange} placeholder="spicegarden" />
               </div>
               <div className="field">
-                <label>Password {editingId ? '(leave blank to keep)' : '*'}</label>
+                <label>{editingId ? 'New password (leave blank to keep)' : 'Password *'}</label>
                 <input name="password" type="password" value={form.password} onChange={handleChange} placeholder="••••••••" />
               </div>
               <div className="field">
@@ -256,7 +275,18 @@ const Admin = ({ onLogout }) => {
         {/* Table card */}
         <div className="card">
           <div className="card-header" style={{ paddingBottom: 16, gap: 12, flexWrap: 'wrap' }}>
-            <span className="card-title">All Restaurants ({filtered.length})</span>
+            <span className="card-title">Restaurants ({filtered.length})</span>
+            <div className="filter-tabs">
+              {STATUS_FILTERS.map((f) => (
+                <button
+                  key={f.key}
+                  className={`filter-tab ${statusFilter === f.key ? 'filter-tab-active' : ''}`}
+                  onClick={() => setStatusFilter(f.key)}
+                >
+                  {f.label} <span className="filter-tab-count">{counts[f.key]}</span>
+                </button>
+              ))}
+            </div>
             <input
               className="search-input"
               value={search}
@@ -276,16 +306,17 @@ const Admin = ({ onLogout }) => {
                   <th>Phone</th>
                   <th>Gateway</th>
                   <th>Theme</th>
+                  <th>Parking spots</th>
                   <th>Status</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan="10" style={{ textAlign: 'center', color: '#94a3b8', padding: '24px 0' }}>No restaurants found</td></tr>
+                  <tr><td colSpan="11" style={{ textAlign: 'center', color: '#94a3b8', padding: '24px 0' }}>No restaurants found</td></tr>
                 ) : (
                   filtered.map((r) => (
-                    <tr key={r.id}>
+                    <tr key={r.id} className={r.isActive ? '' : 'row-inactive'}>
                       <td style={{ color: '#94a3b8', fontFamily: 'monospace' }}>{r.id}</td>
                       <td style={{ fontWeight: 500 }}>{r.name || '—'}</td>
                       <td>{r.username}</td>
@@ -298,6 +329,19 @@ const Admin = ({ onLogout }) => {
                           <span className="color-dot-circle" style={{ backgroundColor: r.themeColor || '#f97316' }} />
                           <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{r.themeColor || '#f97316'}</span>
                         </div>
+                      </td>
+                      {/* Read-only — spots are managed by the restaurant in its dashboard. */}
+                      <td style={{ minWidth: 160 }}>
+                        {r.parkingSpots?.length ? (
+                          <>
+                            <div style={{ fontSize: 12 }}>{r.parkingSpots.map((s) => s.name).join(', ')}</div>
+                            <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+                              {r.parkingSpotRequired ? 'Required at checkout' : 'Optional at checkout'}
+                            </div>
+                          </>
+                        ) : (
+                          <span style={{ color: '#94a3b8' }}>None</span>
+                        )}
                       </td>
                       <td>
                         <span className={`badge ${r.isActive ? 'badge-active' : 'badge-inactive'}`}>

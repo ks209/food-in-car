@@ -7,12 +7,14 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Loader2, Store, Car, Paintbrush, Power, AlertCircle, Timer, MapPin, CreditCard, ShieldCheck } from "lucide-react"
+import { Loader2, Store, Car, Paintbrush, Power, AlertCircle, Timer, MapPin, CreditCard, ShieldCheck, Clock } from "lucide-react"
+import { formatTime12, parseTime } from "@/lib/business-day"
 import Link from "next/link"
 import { toast } from "sonner"
 import axios from "axios"
 import { API } from "@/lib/api"
 import { QrDownloadCard } from "@/components/qr-download"
+import { ParkingSpotsCard } from "@/components/parking-spots-card"
 import { useRefreshRestaurant } from "@/lib/restaurant-context"
 
 export function RestaurantSettings() {
@@ -43,6 +45,8 @@ export function RestaurantSettings() {
           isOpen: r.data.isOpen ?? true,
           slaWarnMinutes: r.data.slaWarnMinutes ?? 8,
           slaCritMinutes: r.data.slaCritMinutes ?? 15,
+          openingTime: r.data.openingTime || "",
+          closingTime: r.data.closingTime || "",
           latitude: r.data.latitude ?? "",
           longitude: r.data.longitude ?? "",
           cityId: r.data.cityId ?? "",
@@ -103,6 +107,7 @@ export function RestaurantSettings() {
     if (!slaValid) { toast.error("The warning threshold must be less than the critical threshold"); return }
     if (!locationValid) { toast.error("Set both latitude and longitude, or leave both blank"); return }
     if (!slugValid) { toast.error("That web address isn't valid — use lowercase letters, numbers and hyphens"); return }
+    if (!hoursValid) { toast.error("Set both opening and closing time (and make them different), or leave both blank"); return }
     setSaving(true)
     try {
       const payload = {
@@ -113,6 +118,8 @@ export function RestaurantSettings() {
         logoUrl: form.logoUrl,
         slaWarnMinutes: Number(form.slaWarnMinutes),
         slaCritMinutes: Number(form.slaCritMinutes),
+        openingTime: form.openingTime || null,
+        closingTime: form.closingTime || null,
         latitude: form.latitude === "" ? null : Number(form.latitude),
         longitude: form.longitude === "" ? null : Number(form.longitude),
         cityId: form.cityId === "" ? null : Number(form.cityId),
@@ -166,6 +173,9 @@ export function RestaurantSettings() {
   )
 
   const slaValid = Number(form.slaWarnMinutes) >= 1 && Number(form.slaCritMinutes) >= 1 && Number(form.slaWarnMinutes) < Number(form.slaCritMinutes)
+  const hoursValid = (form.openingTime === "" && form.closingTime === "") ||
+    (parseTime(form.openingTime) !== null && parseTime(form.closingTime) !== null && form.openingTime !== form.closingTime)
+  const closesAfterMidnight = hoursValid && form.openingTime !== "" && parseTime(form.closingTime) < parseTime(form.openingTime)
   const latSet = form.latitude !== ""
   const lngSet = form.longitude !== ""
   const locationValid = latSet === lngSet && (!latSet || (Number(form.latitude) >= -90 && Number(form.latitude) <= 90 && Number(form.longitude) >= -180 && Number(form.longitude) <= 180))
@@ -270,6 +280,40 @@ export function RestaurantSettings() {
           <Card className="border-0">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-2">
+                <Clock className="h-4 w-4" /> Opening hours
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-xs text-muted-foreground -mt-1">
+                Customers can only order between these times, and your dashboard day follows them — order numbers
+                and “Today” don’t reset at midnight while you’re still open. Leave both blank to always accept orders.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Opens at</Label>
+                  <Input type="time" value={form.openingTime} onChange={(e) => setField("openingTime", e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Closes at</Label>
+                  <Input type="time" value={form.closingTime} onChange={(e) => setField("closingTime", e.target.value)} />
+                </div>
+              </div>
+              {!hoursValid ? (
+                <p className="text-xs text-red-500">Set both times (and make them different), or leave both blank.</p>
+              ) : closesAfterMidnight ? (
+                <p className="text-xs text-muted-foreground">
+                  Closes after midnight — orders until {formatTime12(form.closingTime)} count towards the previous day.
+                </p>
+              ) : null}
+              <p className="text-xs text-muted-foreground">
+                After closing, Kitchen Display reminds you about any orders still open. The Shop status switch above can still close you early.
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-0">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-2">
                 <Car className="h-4 w-4" /> Fulfilment
               </CardTitle>
             </CardHeader>
@@ -311,6 +355,8 @@ export function RestaurantSettings() {
               )}
             </CardContent>
           </Card>
+
+          <ParkingSpotsCard deliveryEnabled={form.deliveryEnabled} />
 
           <Card className="border-0">
             <CardHeader className="pb-3">
@@ -485,13 +531,13 @@ export function RestaurantSettings() {
       {dirty && (
         <div className="sticky bottom-4 mt-6 mx-auto max-w-2xl px-4 py-3 rounded-xl bg-amber-500 text-amber-950 shadow-lg shadow-amber-500/20 flex flex-wrap items-center justify-between gap-3 anim-fade-up">
           <span className="text-sm font-medium inline-flex items-center gap-1.5">
-            <AlertCircle className="h-4 w-4 flex-shrink-0" /> You have unsaved profile changes
+            <AlertCircle className="h-4 w-4 flex-shrink-0" /> You have unsaved changes
           </span>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" className="bg-transparent border-amber-950/30 text-amber-950 hover:bg-amber-600/20" onClick={handleReset} disabled={saving}>
               Discard
             </Button>
-            <Button size="sm" className="bg-amber-950 text-white hover:bg-amber-900 min-w-28" onClick={handleSave} disabled={saving || !slaValid || !locationValid || !slugValid}>
+            <Button size="sm" className="bg-amber-950 text-white hover:bg-amber-900 min-w-28" onClick={handleSave} disabled={saving || !slaValid || !locationValid || !slugValid || !hoursValid}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save changes"}
             </Button>
           </div>

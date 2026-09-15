@@ -46,7 +46,11 @@ function RestCard({ r }) {
         ) : (
           <div className="rest-card-cover-fallback"><UtensilsCrossed size={28} /></div>
         )}
-        {!r.isOpen && <span className="badge rest-closed-badge">Closed</span>}
+        {!r.isOpen && (
+          <span className="badge rest-closed-badge">
+            {r.closedReason === "hours" && r.opensAt ? `Opens ${r.opensAt}` : "Closed"}
+          </span>
+        )}
       </div>
       <div className="rest-card-body">
         <div className="rest-card-row">
@@ -66,9 +70,9 @@ function RestCard({ r }) {
 }
 
 export default function HomePage() {
-  // Location is mandatory, so every reason it can fail needs its own screen —
-  // a customer stuck behind one dead-end "enable location" message with no way
-  // forward is the worst outcome here.
+  // Location is optional: without it the page is a search (nothing listed
+  // until the customer types). Every reason it can be missing still gets its
+  // own banner copy, so the customer knows how to turn on the nearby view.
   //   checking  — reading the stored permission, before anything is asked
   //   prompt    — permission never decided; we show a primer and only call
   //               the API from the button's click (see requestLocation)
@@ -141,22 +145,46 @@ export default function HomePage() {
     return () => document.removeEventListener("mousedown", close)
   }, [])
 
-  // Every call is coordinate-scoped — without location there is nothing to
-  // show, so callers only reach this once geoStatus is "granted".
+  // Typing fires a new search before the previous one has answered — only the
+  // newest request may write results, or a slow older one would overwrite them.
+  const requestSeq = useRef(0)
+  // Latest debounced search term, readable from the geolocation callbacks
+  // (which close over whatever render started the location request).
+  const latestSearch = useRef("")
+
+  // With a position: restaurants within the radius, closest first. Without
+  // one (location not shared): a search across all active restaurants — only
+  // ever called with a search term, since that mode shows nothing until the
+  // customer types something.
   function loadRestaurants(pageNum, position, searchTerm, { append = false } = {}) {
-    const params = { page: pageNum, pageSize: PAGE_SIZE, lat: position.lat, lng: position.lng }
+    const params = { page: pageNum, pageSize: PAGE_SIZE }
+    if (position) { params.lat = position.lat; params.lng = position.lng }
     if (searchTerm) params.search = searchTerm
+    const seq = ++requestSeq.current
+    if (!append) setLoadingMore(false)
     ;(append ? setLoadingMore : setLoading)(true)
     setError("")
     restaurantApi.nearby(params)
       .then((r) => {
+        if (seq !== requestSeq.current) return
         setRestaurants((prev) => append ? [...prev, ...r.data.restaurants] : r.data.restaurants)
         setPage(r.data.page)
         setTotalPages(r.data.totalPages)
         if (r.data.radiusKm) setRadiusKm(r.data.radiusKm)
       })
-      .catch(() => setError("Couldn't load restaurants. Please try again."))
-      .finally(() => (append ? setLoadingMore : setLoading)(false))
+      .catch(() => { if (seq === requestSeq.current) setError("Couldn't load restaurants. Please try again.") })
+      .finally(() => { if (seq === requestSeq.current) (append ? setLoadingMore : setLoading)(false) })
+  }
+
+  // Search-only mode with an empty search box: nothing to show.
+  function clearResults() {
+    requestSeq.current++
+    setRestaurants([])
+    setPage(1)
+    setTotalPages(1)
+    setError("")
+    setLoading(false)
+    setLoadingMore(false)
   }
 
   // Called straight from a button click whenever the permission hasn't already
@@ -174,16 +202,18 @@ export default function HomePage() {
         try { sessionStorage.setItem(COORDS_CACHE_KEY, JSON.stringify({ ...next, ts: Date.now() })) } catch {}
         setCoords(next)
         setGeoStatus("granted")
-        loadRestaurants(1, next, debouncedSearch)
+        loadRestaurants(1, next, latestSearch.current)
       },
       (err) => {
-        // The list is cleared so an earlier grant's results can't linger.
+        // Drop any earlier grant's distance-scoped results, then fall back to
+        // search-only mode — re-running what the customer already typed.
         setCoords(null)
-        setRestaurants([])
         // PERMISSION_DENIED is the only one the browser won't re-ask for; a
         // failed fix or a timeout is worth another try, so they get a retry
-        // screen instead of the "you blocked us" instructions.
+        // banner instead of the "you blocked us" instructions.
         setGeoStatus(err?.code === 1 ? "blocked" : "failed")
+        if (latestSearch.current) loadRestaurants(1, null, latestSearch.current)
+        else clearResults()
       },
       { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 }
     )
@@ -201,7 +231,7 @@ export default function HomePage() {
       }
     } catch {}
 
-    if (!window.isSecureContext || !navigator.geolocation) { setGeoStatus("insecure"); return }
+    if (!window.isSecureContext || !navigator.geolocation) { setGeoStatus("insecure"); setLoading(false); return }
 
     // Ask the Permissions API what state we're in before touching geolocation:
     // "granted" can be fetched silently, but "prompt" and "denied" both deserve
@@ -212,14 +242,14 @@ export default function HomePage() {
         .then((status) => {
           if (cancelled) return
           if (status.state === "granted") requestLocation()
-          else if (status.state === "denied") setGeoStatus("blocked")
-          else setGeoStatus("prompt")
+          else { setGeoStatus(status.state === "denied" ? "blocked" : "prompt"); setLoading(false) }
         })
-        .catch(() => { if (!cancelled) setGeoStatus("prompt") })
+        .catch(() => { if (!cancelled) { setGeoStatus("prompt"); setLoading(false) } })
     } else {
       // Older Safari has no Permissions API — the primer is the safe default,
       // since a load-time request there can fail silently.
       setGeoStatus("prompt")
+      setLoading(false)
     }
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -232,18 +262,27 @@ export default function HomePage() {
   }, [searchInput])
 
   // Re-fetch page 1 whenever the debounced search term changes — skipped on
-  // mount since the location/city effect above already triggers the first load.
+  // mount since the location effect above already triggers the first load.
   useEffect(() => {
+    latestSearch.current = debouncedSearch
     if (skipNextSearchFetch.current) { skipNextSearchFetch.current = false; return }
-    if (!coords) return
-    loadRestaurants(1, coords, debouncedSearch)
+    if (coords) { loadRestaurants(1, coords, debouncedSearch); return }
+    // A location fix is in progress — its callback runs the search either way.
+    if (geoStatus === "locating") return
+    if (debouncedSearch) loadRestaurants(1, null, debouncedSearch)
+    else clearResults()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearch])
 
   function handleLoadMore() {
-    if (!coords) return
     loadRestaurants(page + 1, coords, debouncedSearch, { append: true })
   }
+
+  const hasLocation = geoStatus === "granted"
+  const findingLocation = geoStatus === "locating" || geoStatus === "checking"
+  // Location not shared (or not available) — the page becomes a search.
+  const searchOnly = !hasLocation && !findingLocation
+  const awaitingSearch = searchOnly && !debouncedSearch
 
   return (
     <div className="page">
@@ -279,83 +318,24 @@ export default function HomePage() {
         )}
       </div>
 
-      {/* Location is mandatory — until it's granted the page is this screen and
-          nothing else: no search box, no list, no city fallback. */}
-      {geoStatus !== "granted" && geoStatus !== "locating" ? (
-        <div className="home-geo-gate">
-          <div className="home-geo-gate-icon"><MapPin size={26} /></div>
-
-          {geoStatus === "checking" && <h1>Just a moment…</h1>}
-
-          {geoStatus === "prompt" && (
-            <>
-              <h1>Find food near you</h1>
-              <p>
-                Carkhanaa shows restaurants within {radiusKm} km of where you're parked.
-                Allow location and we'll pull up the ones closest to you.
-              </p>
-              <button className="btn btn-primary home-locate-btn" onClick={requestLocation}>
-                <LocateFixed size={16} /> Allow location
-              </button>
-              <p className="home-geo-gate-hint">
-                Your browser will ask for permission. We only use it to sort restaurants by distance.
-              </p>
-            </>
-          )}
-
-          {geoStatus === "blocked" && (
-            <>
-              <h1>Location is blocked</h1>
-              <p>
-                This site's location permission is turned off, so your browser won't ask again
-                until you switch it back on.
-              </p>
-              <ol className="home-geo-gate-steps">
-                <li>Tap the <strong>lock</strong> or <strong>⋮</strong> icon next to the web address</li>
-                <li>Open <strong>Permissions</strong> (or Site settings) and allow <strong>Location</strong></li>
-                <li>Come back and tap Try again</li>
-              </ol>
-              <button className="btn btn-primary home-locate-btn" onClick={requestLocation}>
-                <LocateFixed size={16} /> Try again
-              </button>
-            </>
-          )}
-
-          {geoStatus === "failed" && (
-            <>
-              <h1>Couldn't find your location</h1>
-              <p>
-                Your device didn't return a position. Check that location is switched on
-                in your phone's settings, then try once more.
-              </p>
-              <button className="btn btn-primary home-locate-btn" onClick={requestLocation}>
-                <LocateFixed size={16} /> Try again
-              </button>
-            </>
-          )}
-
-          {geoStatus === "insecure" && (
-            <>
-              <h1>Location isn't available here</h1>
-              <p>
-                Browsers only share location over a secure (https) connection. Open Carkhanaa
-                at its https address and this will work.
-              </p>
-              <p className="home-geo-gate-hint">
-                Already scanned a restaurant's QR code? That link takes you straight to their
-                menu — you can order without this screen.
-              </p>
-            </>
-          )}
-        </div>
-      ) : (
-      <>
       <div className="home-hero">
-        <h1>Restaurants near you</h1>
-        <p className="home-location-status">
-          {geoStatus === "locating" && "Finding your location…"}
-          {geoStatus === "granted" && `Within ${radiusKm} km — closest first`}
-        </p>
+        {searchOnly ? (
+          <>
+            <h1>Search for a restaurant</h1>
+            <p className="home-location-status">
+              Type a restaurant name or cuisine below to see results.
+            </p>
+          </>
+        ) : (
+          <>
+            <h1>Restaurants near you</h1>
+            <p className="home-location-status">
+              {geoStatus === "checking" && "Just a moment…"}
+              {geoStatus === "locating" && "Finding your location…"}
+              {hasLocation && `Within ${radiusKm} km — closest first`}
+            </p>
+          </>
+        )}
       </div>
 
       <div className="home-search-wrap">
@@ -365,6 +345,7 @@ export default function HomePage() {
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Search restaurants or cuisines…"
+            autoFocus={searchOnly}
           />
           {searchInput && (
             <button className="search-clear-btn" onClick={() => setSearchInput("")} aria-label="Clear search"><X size={16} /></button>
@@ -372,17 +353,65 @@ export default function HomePage() {
         </div>
       </div>
 
+      {/* Location not shared — searching still works; this just offers the
+          nearby view and explains what's stopping it. */}
+      {searchOnly && (
+        <div className="home-geo-banner">
+          <div className="home-geo-banner-icon"><MapPin size={18} /></div>
+          <div className="home-geo-banner-body">
+            {geoStatus === "prompt" && (
+              <>
+                <p className="home-geo-banner-title">See restaurants near you</p>
+                <p>Allow location and we'll show the ones within {radiusKm} km of where you're parked, closest first.</p>
+              </>
+            )}
+            {geoStatus === "blocked" && (
+              <>
+                <p className="home-geo-banner-title">Location is blocked</p>
+                <p>Your browser won't ask again until you switch it back on:</p>
+                <ol className="home-geo-gate-steps">
+                  <li>Tap the <strong>lock</strong> or <strong>⋮</strong> icon next to the web address</li>
+                  <li>Open <strong>Permissions</strong> (or Site settings) and allow <strong>Location</strong></li>
+                  <li>Come back and tap Try again</li>
+                </ol>
+              </>
+            )}
+            {geoStatus === "failed" && (
+              <>
+                <p className="home-geo-banner-title">Couldn't find your location</p>
+                <p>Check that location is switched on in your phone's settings, then try once more.</p>
+              </>
+            )}
+            {geoStatus === "insecure" && (
+              <>
+                <p className="home-geo-banner-title">Location isn't available here</p>
+                <p>Browsers only share location over https. You can still search, or scan a restaurant's QR code to go straight to its menu.</p>
+              </>
+            )}
+            {geoStatus !== "insecure" && (
+              <button className="btn btn-outline btn-sm home-locate-btn" onClick={requestLocation}>
+                <LocateFixed size={14} /> {geoStatus === "prompt" ? "Allow location" : "Try again"}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {!awaitingSearch && (
+      <>
       <div className="rest-list">
-        {loading || geoStatus === "locating" ? (
+        {loading || findingLocation ? (
           Array.from({ length: 4 }).map((_, i) => <SkeletonRestCard key={i} />)
         ) : error ? (
           <div className="home-empty">
             <p>{error}</p>
-            <button className="btn btn-outline btn-sm" onClick={() => coords && loadRestaurants(1, coords, debouncedSearch)}>Retry</button>
+            <button className="btn btn-outline btn-sm" onClick={() => loadRestaurants(1, coords, debouncedSearch)}>Retry</button>
           </div>
         ) : restaurants.length === 0 ? (
           <div className="home-empty">
-            <p>{debouncedSearch
+            <p>{!hasLocation
+              ? `No restaurants matching "${debouncedSearch}".`
+              : debouncedSearch
               ? `No restaurants matching "${debouncedSearch}" within ${radiusKm} km.`
               : `No restaurants within ${radiusKm} km of you yet.`}</p>
           </div>
@@ -391,7 +420,7 @@ export default function HomePage() {
         )}
       </div>
 
-      {!loading && !error && page < totalPages && (
+      {!loading && !findingLocation && !error && page < totalPages && (
         <button className="btn btn-outline home-load-more" onClick={handleLoadMore} disabled={loadingMore}>
           {loadingMore ? <span className="spinner" style={{ width: 18, height: 18 }} /> : "Load more"}
         </button>

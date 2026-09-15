@@ -413,13 +413,17 @@ a.card:active, .card:active { transform: scale(0.99); }
 .home-location-status { color: var(--text-secondary); font-size: 0.85rem; margin-top: 0.3rem; }
 .home-locate-btn { padding: 0.5rem 0.9rem; flex-shrink: 0; }
 
-/* Location gate — the whole page when GPS is denied or unavailable. */
-.home-geo-gate { padding: 3.5rem 1.6rem; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 0.7rem; }
-.home-geo-gate-icon { width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--surface); color: var(--primary); margin-bottom: 0.2rem; }
-.home-geo-gate h1 { font-size: 1.25rem; font-weight: 800; letter-spacing: -0.01em; }
-.home-geo-gate p { color: var(--text-secondary); font-size: 0.88rem; line-height: 1.5; max-width: 30ch; }
-.home-geo-gate .home-locate-btn { margin-top: 0.4rem; padding: 0.65rem 1.2rem; }
-.home-geo-gate-hint { font-size: 0.78rem !important; color: var(--muted) !important; max-width: 34ch; margin-top: 0.5rem; }
+/* Location banner — shown above search results when GPS isn't shared. */
+.home-geo-banner {
+  margin: 0.6rem 1.1rem 0.2rem; padding: 0.85rem 0.95rem;
+  display: flex; gap: 0.75rem; align-items: flex-start;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+}
+.home-geo-banner-icon { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--card); color: var(--primary); flex-shrink: 0; }
+.home-geo-banner-body { display: flex; flex-direction: column; gap: 0.3rem; align-items: flex-start; min-width: 0; }
+.home-geo-banner-body p { color: var(--text-secondary); font-size: 0.82rem; line-height: 1.45; }
+.home-geo-banner-body .home-geo-banner-title { color: var(--text); font-weight: 700; font-size: 0.9rem; }
+.home-geo-banner-body .home-locate-btn { margin-top: 0.35rem; display: inline-flex; align-items: center; gap: 0.35rem; }
 .home-geo-gate-steps {
   text-align: left; margin: 0.3rem 0 0.2rem; padding-left: 1.2rem;
   display: flex; flex-direction: column; gap: 0.4rem;
