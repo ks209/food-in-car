@@ -7,6 +7,7 @@ import restaurantAuth from '../../middlewares/restaurant.auth.js';
 import supportAuth from '../../middlewares/support.auth.js';
 import { slugify, validateSlug, uniqueSlug, isSlugTaken, resolveRestaurantId, orderingUrlFor } from '../../utils/slug.js';
 import { validateHours, customerOpenState } from '../../utils/businessHours.js';
+import { menuWaitEstimate } from '../../utils/waitEstimate.js';
 
 const restaurantRouter = express.Router();
 restaurantRouter.use(cookieParser());
@@ -175,14 +176,12 @@ const NEARBY_RADIUS_KM = Number(process.env.NEARBY_RADIUS_KM) || 3;
 // Public, unauthenticated — the mobile app's homepage. Registered before
 // GET /:id (Express matches routes in order; /:id would otherwise swallow
 // this path). Distance-sorted when ?lat=&lng= are given and valid (GPS
-// takes priority over ?cityId= if both are somehow sent), and capped at
-// NEARBY_RADIUS_KM — anything further away is not returned at all, not just
-// sorted last. Without coordinates it falls back to rating-sorted, optionally
-// narrowed to one city; the mobile app no longer uses that path (location is
-// mandatory there), but it stays for any other caller. ?search= matches name
-// or cuisines and layers onto either mode. Only restaurants with saved
-// coordinates are eligible for distance sort — one without them just
-// doesn't show up until an admin sets them.
+// takes priority over ?cityId= if both are somehow sent). Browsing (no
+// ?search=) is capped at NEARBY_RADIUS_KM and only lists restaurants with
+// saved coordinates. A search is NOT capped: it matches name or cuisines
+// across every active restaurant, still closest first, with ones that have
+// no coordinates yet listed after all the located ones. Without coordinates
+// it falls back to rating-sorted, optionally narrowed to one city.
 restaurantRouter.get('/nearby', async (req, res) => {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const pageSize = Math.min(50, Math.max(1, parseInt(req.query.pageSize) || 10));
@@ -206,16 +205,21 @@ restaurantRouter.get('/nearby', async (req, res) => {
                 SELECT *, COUNT(*) OVER()::int AS "totalCount"
                 FROM (
                   SELECT id, name, slug, "logoUrl", "coverUrl", cuisines, rating, "ratingCount", "isOpen", "openingTime", "closingTime", address,
+                    -- NULL (not a number) for a restaurant without coordinates —
+                    -- GREATEST() skips NULLs, so without this guard it would
+                    -- come out as acos(-1): half the planet away.
+                    CASE WHEN latitude IS NULL OR longitude IS NULL THEN NULL ELSE
                     (6371 * acos(LEAST(1, GREATEST(-1,
                       cos(radians($1)) * cos(radians(latitude)) * cos(radians(longitude) - radians($2))
                       + sin(radians($1)) * sin(radians(latitude))
-                    )))) AS distance
+                    )))) END AS distance
                   FROM "Restaurant"
-                  WHERE "isActive" = true AND latitude IS NOT NULL AND longitude IS NOT NULL
+                  WHERE "isActive" = true
+                    AND ($3 <> '' OR (latitude IS NOT NULL AND longitude IS NOT NULL))
                     AND ($3 = '' OR name ILIKE '%' || $3 || '%' OR cuisines ILIKE '%' || $3 || '%')
                 ) nearby
-                WHERE distance <= $6
-                ORDER BY distance ASC
+                WHERE $3 <> '' OR distance <= $6
+                ORDER BY distance ASC NULLS LAST, rating DESC NULLS LAST
                 LIMIT $4 OFFSET $5
                 `,
                 lat, lng, search, pageSize, offset, NEARBY_RADIUS_KM
@@ -246,6 +250,8 @@ restaurantRouter.get('/nearby', async (req, res) => {
             totalPages: Math.max(1, Math.ceil(total / pageSize)),
             sortedBy: hasCoords ? 'distance' : 'rating',
             radiusKm: hasCoords ? NEARBY_RADIUS_KM : null,
+            // Whether the radius was applied — searches cover every restaurant.
+            withinRadius: hasCoords && !search,
         });
     } catch (err) {
         res.status(500).json({ message: 'Error fetching nearby restaurants', error: err.message });
@@ -277,26 +283,13 @@ restaurantRouter.get('/:idOrSlug', async (req, res) => {
             return res.status(404).json({ message: 'Restaurant not found' });
         }
 
-        // Average total wait (placed → COMPLETED) over the most recent
-        // completed orders — a light public signal for "how long will this
-        // take", not the full order history (this endpoint used to include
-        // every raw Order row — every guest's name/vehicle/phone-linked order
-        // — to any unauthenticated caller; that's gone in favor of just this).
-        const waitRows = await prisma.$queryRawUnsafe(
-            `
-            SELECT AVG(EXTRACT(EPOCH FROM ("updatedAt" - "createdAt")) / 60) AS "avgMinutes"
-            FROM (
-              SELECT "updatedAt", "createdAt" FROM "Order"
-              WHERE "restaurantId" = $1 AND status = 'COMPLETED'
-              ORDER BY "createdAt" DESC
-              LIMIT 20
-            ) recent
-            `,
-            id
-        );
-        const avgWaitMinutes = waitRows[0]?.avgMinutes != null ? Math.round(Number(waitRows[0].avgMinutes)) : null;
+        // Customer-facing wait estimate — see utils/waitEstimate.js. Replaces
+        // a plain average of the last 20 completed orders (placed → updatedAt),
+        // which POS bills dragged towards 0 and late clean-ups inflated.
+        // avgWaitMinutes stays for app versions that still read it.
+        const waitEstimate = await menuWaitEstimate(restaurant);
 
-        res.json({ ...restaurant, ...customerOpenState(restaurant), avgWaitMinutes });
+        res.json({ ...restaurant, ...customerOpenState(restaurant), waitEstimate, avgWaitMinutes: waitEstimate?.minutes ?? null });
     } catch (err) {
         res.status(500).json({ message: 'Error fetching restaurant', error: err });
     }

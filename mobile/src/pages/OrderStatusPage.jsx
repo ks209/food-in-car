@@ -73,6 +73,24 @@ const STATUS_DESC = {
   CANCELLED: "This order was cancelled.",
   NOT_FULFILLED: "This order could not be fulfilled.",
 }
+// One line of live ETA for the hero, from the server's estimate (order.eta —
+// see backend/utils/waitEstimate.js). Recomputed from the timestamps on each
+// render, so the countdown stays current between polls.
+function etaText(order) {
+  const eta = order.eta
+  if (!eta) return null
+  const pickup = eta.fulfilment === "pickup"
+  if (eta.stage === "READY" && pickup) return null // already says "ready"
+  if (eta.overdue) return "Running a little late — any minute now"
+  // Pickup customers care when it's ready; in-car customers when it reaches them.
+  const target = new Date(pickup ? eta.readyAt : eta.arriveAt).getTime()
+  const mins = Math.max(0, Math.round((target - Date.now()) / 60000))
+  const clock = new Date(target).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+  if (mins <= 1) return pickup ? "Ready any minute now" : "Arriving any minute now"
+  if (eta.stage === "READY") return `On its way to your car · ~${mins} min`
+  return `${pickup ? "Ready" : "At your car"} in ~${mins} min · around ${clock}`
+}
+
 const STATUS_ICON = {
   PENDING: Clock, PAID: CreditCard, PROCESSING: ChefHat, PREPARING: ChefHat,
   READY: Package, DELIVERED: PartyPopper, COMPLETED: PartyPopper, CANCELLED: XCircle,
@@ -206,6 +224,12 @@ export default function OrderStatusPage() {
           <p style={{ color:"rgba(255,255,255,0.85)", fontSize:"0.9rem", maxWidth:320, margin:"0 auto" }}>
             {STATUS_DESC[order.status]}
           </p>
+          {etaText(order) && (
+            <p style={{ marginTop:"0.7rem", color:"white", fontSize:"1rem", fontWeight:700,
+              display:"flex", alignItems:"center", justifyContent:"center", gap:"0.4rem" }}>
+              <Clock size={16} strokeWidth={2.4} /> {etaText(order)}
+            </p>
+          )}
           <div style={{ marginTop:"0.75rem", display:"inline-flex", background:"rgba(0,0,0,0.2)",
             borderRadius:999, padding:"0.25rem 0.75rem" }}>
             <span style={{ color:"white", fontSize:"0.82rem", fontWeight:600 }}>Order #{order.dailyOrderNumber ?? order.id}</span>

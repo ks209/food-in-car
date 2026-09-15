@@ -277,9 +277,14 @@ export default function MenuPage() {
                     {restaurant?.ratingCount != null && (
                       <span style={{ fontSize: "0.76rem", color: "var(--muted)", fontWeight: 600 }}>{restaurant.ratingCount}+ ratings</span>
                     )}
-                    {restaurant?.avgWaitMinutes != null && (
-                      <span className="meta-item" style={{ fontSize: "0.76rem", color: "var(--text-secondary)", fontWeight: 600 }}>
-                        <Timer size={13} strokeWidth={2.2} /> ~{restaurant.avgWaitMinutes} min wait
+                    {/* Recent real orders + the current kitchen queue — see
+                        backend/utils/waitEstimate.js. Hidden when there's too
+                        little history to estimate from. */}
+                    {restaurant?.waitEstimate?.minutes != null && (
+                      <span className="meta-item" style={{ fontSize: "0.76rem", color: "var(--text-secondary)", fontWeight: 600 }}
+                        title={`Based on ${restaurant.waitEstimate.samples} recent orders`}>
+                        <Timer size={13} strokeWidth={2.2} /> ~{restaurant.waitEstimate.minutes} min wait
+                        {restaurant.waitEstimate.busy >= 5 && <span style={{ color: "var(--star)" }}> · busy now</span>}
                       </span>
                     )}
                   </div>

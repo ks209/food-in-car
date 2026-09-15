@@ -152,10 +152,10 @@ export default function HomePage() {
   // (which close over whatever render started the location request).
   const latestSearch = useRef("")
 
-  // With a position: restaurants within the radius, closest first. Without
-  // one (location not shared): a search across all active restaurants — only
-  // ever called with a search term, since that mode shows nothing until the
-  // customer types something.
+  // Browsing with a position: restaurants within the radius, closest first.
+  // Any search covers every active restaurant — closest first when we have a
+  // position. Without one (location not shared) this is only ever called with
+  // a search term, since that mode shows nothing until the customer types.
   function loadRestaurants(pageNum, position, searchTerm, { append = false } = {}) {
     const params = { page: pageNum, pageSize: PAGE_SIZE }
     if (position) { params.lat = position.lat; params.lng = position.lng }
@@ -332,7 +332,9 @@ export default function HomePage() {
             <p className="home-location-status">
               {geoStatus === "checking" && "Just a moment…"}
               {geoStatus === "locating" && "Finding your location…"}
-              {hasLocation && `Within ${radiusKm} km — closest first`}
+              {hasLocation && (debouncedSearch
+                ? "Matching restaurants everywhere — closest first"
+                : `Within ${radiusKm} km — closest first`)}
             </p>
           </>
         )}
@@ -409,11 +411,9 @@ export default function HomePage() {
           </div>
         ) : restaurants.length === 0 ? (
           <div className="home-empty">
-            <p>{!hasLocation
+            <p>{debouncedSearch
               ? `No restaurants matching "${debouncedSearch}".`
-              : debouncedSearch
-              ? `No restaurants matching "${debouncedSearch}" within ${radiusKm} km.`
-              : `No restaurants within ${radiusKm} km of you yet.`}</p>
+              : `No restaurants within ${radiusKm} km of you yet — try searching by name or cuisine.`}</p>
           </div>
         ) : (
           restaurants.map((r) => <RestCard key={r.id} r={r} />)

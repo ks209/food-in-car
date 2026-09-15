@@ -48,14 +48,29 @@ export function DeliveryScan() {
     if (startingRef.current || scannerRef.current) return
     startingRef.current = true
     setResult(null)
+    // Browsers only expose the camera on https or localhost — opening the
+    // dashboard over plain http on a LAN IP leaves mediaDevices undefined.
+    if (!navigator.mediaDevices?.getUserMedia) {
+      startingRef.current = false
+      setResult({ ok: false, message: "The camera needs a secure (https) connection — open the dashboard over https, or enter the code below." })
+      return
+    }
     try {
       const { Html5Qrcode } = await import("html5-qrcode")
       if (!mountedRef.current) return // navigated away while the import was loading
       const scanner = new Html5Qrcode(READER_ID)
       scannerRef.current = scanner
+      // Responsive scan box: html5-qrcode throws if the box is larger than the
+      // video, which a fixed 240px box can be on a small laptop webcam feed.
+      const qrbox = (viewfinderWidth, viewfinderHeight) => {
+        const size = Math.floor(Math.min(viewfinderWidth, viewfinderHeight) * 0.7)
+        return { width: size, height: size }
+      }
+      // facingMode is only a preference: phones use the back camera, a laptop
+      // falls back to its built-in webcam.
       await scanner.start(
         { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 240, height: 240 } },
+        { fps: 10, qrbox },
         (decoded) => completeOrder(decoded),
         () => {} // ignore per-frame decode errors
       )
@@ -68,9 +83,21 @@ export function DeliveryScan() {
       }
       setScanning(true)
     } catch (err) {
+      const scanner = scannerRef.current
       scannerRef.current = null
+      // A failed start can leave a half-built video element behind.
+      if (scanner) { try { await scanner.clear() } catch {} }
       if (mountedRef.current) {
-        toast.error("Unable to access camera — use manual entry below")
+        const text = `${err?.name || ""} ${err?.message || err || ""}`
+        const message = /NotAllowed|Permission/i.test(text)
+          ? "Camera permission was blocked — allow camera access for this site in the browser's address bar, then try again."
+          : /NotFound|Requested device not found|no camera/i.test(text)
+          ? "No camera was found on this device — enter the code below instead."
+          : /NotReadable|Could not start video source|in use/i.test(text)
+          ? "The camera is being used by another app (e.g. a video call) — close it and try again."
+          : "Unable to start the camera — enter the code below instead."
+        setResult({ ok: false, message })
+        toast.error(message)
         setScanning(false)
       }
     } finally {
@@ -105,12 +132,19 @@ export function DeliveryScan() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Camera viewport */}
-          <div
-            id={READER_ID}
-            className="rounded-xl overflow-hidden bg-slate-900 aspect-square w-full flex items-center justify-center text-slate-500"
-          >
-            {!scanning && <span className="text-xs">Camera is off</span>}
+          {/* Camera viewport. The #READER_ID div is owned entirely by
+              html5-qrcode — it empties the div and injects its own video on
+              start. A React child inside it (the old "Camera is off" label)
+              would already be gone when React tried to remove it, throwing
+              "removeChild … not a child of this node" and crashing the whole
+              page. The label is therefore a sibling overlay instead. */}
+          <div className="relative rounded-xl overflow-hidden bg-slate-900 aspect-square w-full">
+            <div id={READER_ID} className="w-full h-full [&_video]:w-full [&_video]:h-full [&_video]:object-cover" />
+            {!scanning && (
+              <div className="absolute inset-0 flex items-center justify-center text-slate-500 text-xs pointer-events-none">
+                Camera is off
+              </div>
+            )}
           </div>
 
           {scanning ? (

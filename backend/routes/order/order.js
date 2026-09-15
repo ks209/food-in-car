@@ -7,6 +7,7 @@ import scanAuth from '../../middlewares/scan.auth.js';
 import { genDeliveryCode } from '../../utils/deliveryCode.js';
 import { resolveCustomerByPhone } from '../../utils/customer.js';
 import { nextDailyOrderNumber } from '../../utils/dailyOrderNumber.js';
+import { orderEta } from '../../utils/waitEstimate.js';
 
 const orderRouter = express.Router();
 
@@ -243,7 +244,9 @@ orderRouter.get('/:id', async (req, res) => {
       return res.status(403).json({ error: 'Not authorized to view this order' });
     }
 
-    res.json(order);
+    // Live ETA for the status page (null when finished, unpaid, or too little
+    // history to estimate from).
+    res.json({ ...order, eta: await orderEta(order) });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch order', details: error.message });
   }
