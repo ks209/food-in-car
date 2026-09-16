@@ -23,7 +23,7 @@ const scanAuth = async (req, res, next) => {
       const denied = await waiterAccessError(decoded);
       if (denied) return res.status(403).json({ error: denied });
     } catch {
-      return res.status(500).json({ error: 'Failed to verify waiter' });
+      return res.status(500).json({ error: 'Failed to verify server' });
     }
     req.restaurantId = decoded.restaurantId;
     req.waiterId = decoded.waiterId;

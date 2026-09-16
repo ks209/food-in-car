@@ -22,7 +22,7 @@ restaurantRouter.get('/me', restaurantAuth, async (req, res) => {
     try {
         const restaurant = await prisma.restaurant.findUnique({
             where: { id: req.restaurantId },
-            select: { id: true, name: true, slug: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true, openingTime: true, closingTime: true, gstin: true, gstRate: true, pricesIncludeGst: true, fssaiLicense: true, legalName: true, supportEmail: true, supportPhone: true, latitude: true, longitude: true, cityId: true, phonepeMerchantId: true, phonepeSaltIndex: true, phonepeSandbox: true, phonepeSaltKey: true },
+            select: { id: true, name: true, slug: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true, openingTime: true, closingTime: true, gstin: true, gstRate: true, fssaiLicense: true, legalName: true, supportEmail: true, supportPhone: true, latitude: true, longitude: true, cityId: true, phonepeMerchantId: true, phonepeSaltIndex: true, phonepeSandbox: true, phonepeSaltKey: true },
         });
         if (!restaurant) return res.status(404).json({ message: 'Restaurant not found' });
         // phonepeSaltKey is fetched only to derive this flag — it must never
@@ -39,7 +39,7 @@ const FONT_KEYS = ['manrope', 'inter', 'poppins', 'playfair', 'spacegrotesk', 'f
 const CARD_STYLES = ['rounded', 'sharp'];
 
 restaurantRouter.put('/me', restaurantAuth, async (req, res) => {
-    const { name, slug, phone, address, themeColor, secondaryColor, accentColor, fontFamily, cardStyle, logoUrl, coverUrl, pickupEnabled, deliveryEnabled, isOpen, slaWarnMinutes, slaCritMinutes, openingTime, closingTime, gstin, gstRate, pricesIncludeGst, fssaiLicense, legalName, supportEmail, supportPhone, latitude, longitude, cityId, phonepeMerchantId, phonepeSaltKey, phonepeSaltIndex, phonepeSandbox } = req.body;
+    const { name, slug, phone, address, themeColor, secondaryColor, accentColor, fontFamily, cardStyle, logoUrl, coverUrl, pickupEnabled, deliveryEnabled, isOpen, slaWarnMinutes, slaCritMinutes, openingTime, closingTime, gstin, gstRate, fssaiLicense, legalName, supportEmail, supportPhone, latitude, longitude, cityId, phonepeMerchantId, phonepeSaltKey, phonepeSaltIndex, phonepeSandbox } = req.body;
     try {
         const data = {};
         if (name !== undefined) data.name = name || null;
@@ -112,9 +112,9 @@ restaurantRouter.put('/me', restaurantAuth, async (req, res) => {
 
         // Tax & compliance — validated against the saved values so e.g. setting a
         // GST rate without a GSTIN is refused even if the GSTIN isn't in this request.
-        if (gstin !== undefined || gstRate !== undefined || pricesIncludeGst !== undefined || fssaiLicense !== undefined) {
+        if (gstin !== undefined || gstRate !== undefined || fssaiLicense !== undefined) {
             const existing = await prisma.restaurant.findUnique({ where: { id: req.restaurantId }, select: { gstin: true, gstRate: true } });
-            const tax = validateTaxSettings({ gstin, gstRate, pricesIncludeGst, fssaiLicense }, existing);
+            const tax = validateTaxSettings({ gstin, gstRate, fssaiLicense }, existing);
             if (!tax.ok) return res.status(400).json({ message: tax.message });
             Object.assign(data, tax.data);
         }
@@ -166,7 +166,7 @@ restaurantRouter.put('/me', restaurantAuth, async (req, res) => {
         const updated = await prisma.restaurant.update({
             where: { id: req.restaurantId },
             data,
-            select: { id: true, name: true, slug: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true, openingTime: true, closingTime: true, gstin: true, gstRate: true, pricesIncludeGst: true, fssaiLicense: true, legalName: true, supportEmail: true, supportPhone: true, latitude: true, longitude: true, cityId: true, phonepeMerchantId: true, phonepeSaltIndex: true, phonepeSandbox: true, phonepeSaltKey: true },
+            select: { id: true, name: true, slug: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true, openingTime: true, closingTime: true, gstin: true, gstRate: true, fssaiLicense: true, legalName: true, supportEmail: true, supportPhone: true, latitude: true, longitude: true, cityId: true, phonepeMerchantId: true, phonepeSaltIndex: true, phonepeSandbox: true, phonepeSaltKey: true },
         });
         const { phonepeSaltKey: _saltKey, ...safeUpdated } = updated;
         res.json({ ...safeUpdated, phonepeConfigured: !!(updated.phonepeMerchantId && _saltKey), orderingUrl: orderingUrlFor(updated, FRONTEND_URL) });
@@ -209,8 +209,10 @@ const NEARBY_RADIUS_KM = Number(process.env.NEARBY_RADIUS_KM) || 3;
 // ?search=) is capped at NEARBY_RADIUS_KM and only lists restaurants with
 // saved coordinates. A search is NOT capped: it matches name or cuisines
 // across every active restaurant, still closest first, with ones that have
-// no coordinates yet listed after all the located ones. Without coordinates
-// it falls back to rating-sorted, optionally narrowed to one city.
+// no coordinates yet listed after all the located ones — and if that finds
+// nothing it retries against the address, so typing an area still works.
+// Without coordinates it falls back to rating-sorted, optionally narrowed to
+// one city.
 restaurantRouter.get('/nearby', async (req, res) => {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const pageSize = Math.min(50, Math.max(1, parseInt(req.query.pageSize) || 10));
@@ -224,49 +226,74 @@ restaurantRouter.get('/nearby', async (req, res) => {
     const cityIdNum = parseInt(req.query.cityId, 10);
     const cityId = !hasCoords && Number.isInteger(cityIdNum) && cityIdNum > 0 ? cityIdNum : null;
 
+    // Which columns a search term is matched against. Address is NOT in the
+    // first pass on purpose: "garden" would otherwise pull in every restaurant
+    // on Garden Road alongside Spice Garden, burying the obvious answer. It is
+    // only consulted when the name/cuisine pass found nothing at all, which is
+    // when a customer is most likely to have typed a place rather than a
+    // restaurant ("kharadi", "connaught place").
+    const matchExpr = (p, withAddress) => [
+        `name ILIKE '%' || ${p} || '%'`,
+        `cuisines ILIKE '%' || ${p} || '%'`,
+        ...(withAddress ? [`address ILIKE '%' || ${p} || '%'`] : []),
+    ].join(' OR ');
+
+    const runQuery = (withAddress) => (hasCoords
+        // The Haversine distance is computed in a subquery so the radius
+        // cut and the COUNT(*) OVER() total can both be applied to it —
+        // a bare SELECT alias isn't referenceable from its own WHERE.
+        ? prisma.$queryRawUnsafe(
+            `
+            SELECT *, COUNT(*) OVER()::int AS "totalCount"
+            FROM (
+              SELECT id, name, slug, "logoUrl", "coverUrl", cuisines, rating, "ratingCount", "isOpen", "openingTime", "closingTime", address,
+                -- NULL (not a number) for a restaurant without coordinates —
+                -- GREATEST() skips NULLs, so without this guard it would
+                -- come out as acos(-1): half the planet away.
+                CASE WHEN latitude IS NULL OR longitude IS NULL THEN NULL ELSE
+                (6371 * acos(LEAST(1, GREATEST(-1,
+                  cos(radians($1)) * cos(radians(latitude)) * cos(radians(longitude) - radians($2))
+                  + sin(radians($1)) * sin(radians(latitude))
+                )))) END AS distance
+              FROM "Restaurant"
+              WHERE "isActive" = true
+                AND ($3 <> '' OR (latitude IS NOT NULL AND longitude IS NOT NULL))
+                AND ($3 = '' OR ${matchExpr('$3', withAddress)})
+            ) nearby
+            WHERE $3 <> '' OR distance <= $6
+            ORDER BY distance ASC NULLS LAST, rating DESC NULLS LAST
+            LIMIT $4 OFFSET $5
+            `,
+            lat, lng, search, pageSize, offset, NEARBY_RADIUS_KM
+          )
+        : prisma.$queryRawUnsafe(
+            `
+            SELECT id, name, slug, "logoUrl", "coverUrl", cuisines, rating, "ratingCount", "isOpen", "openingTime", "closingTime", address,
+              NULL::float AS distance,
+              COUNT(*) OVER()::int AS "totalCount"
+            FROM "Restaurant"
+            WHERE "isActive" = true
+              AND ($1::int IS NULL OR "cityId" = $1::int)
+              AND ($2 = '' OR ${matchExpr('$2', withAddress)})
+            ORDER BY rating DESC NULLS LAST, "ratingCount" DESC NULLS LAST
+            LIMIT $3 OFFSET $4
+            `,
+            cityId, search, pageSize, offset
+          ));
+
     try {
-        const rows = hasCoords
-            // The Haversine distance is computed in a subquery so the radius
-            // cut and the COUNT(*) OVER() total can both be applied to it —
-            // a bare SELECT alias isn't referenceable from its own WHERE.
-            ? await prisma.$queryRawUnsafe(
-                `
-                SELECT *, COUNT(*) OVER()::int AS "totalCount"
-                FROM (
-                  SELECT id, name, slug, "logoUrl", "coverUrl", cuisines, rating, "ratingCount", "isOpen", "openingTime", "closingTime", address,
-                    -- NULL (not a number) for a restaurant without coordinates —
-                    -- GREATEST() skips NULLs, so without this guard it would
-                    -- come out as acos(-1): half the planet away.
-                    CASE WHEN latitude IS NULL OR longitude IS NULL THEN NULL ELSE
-                    (6371 * acos(LEAST(1, GREATEST(-1,
-                      cos(radians($1)) * cos(radians(latitude)) * cos(radians(longitude) - radians($2))
-                      + sin(radians($1)) * sin(radians(latitude))
-                    )))) END AS distance
-                  FROM "Restaurant"
-                  WHERE "isActive" = true
-                    AND ($3 <> '' OR (latitude IS NOT NULL AND longitude IS NOT NULL))
-                    AND ($3 = '' OR name ILIKE '%' || $3 || '%' OR cuisines ILIKE '%' || $3 || '%')
-                ) nearby
-                WHERE $3 <> '' OR distance <= $6
-                ORDER BY distance ASC NULLS LAST, rating DESC NULLS LAST
-                LIMIT $4 OFFSET $5
-                `,
-                lat, lng, search, pageSize, offset, NEARBY_RADIUS_KM
-              )
-            : await prisma.$queryRawUnsafe(
-                `
-                SELECT id, name, slug, "logoUrl", "coverUrl", cuisines, rating, "ratingCount", "isOpen", "openingTime", "closingTime", address,
-                  NULL::float AS distance,
-                  COUNT(*) OVER()::int AS "totalCount"
-                FROM "Restaurant"
-                WHERE "isActive" = true
-                  AND ($1::int IS NULL OR "cityId" = $1::int)
-                  AND ($2 = '' OR name ILIKE '%' || $2 || '%' OR cuisines ILIKE '%' || $2 || '%')
-                ORDER BY rating DESC NULLS LAST, "ratingCount" DESC NULLS LAST
-                LIMIT $3 OFFSET $4
-                `,
-                cityId, search, pageSize, offset
-              );
+        let rows = await runQuery(false);
+        // Fall back to matching the address when the ordinary search came back
+        // empty. Paging stays consistent without tracking which pass produced
+        // page 1: a name/cuisine search that yields nothing yields nothing on
+        // every page, so every page of a fallback result set takes this branch
+        // too. (And when the first pass does have hits, the client never asks
+        // for a page beyond its totalPages, so this never fires mid-set.)
+        let matchedOn = 'name';
+        if (!rows.length && search) {
+            rows = await runQuery(true);
+            if (rows.length) matchedOn = 'address';
+        }
 
         const total = rows[0]?.totalCount ?? 0;
         // isOpen as customers see it: the manual switch AND the opening hours.
@@ -281,6 +308,10 @@ restaurantRouter.get('/nearby', async (req, res) => {
             radiusKm: hasCoords ? NEARBY_RADIUS_KM : null,
             // Whether the radius was applied — searches cover every restaurant.
             withinRadius: hasCoords && !search,
+            // 'address' means nothing matched by name or cuisine and these are
+            // area matches instead, so the app can say so rather than looking
+            // like it ignored what was typed.
+            matchedOn: search ? matchedOn : null,
         });
     } catch (err) {
         res.status(500).json({ message: 'Error fetching nearby restaurants', error: err.message });

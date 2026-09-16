@@ -49,7 +49,6 @@ export function RestaurantSettings() {
           closingTime: r.data.closingTime || "",
           gstin: r.data.gstin || "",
           gstRate: String(r.data.gstRate ?? 0),
-          pricesIncludeGst: r.data.pricesIncludeGst ?? true,
           fssaiLicense: r.data.fssaiLicense || "",
           legalName: r.data.legalName || "",
           supportEmail: r.data.supportEmail || "",
@@ -131,7 +130,6 @@ export function RestaurantSettings() {
         closingTime: form.closingTime || null,
         gstin: form.gstin,
         gstRate: Number(form.gstRate),
-        pricesIncludeGst: form.pricesIncludeGst,
         fssaiLicense: form.fssaiLicense,
         legalName: form.legalName,
         supportEmail: form.supportEmail,
@@ -362,7 +360,7 @@ export function RestaurantSettings() {
               </div>
               <div className="flex items-start justify-between gap-4">
                 <div className="space-y-0.5">
-                  <Label className="text-sm">Delivery in car</Label>
+                  <Label className="text-sm">Served in car</Label>
                   <p className="text-xs text-muted-foreground">
                     Customers can order to their parked car with a vehicle number.
                   </p>
@@ -371,7 +369,7 @@ export function RestaurantSettings() {
                   {savingKey === "deliveryEnabled" && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
                   <Switch
                     checked={form.deliveryEnabled}
-                    onCheckedChange={(v) => saveInstant("deliveryEnabled", v, v ? "Delivery in car enabled" : "Delivery in car disabled")}
+                    onCheckedChange={(v) => saveInstant("deliveryEnabled", v, v ? "Served in car enabled" : "Served in car disabled")}
                     disabled={savingKey === "deliveryEnabled" || (form.deliveryEnabled && !form.pickupEnabled)}
                   />
                 </div>
@@ -509,18 +507,17 @@ export function RestaurantSettings() {
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-sm">Menu prices</Label>
-                  <div className="flex items-center gap-2 h-9">
-                    <Switch checked={form.pricesIncludeGst} onCheckedChange={(v) => setField("pricesIncludeGst", v)}
-                      disabled={Number(form.gstRate) === 0} />
-                    <span className="text-sm text-muted-foreground">{form.pricesIncludeGst ? "Include GST" : "GST added at checkout"}</span>
+                  {/* Not a choice any more — prices always include GST, so what a
+                      customer sees on the menu is what they pay. */}
+                  <div className="flex items-center h-9">
+                    <span className="text-sm text-muted-foreground">Always include GST</span>
                   </div>
                 </div>
               </div>
               {Number(form.gstRate) > 0 && form.gstin && (
                 <p className="text-xs text-muted-foreground rounded-lg border border-border px-3 py-2">
-                  Example: a ₹100 item — {form.pricesIncludeGst
-                    ? `customer pays ₹100; the bill shows ₹${(100 / (1 + Number(form.gstRate) / 100)).toFixed(2)} + GST ₹${(100 - 100 / (1 + Number(form.gstRate) / 100)).toFixed(2)}.`
-                    : `customer pays ₹${(100 + Number(form.gstRate)).toFixed(2)} (₹100 + GST ₹${Number(form.gstRate).toFixed(2)}).`}
+                  Example: a ₹100 item — customer pays ₹100; the bill shows
+                  {" "}₹{(100 / (1 + Number(form.gstRate) / 100)).toFixed(2)} + GST ₹{(100 - 100 / (1 + Number(form.gstRate) / 100)).toFixed(2)}.
                   {" "}Bills show it as CGST + SGST. Check the correct rate for your business with your accountant.
                 </p>
               )}

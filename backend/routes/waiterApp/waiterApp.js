@@ -49,7 +49,7 @@ waiterAppRouter.get('/me', waiterAuth, async (req, res) => {
     ]);
     res.json({ waiter, restaurant, tokenExpiresAt: req.tokenExpiresAt });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to load waiter', details: error.message });
+    res.status(500).json({ error: 'Failed to load server', details: error.message });
   }
 });
 
@@ -104,7 +104,7 @@ waiterAppRouter.post('/orders/:id/claim', waiterAuth, async (req, res) => {
       });
       if (!order) return res.status(404).json({ error: 'Order not found' });
       if (order.status !== 'READY') return res.status(409).json({ error: 'This order is no longer waiting for delivery' });
-      return res.status(409).json({ error: `Already taken by ${order.claimedBy?.name || 'another waiter'}` });
+      return res.status(409).json({ error: `Already taken by ${order.claimedBy?.name || 'another server'}` });
     }
     res.json({ ok: true });
   } catch (error) {

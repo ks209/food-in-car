@@ -63,10 +63,14 @@ model Restaurant {
   closingTime    String?
   // Tax & compliance (dashboard Settings). GST is only charged/shown when a
   // GSTIN is set and gstRate > 0 — an unregistered business can't collect it.
-  // pricesIncludeGst: menu prices already contain GST (split out on the bill)
-  // vs. GST added on top at checkout. See utils/gst.js.
+  // Menu prices always include GST, split out for display on the bill. See
+  // utils/gst.js.
   gstin            String?
   gstRate          Float    @default(0)
+  // Vestigial: prices are ALWAYS inclusive of GST now, and nothing reads this.
+  // Order.pricesIncludeGst below is different — that is a per-order snapshot and
+  // must stay. Kept rather than dropped so the column can be revived without a
+  // data migration if the choice is ever reinstated. See utils/gst.js.
   pricesIncludeGst Boolean  @default(true)
   // 14-digit FSSAI licence/registration number, shown on the menu and bills.
   fssaiLicense     String?
@@ -81,7 +85,7 @@ model Restaurant {
   // PREPARING order "slow" past slaWarnMinutes and "over SLA" past slaCritMinutes.
   slaWarnMinutes Int         @default(8)
   slaCritMinutes Int         @default(15)
-  // Whether a "Deliver in Car" customer MUST pick one of parkingSpots at
+  // Whether a "Served in Car" customer MUST pick one of parkingSpots at
   // checkout. Only takes effect once the restaurant has at least one active
   // spot — with none configured the app never asks.
   parkingSpotRequired Boolean @default(true)
@@ -91,6 +95,7 @@ model Restaurant {
   category       Category[]
   waiters        Waiter[]
   parkingSpots   ParkingSpot[]
+  venues         VenueRestaurant[]
   dailyCounters  DailyCounter[]
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
@@ -319,7 +324,7 @@ model Waiter {
 }
 
 
-// Where a "Deliver in Car" customer can say they are parked ("Basement B2",
+// Where a "Served in Car" customer can say they are parked ("Basement B2",
 // "Gate 3 – Row A"). Managed by the restaurant from dashboard Settings; the
 // ordering app shows the active ones as a dropdown at checkout. Removing a
 // spot only deactivates it — orders keep their own copy of the name.
@@ -345,4 +350,90 @@ model City {
   state       String?
   isActive    Boolean      @default(true)
   restaurants Restaurant[]
+  venues      Venue[]
+}
+
+// What kind of place a Venue is. Purely presentational — it picks the icon and
+// the label ("14 outlets · Campus") in the ordering app, and groups the admin
+// list. No behaviour hangs off it; membership rules live in VenueMembership.
+enum VenueType {
+  UNIVERSITY
+  MALL
+  TECH_PARK
+  OFFICE_PARK
+  HOSPITAL
+  AIRPORT
+  STADIUM
+  RESIDENTIAL
+  OTHER
+}
+
+// How a Venue decides which restaurants appear on it.
+//   STRICT    — only restaurants an admin explicitly mapped. A university must
+//               never list the dhaba across the road just because it is 400 m
+//               from the gate.
+//   INCLUSIVE — mapped restaurants UNION anything inside includeRadiusM of the
+//               venue centre. For a mall or market square ("City Square") where
+//               the surrounding street food genuinely is part of the place.
+enum VenueMembership {
+  STRICT
+  INCLUSIVE
+}
+
+// A place that clubs several restaurants together — a university campus, a
+// mall, a tech park. The ordering app auto-switches into a venue when the
+// customer's GPS lands inside it, and every venue is also a shareable
+// destination of its own at /at/<slug>.
+model Venue {
+  id             Int               @id @default(autoincrement())
+  name           String
+  // URL-safe public identifier — the ordering app serves a venue at
+  // /at/<slug>. Unlike Restaurant.slug this is NOT nullable: a venue with no
+  // web address has no page to auto-detect a customer into, which is the
+  // entire point of the model. Lives under /at/ so venue and restaurant slugs
+  // occupy separate namespaces and can never collide.
+  slug           String            @unique
+  type           VenueType         @default(OTHER)
+  description    String?
+  logoUrl        String?
+  coverUrl       String?
+  address        String?
+  // Required, unlike Restaurant's nullable pair — see the slug note above.
+  latitude       Float
+  longitude      Float
+  // How close a customer has to be before the app switches into this venue.
+  // A spread-out campus wants ~900, a single mall building ~150. Deliberately
+  // NOT the same number as includeRadiusM: this answers "is the customer
+  // here?", that one answers "which restaurants count?".
+  detectRadiusM  Int               @default(500)
+  membershipMode VenueMembership   @default(STRICT)
+  // Only ever read when membershipMode is INCLUSIVE. Null on a STRICT venue.
+  includeRadiusM Int?
+  cityId         Int?
+  city           City?             @relation(fields: [cityId], references: [id])
+  restaurants    VenueRestaurant[]
+  isActive       Boolean           @default(true)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@index([isActive])
+}
+
+// Explicit membership of a restaurant in a venue (many-to-many: a café can sit
+// in both a mall and the tech park the mall belongs to). An INCLUSIVE venue
+// shows these PLUS whatever falls inside its radius; a STRICT venue shows only
+// these. Venue analytics counts only these rows in both modes — attributing a
+// neighbouring restaurant's revenue to a mall it isn't part of would be wrong.
+model VenueRestaurant {
+  id           Int        @id @default(autoincrement())
+  venue        Venue      @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  venueId      Int
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  restaurantId Int
+  // Admin-controlled ordering on the venue page, mirroring Category.position.
+  position     Int        @default(0)
+  createdAt    DateTime   @default(now())
+
+  @@unique([venueId, restaurantId])
+  @@index([restaurantId])
 }

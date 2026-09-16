@@ -7,6 +7,7 @@ import LoginPage from "./pages/LoginPage"
 import OrderStatusPage from "./pages/OrderStatusPage"
 import OrdersPage from "./pages/OrdersPage"
 import LegalPage from "./pages/LegalPage"
+import VenuePage from "./pages/VenuePage"
 
 export default function App() {
   return (
@@ -17,6 +18,11 @@ export default function App() {
             <Route path="/" element={<HomePage />} />
             {/* Privacy / Terms / Refunds. "legal" is a reserved slug (backend utils/slug.js). */}
             <Route path="/legal/:doc" element={<LegalPage />} />
+
+            {/* A place that clubs several restaurants together — a campus, a
+                mall. "at" is a reserved slug, so the literal segment can never
+                collide with a restaurant's vanity URL below. */}
+            <Route path="/at/:venueSlug" element={<VenuePage />} />
 
             {/* Original numeric URLs. Kept working alongside the vanity ones so
                 already-printed QR codes, bookmarks and shared order links don't

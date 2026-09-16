@@ -455,3 +455,104 @@ a.card:active, .card:active { transform: scale(0.99); }
 * { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.14) transparent; }
 *::-webkit-scrollbar { width: 8px; height: 8px; }
 *::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 999px; }
+
+/* ── Venues ("places") ─────────────────────────────────────────────────────── */
+
+/* Home page, venue mode: a compact strip that replaces the hero, tappable
+   through to the venue's own page. */
+.venue-strip {
+  margin: 0.4rem 1.1rem 0.2rem;
+  border-radius: 14px;
+  border: 1.5px solid var(--border-strong);
+  background: var(--card-2);
+  overflow: hidden;
+}
+.venue-strip-main { display: flex; align-items: center; gap: 0.7rem; padding: 0.8rem 0.9rem; }
+.venue-strip-logo { width: 38px; height: 38px; border-radius: 10px; object-fit: cover; flex-shrink: 0; }
+.venue-strip-icon {
+  width: 38px; height: 38px; border-radius: 10px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(var(--primary-rgb), 0.14); color: var(--primary);
+}
+.venue-strip-text { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; flex: 1; }
+.venue-strip-name {
+  font-weight: 800; font-size: 0.97rem; letter-spacing: -0.01em; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.venue-strip-meta { color: var(--text-secondary); font-size: 0.78rem; }
+.venue-strip-chevron { color: var(--muted); flex-shrink: 0; }
+.venue-strip-dismiss {
+  width: 100%;
+  display: flex; align-items: center; justify-content: center; gap: 0.3rem;
+  padding: 0.55rem; border: none; border-top: 1px solid var(--border);
+  background: transparent; color: var(--text-secondary);
+  font-size: 0.78rem; font-weight: 600; cursor: pointer;
+}
+.venue-strip-dismiss:active { background: var(--surface); }
+
+/* Venue page hero */
+.venue-hero { position: relative; min-height: 168px; display: flex; align-items: flex-end; background: var(--surface); }
+.venue-hero-cover { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.venue-hero-scrim {
+  position: absolute; inset: 0;
+  background: linear-gradient(to top, rgba(11,13,18,0.94) 12%, rgba(11,13,18,0.55) 55%, rgba(11,13,18,0.3) 100%);
+}
+.venue-back {
+  position: absolute; top: 0.9rem; left: 0.9rem; z-index: 2;
+  width: 34px; height: 34px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(11,13,18,0.6); color: var(--text); backdrop-filter: blur(6px);
+}
+.venue-hero-body { position: relative; z-index: 1; padding: 1.1rem; width: 100%; }
+.venue-hero-type {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  color: var(--primary); font-size: 0.74rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.venue-hero-body h1 { font-size: 1.45rem; font-weight: 800; line-height: 1.18; margin-top: 0.25rem; }
+.venue-hero-meta {
+  display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap;
+  margin-top: 0.4rem; color: var(--text-secondary); font-size: 0.82rem;
+}
+.venue-hero-address { display: inline-flex; align-items: center; gap: 0.25rem; min-width: 0; }
+.venue-dot { width: 3px; height: 3px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+.venue-description {
+  padding: 0.85rem 1.1rem 0.2rem;
+  color: var(--text-secondary); font-size: 0.85rem; line-height: 1.5;
+}
+
+/* Places group in the shared search results, above the restaurant list. */
+.venue-results { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.6rem 1.1rem 0.2rem; }
+.venue-results-label {
+  color: var(--text-secondary); font-size: 0.72rem; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.venue-result {
+  display: flex; align-items: center; gap: 0.7rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: 13px;
+  border: 1.5px solid var(--border-strong);
+  background: var(--card-2);
+}
+.venue-result:active { background: var(--surface); }
+.venue-result-logo { width: 36px; height: 36px; border-radius: 10px; object-fit: cover; flex-shrink: 0; }
+.venue-result-icon {
+  width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(var(--primary-rgb), 0.14); color: var(--primary);
+}
+.venue-result-text { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; flex: 1; }
+.venue-result-name {
+  font-weight: 700; font-size: 0.93rem; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.venue-result-meta { color: var(--text-secondary); font-size: 0.76rem; }
+.venue-result-chevron { color: var(--muted); flex-shrink: 0; }
+
+/* Shown when a search matched only on address — see /nearby's matchedOn. */
+.home-match-note {
+  padding: 0.2rem 1.1rem 0.4rem;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}

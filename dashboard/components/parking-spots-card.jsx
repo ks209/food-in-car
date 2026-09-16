@@ -11,7 +11,7 @@ import { toast } from "sonner"
 import axios from "axios"
 import { API } from "@/lib/api"
 
-// Where "Deliver in Car" customers can say they're parked. Every action saves
+// Where "Served in Car" customers can say they're parked. Every action saves
 // immediately (like the Shop status / Fulfilment switches) — there is nothing
 // here for the page's "unsaved changes" bar to track.
 export function ParkingSpotsCard({ deliveryEnabled }) {
@@ -117,11 +117,11 @@ export function ParkingSpotsCard({ deliveryEnabled }) {
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-xs text-muted-foreground -mt-1">
-          Customers choosing “Deliver in Car” pick where they’re parked from this list. Leave it empty to not ask.
+          Customers choosing “Served in Car” pick where they’re parked from this list. Leave it empty to not ask.
         </p>
         {!deliveryEnabled && (
           <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            Delivery in car is turned off, so customers won’t see this list until you enable it above.
+            Served in car is turned off, so customers won’t see this list until you enable it above.
           </p>
         )}
 

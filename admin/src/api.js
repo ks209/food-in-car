@@ -19,6 +19,21 @@ export const restaurantApi = {
   activate: (id) => api.put(`/api/restaurant/activate/${id}`),
 }
 
+export const venueApi = {
+  all: () => api.get('/api/venue/all'),
+  create: (data) => api.post('/api/venue/create', data),
+  update: (id, data) => api.put(`/api/venue/update/${id}`, data),
+  deactivate: (id) => api.delete(`/api/venue/delete/${id}`),
+  activate: (id) => api.put(`/api/venue/activate/${id}`),
+  // Set-not-patch: send the full ticked list every time; array order becomes
+  // each restaurant's `position` on the venue page.
+  setRestaurants: (id, restaurantIds) => api.put(`/api/venue/${id}/restaurants`, { restaurantIds }),
+  // params: { from, to, tzOffset } — tzOffset is minutes east of UTC, so the
+  // day buckets match the calendar the admin is actually looking at.
+  analytics: (id, params) => api.get(`/api/venue/${id}/analytics`, { params }),
+  overview: (params) => api.get('/api/venue/analytics/overview', { params }),
+}
+
 export const cityApi = {
   all: () => api.get('/api/city'),
 }

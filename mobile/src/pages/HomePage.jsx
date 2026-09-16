@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from "react"
 import { Link } from "react-router-dom"
-import { MapPin, Star, UtensilsCrossed, LocateFixed, Search, X, Download, Share2 } from "lucide-react"
-import { restaurantApi, configApi } from "../api"
+import { MapPin, LocateFixed, Search, X, Download, Share2, ChevronRight } from "lucide-react"
+import { restaurantApi, configApi, venueApi } from "../api"
 import { applyTheme, DEFAULT_HEX } from "../lib/theme"
 import { LegalLinks } from "./LegalPage"
+import RestCard, { SkeletonRestCard } from "../components/RestCard"
+import VenueCard from "../components/VenueCard"
+import { VENUE_TYPE_LABEL, VenueIcon } from "../lib/venue.jsx"
 
 const PAGE_SIZE = 10
 const SEARCH_DEBOUNCE_MS = 400
@@ -12,62 +15,16 @@ const SEARCH_DEBOUNCE_MS = 400
 // customer's coordinates any longer than this browser tab stays open.
 const COORDS_CACHE_KEY = "ck_last_coords"
 const COORDS_CACHE_TTL = 10 * 60 * 1000
+// Which venue the customer has said "I'm not here" to, so dismissing sticks for
+// the rest of the tab. Stores one venue id: walking into a DIFFERENT place
+// should still switch, only the dismissed one stays dismissed.
+const VENUE_DISMISS_KEY = "ck_venue_dismissed"
 // Mirrors NEARBY_RADIUS_KM in backend/routes/restaurant/restaurant.js — only
 // used for copy until the first response comes back carrying the real value.
 const DEFAULT_RADIUS_KM = 3
 
-function formatDistance(km) {
-  if (km == null) return null
-  return km < 1 ? `${Math.round(km * 1000)} m away` : `${km.toFixed(1)} km away`
-}
-
-function SkeletonRestCard() {
-  return (
-    <div className="rest-card card">
-      <div className="skeleton rest-card-cover" />
-      <div className="rest-card-body">
-        <div className="skeleton" style={{ height: 18, width: "70%" }} />
-        <div className="skeleton" style={{ height: 12, width: "50%", marginTop: 8 }} />
-        <div className="skeleton" style={{ height: 12, width: "40%", marginTop: 8 }} />
-      </div>
-    </div>
-  )
-}
-
-function RestCard({ r }) {
-  const distance = formatDistance(r.distance)
-  // Prefer the vanity URL so a customer who browses from here ends up on the
-  // same shareable address the restaurant's QR code points at. Falls back to
-  // the numeric form for a restaurant that has no slug set.
-  return (
-    <Link to={r.slug ? `/${r.slug}` : `/restaurant/${r.id}`} className="rest-card card">
-      <div className="rest-card-cover">
-        {r.coverUrl ? (
-          <img src={r.coverUrl} alt={r.name} />
-        ) : (
-          <div className="rest-card-cover-fallback"><UtensilsCrossed size={28} /></div>
-        )}
-        {!r.isOpen && (
-          <span className="badge rest-closed-badge">
-            {r.closedReason === "hours" && r.opensAt ? `Opens ${r.opensAt}` : "Closed"}
-          </span>
-        )}
-      </div>
-      <div className="rest-card-body">
-        <div className="rest-card-row">
-          <h3>{r.name}</h3>
-          {r.rating != null && (
-            <span className="rest-rating"><Star size={13} fill="currentColor" />{r.rating.toFixed(1)}</span>
-          )}
-        </div>
-        {r.cuisines && <p className="rest-cuisines">{r.cuisines}</p>}
-        <div className="rest-card-meta">
-          <MapPin size={13} />
-          <span>{distance || r.address}</span>
-        </div>
-      </div>
-    </Link>
-  )
+function readDismissedVenue() {
+  try { return sessionStorage.getItem(VENUE_DISMISS_KEY) } catch { return null }
 }
 
 export default function HomePage() {
@@ -94,6 +51,29 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState("")
+
+  // "address" when a search found nothing by name or cuisine and these are area
+  // matches instead — worth saying out loud, or the results look like the app
+  // ignored what was typed.
+  const [matchedOn, setMatchedOn] = useState(null)
+
+  // Places matching the current search term, shown as their own group above the
+  // restaurant results. Only ever populated while something is typed — the home
+  // page is not a browsable directory of venues.
+  const [venueResults, setVenueResults] = useState([])
+  // Its own guard, like detectSeq — see the note on detectVenue.
+  const venueSearchSeq = useRef(0)
+
+  // The place the customer is standing in, once a position is known. Non-null
+  // puts the page in "venue mode": the venue's own outlets instead of the
+  // radius-capped nearby list, and the search box scoped to that venue.
+  const [venue, setVenue] = useState(null)
+  // Read from callbacks that close over an older render, so state alone won't do.
+  const venueRef = useRef(null)
+  const dismissedVenueRef = useRef(readDismissedVenue())
+
+  // Separate from requestSeq on purpose — see detectVenue.
+  const detectSeq = useRef(0)
 
   const skipNextSearchFetch = useRef(true)
 
@@ -157,7 +137,11 @@ export default function HomePage() {
   // Any search covers every active restaurant — closest first when we have a
   // position. Without one (location not shared) this is only ever called with
   // a search term, since that mode shows nothing until the customer types.
-  function loadRestaurants(pageNum, position, searchTerm, { append = false } = {}) {
+  //
+  // In venue mode it loads that venue's outlets instead. The two endpoints
+  // deliberately return the same shape, so only the request differs — the venue
+  // response simply has no `radiusKm`, which the guard below skips.
+  function loadRestaurants(pageNum, position, searchTerm, { append = false, venue: forVenue = null } = {}) {
     const params = { page: pageNum, pageSize: PAGE_SIZE }
     if (position) { params.lat = position.lat; params.lng = position.lng }
     if (searchTerm) params.search = searchTerm
@@ -165,22 +149,98 @@ export default function HomePage() {
     if (!append) setLoadingMore(false)
     ;(append ? setLoadingMore : setLoading)(true)
     setError("")
-    restaurantApi.nearby(params)
+    const request = forVenue
+      ? venueApi.restaurants(forVenue.slug, params)
+      : restaurantApi.nearby(params)
+    request
       .then((r) => {
         if (seq !== requestSeq.current) return
         setRestaurants((prev) => append ? [...prev, ...r.data.restaurants] : r.data.restaurants)
         setPage(r.data.page)
         setTotalPages(r.data.totalPages)
         if (r.data.radiusKm) setRadiusKm(r.data.radiusKm)
+        // Absent on the venue endpoint, which has no address fallback.
+        setMatchedOn(r.data.matchedOn ?? null)
       })
       .catch(() => { if (seq === requestSeq.current) setError("Couldn't load restaurants. Please try again.") })
       .finally(() => { if (seq === requestSeq.current) (append ? setLoadingMore : setLoading)(false) })
   }
 
+  // Places matching the search term. Runs alongside the restaurant search
+  // rather than as part of it: the two are separate endpoints returning
+  // different shapes, and the venue group must render as soon as it arrives
+  // instead of waiting on the (paginated) restaurant list.
+  //
+  // This fires even in venue mode, and it is the way OUT of one: standing on a
+  // campus and searching "city square" should offer the mall, not silently find
+  // nothing because the restaurant half of the search was scoped to the campus.
+  function loadVenueResults(searchTerm, position) {
+    const seq = ++venueSearchSeq.current
+    if (!searchTerm) { setVenueResults([]); return }
+    const params = { search: searchTerm }
+    if (position) { params.lat = position.lat; params.lng = position.lng }
+    venueApi.search(params)
+      .then((r) => { if (seq === venueSearchSeq.current) setVenueResults(r.data.venues) })
+      .catch(() => { if (seq === venueSearchSeq.current) setVenueResults([]) })
+  }
+
+  // Ask whether this position is inside a venue, then load whichever list wins.
+  //
+  // Sequential rather than racing the two requests: a venue lookup is one query
+  // over a tiny table, and the page has already waited on GPS — far slower than
+  // this — so trading a round trip for "no flash of the wrong list" is worth it.
+  // Any failure falls through to the ordinary nearby list.
+  //
+  // Guarded by its OWN sequence, deliberately not requestSeq. requestSeq tracks
+  // restaurant-list responses and is bumped by clearResults(), so sharing it
+  // meant an in-flight detect was cancelled every time the list was reset —
+  // which happens on mount. The symptom was venue mode silently never engaging
+  // when returning to "/" with cached coordinates (i.e. back from any menu).
+  function detectVenue(position) {
+    const seq = ++detectSeq.current
+    setLoading(true)
+    venueApi.detect({ lat: position.lat, lng: position.lng })
+      .then((r) => {
+        // Only a NEWER detect invalidates this one.
+        if (seq !== detectSeq.current) return
+        const found = r.data.venue
+        // Read the search term now rather than at call time: the customer may
+        // have typed while the lookup was in flight.
+        const term = latestSearch.current
+        if (found && String(found.id) !== dismissedVenueRef.current) {
+          venueRef.current = found
+          setVenue(found)
+          loadRestaurants(1, position, term, { venue: found })
+        } else {
+          venueRef.current = null
+          setVenue(null)
+          loadRestaurants(1, position, term)
+        }
+      })
+      .catch(() => {
+        if (seq !== detectSeq.current) return
+        venueRef.current = null
+        loadRestaurants(1, position, latestSearch.current)
+      })
+  }
+
+  // "Not here?" — drop out of venue mode for the rest of the tab and fall back
+  // to the ordinary nearby list.
+  function dismissVenue() {
+    if (!venue) return
+    dismissedVenueRef.current = String(venue.id)
+    try { sessionStorage.setItem(VENUE_DISMISS_KEY, String(venue.id)) } catch {}
+    venueRef.current = null
+    setVenue(null)
+    loadRestaurants(1, coords, latestSearch.current)
+  }
+
   // Search-only mode with an empty search box: nothing to show.
   function clearResults() {
     requestSeq.current++
+    venueSearchSeq.current++
     setRestaurants([])
+    setVenueResults([])
     setPage(1)
     setTotalPages(1)
     setError("")
@@ -203,12 +263,14 @@ export default function HomePage() {
         try { sessionStorage.setItem(COORDS_CACHE_KEY, JSON.stringify({ ...next, ts: Date.now() })) } catch {}
         setCoords(next)
         setGeoStatus("granted")
-        loadRestaurants(1, next, latestSearch.current)
+        detectVenue(next)
       },
       (err) => {
         // Drop any earlier grant's distance-scoped results, then fall back to
         // search-only mode — re-running what the customer already typed.
         setCoords(null)
+        venueRef.current = null
+        setVenue(null)
         // PERMISSION_DENIED is the only one the browser won't re-ask for; a
         // failed fix or a timeout is worth another try, so they get a retry
         // banner instead of the "you blocked us" instructions.
@@ -227,7 +289,7 @@ export default function HomePage() {
       if (cachedCoords && Date.now() - cachedCoords.ts < COORDS_CACHE_TTL) {
         setCoords(cachedCoords)
         setGeoStatus("granted")
-        loadRestaurants(1, cachedCoords, "")
+        detectVenue(cachedCoords)
         return
       }
     } catch {}
@@ -267,6 +329,11 @@ export default function HomePage() {
   useEffect(() => {
     latestSearch.current = debouncedSearch
     if (skipNextSearchFetch.current) { skipNextSearchFetch.current = false; return }
+    // Places are searched in every mode — see loadVenueResults.
+    loadVenueResults(debouncedSearch, coords)
+    // In venue mode the box searches WITHIN the place — standing on a campus,
+    // "dosa" means a campus dosa. Leaving the venue is the "Not here?" button.
+    if (venueRef.current) { loadRestaurants(1, coords, debouncedSearch, { venue: venueRef.current }); return }
     if (coords) { loadRestaurants(1, coords, debouncedSearch); return }
     // A location fix is in progress — its callback runs the search either way.
     if (geoStatus === "locating") return
@@ -276,7 +343,7 @@ export default function HomePage() {
   }, [debouncedSearch])
 
   function handleLoadMore() {
-    loadRestaurants(page + 1, coords, debouncedSearch, { append: true })
+    loadRestaurants(page + 1, coords, debouncedSearch, { append: true, venue })
   }
 
   const hasLocation = geoStatus === "granted"
@@ -284,6 +351,7 @@ export default function HomePage() {
   // Location not shared (or not available) — the page becomes a search.
   const searchOnly = !hasLocation && !findingLocation
   const awaitingSearch = searchOnly && !debouncedSearch
+  const shownVenues = venueResults.filter((v) => !venue || v.id !== venue.id)
 
   return (
     <div className="page">
@@ -319,27 +387,49 @@ export default function HomePage() {
         )}
       </div>
 
-      <div className="home-hero">
-        {searchOnly ? (
-          <>
-            <h1>Search for a restaurant</h1>
-            <p className="home-location-status">
-              Type a restaurant name or cuisine below to see results.
-            </p>
-          </>
-        ) : (
-          <>
-            <h1>Restaurants near you</h1>
-            <p className="home-location-status">
-              {geoStatus === "checking" && "Just a moment…"}
-              {geoStatus === "locating" && "Finding your location…"}
-              {hasLocation && (debouncedSearch
-                ? "Matching restaurants everywhere — closest first"
-                : `Within ${radiusKm} km — closest first`)}
-            </p>
-          </>
-        )}
-      </div>
+      {/* Venue mode replaces the hero entirely — the place IS the context, so
+          repeating "Restaurants near you" above it would just be noise. */}
+      {venue ? (
+        <div className="venue-strip">
+          <Link to={`/at/${venue.slug}`} className="venue-strip-main">
+            {venue.logoUrl
+              ? <img className="venue-strip-logo" src={venue.logoUrl} alt="" />
+              : <span className="venue-strip-icon"><VenueIcon type={venue.type} size={17} /></span>}
+            <span className="venue-strip-text">
+              <span className="venue-strip-name">{venue.name}</span>
+              <span className="venue-strip-meta">
+                {VENUE_TYPE_LABEL[venue.type] || "Place"} · {venue.outletCount} {venue.outletCount === 1 ? "outlet" : "outlets"}
+              </span>
+            </span>
+            <ChevronRight size={16} className="venue-strip-chevron" />
+          </Link>
+          <button className="venue-strip-dismiss" onClick={dismissVenue}>
+            Not here? <X size={13} />
+          </button>
+        </div>
+      ) : (
+        <div className="home-hero">
+          {searchOnly ? (
+            <>
+              <h1>Search for a restaurant</h1>
+              <p className="home-location-status">
+                Type a restaurant name or cuisine below to see results.
+              </p>
+            </>
+          ) : (
+            <>
+              <h1>Restaurants near you</h1>
+              <p className="home-location-status">
+                {geoStatus === "checking" && "Just a moment…"}
+                {geoStatus === "locating" && "Finding your location…"}
+                {hasLocation && (debouncedSearch
+                  ? "Matching restaurants everywhere — closest first"
+                  : `Within ${radiusKm} km — closest first`)}
+              </p>
+            </>
+          )}
+        </div>
+      )}
 
       <div className="home-search-wrap">
         <div className="search-field">
@@ -347,7 +437,7 @@ export default function HomePage() {
           <input
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Search restaurants or cuisines…"
+            placeholder={venue ? `Search within ${venue.name}…` : "Search restaurants or cuisines…"}
             autoFocus={searchOnly}
           />
           {searchInput && (
@@ -402,6 +492,22 @@ export default function HomePage() {
 
       {!awaitingSearch && (
       <>
+      {/* Places matching the search, above the restaurants. The venue the
+          customer is already in is filtered out — offering "VIT University"
+          while standing in it is noise, and its outlets are the list below. */}
+      {shownVenues.length > 0 && (
+        <div className="venue-results">
+          <p className="venue-results-label">Places</p>
+          {shownVenues.map((v) => <VenueCard key={v.id} v={v} />)}
+        </div>
+      )}
+
+      {matchedOn === "address" && !loading && restaurants.length > 0 && (
+        <p className="home-match-note">
+          No restaurants named “{debouncedSearch}” — showing ones in that area instead.
+        </p>
+      )}
+
       <div className="rest-list">
         {loading || findingLocation ? (
           Array.from({ length: 4 }).map((_, i) => <SkeletonRestCard key={i} />)
@@ -412,9 +518,13 @@ export default function HomePage() {
           </div>
         ) : restaurants.length === 0 ? (
           <div className="home-empty">
-            <p>{debouncedSearch
-              ? `No restaurants matching "${debouncedSearch}".`
-              : `No restaurants within ${radiusKm} km of you yet — try searching by name or cuisine.`}</p>
+            <p>{venue
+              ? (debouncedSearch
+                ? `Nothing matching "${debouncedSearch}" at ${venue.name}.`
+                : `No outlets listed at ${venue.name} yet.`)
+              : (debouncedSearch
+                ? `No restaurants matching "${debouncedSearch}".`
+                : `No restaurants within ${radiusKm} km of you yet — try searching by name or cuisine.`)}</p>
           </div>
         ) : (
           restaurants.map((r) => <RestCard key={r.id} r={r} />)

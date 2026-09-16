@@ -362,3 +362,171 @@ tbody tr.row-inactive td:last-child { opacity: 1; }
 * { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.14) transparent; }
 *::-webkit-scrollbar { width: 9px; height: 9px; }
 *::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 999px; }
+
+/* Sidebar navigation (added with the Places tab — before that the sidebar held
+   only the logo and sign-out, so there was nothing to navigate between). */
+.sidebar-nav { display: flex; flex-direction: column; gap: 2px; padding: 0 12px; }
+.sidebar-nav-item {
+  text-align: left;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s, color 0.12s;
+}
+.sidebar-nav-item:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+.sidebar-nav-item-active { background: var(--card); color: var(--text); box-shadow: inset 2px 0 0 var(--brand); }
+
+/* Membership mode — the one venue setting that changes behaviour rather than
+   presentation, so it is pulled out of the plain form grid. */
+.mode-block {
+  margin-top: 20px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.mode-block-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 12px;
+}
+.mode-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.mode-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+.mode-option:hover { border-color: var(--muted); }
+.mode-option-active { border-color: var(--brand); background: rgba(249,115,22,0.07); }
+.mode-option input { margin-top: 3px; accent-color: var(--brand); flex-shrink: 0; }
+.mode-option span { display: flex; flex-direction: column; gap: 3px; }
+.mode-option strong { font-size: 13px; font-weight: 600; color: var(--text); }
+.mode-option small { font-size: 11.5px; color: var(--text-2); line-height: 1.45; }
+.field input:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Restaurant membership picker */
+.picker {
+  margin-top: 20px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+.picker-title { font-size: 13px; font-weight: 600; color: var(--text); display: inline-flex; align-items: center; gap: 8px; }
+.picker-count {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--brand);
+  background: rgba(249,115,22,0.12);
+  padding: 2px 8px;
+  border-radius: 99px;
+}
+/* Capped so a long restaurant list can't push the save button off screen. */
+.picker-list { max-height: 260px; overflow-y: auto; }
+.picker-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.picker-row:last-child { border-bottom: none; }
+.picker-row:hover { background: rgba(255,255,255,0.03); }
+.picker-row-checked { background: rgba(249,115,22,0.06); }
+.picker-row input { accent-color: var(--brand); flex-shrink: 0; }
+.picker-row-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.picker-row-name { font-size: 13px; color: var(--text); }
+.picker-row-meta { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.picker-empty { padding: 20px; text-align: center; color: var(--muted); font-size: 13px; }
+
+@media (max-width: 720px) {
+  .mode-options { grid-template-columns: 1fr; }
+}
+
+/* ── Venue analytics ──────────────────────────────────────────────────────── */
+
+.analytics-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.analytics-range { color: var(--text-2); font-size: 12px; }
+.analytics-range-prev { color: var(--muted); }
+
+/* A handful of headline numbers is a KPI row, not a chart. */
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.kpi-tile {
+  display: flex; flex-direction: column; gap: 5px;
+  padding: 16px 18px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.kpi-label {
+  font-size: 11px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+/* The figure is the point, so it gets the size. */
+.kpi-value { font-size: 26px; font-weight: 600; color: var(--text); line-height: 1.15; letter-spacing: -0.02em; }
+.kpi-foot { display: flex; align-items: center; gap: 8px; min-height: 18px; }
+.kpi-sub { font-size: 11.5px; color: var(--muted); }
+/* Deltas carry an arrow as well as a colour — never colour alone. */
+.kpi-delta { font-size: 12px; font-weight: 600; }
+.kpi-delta-up { color: #4ade80; }
+.kpi-delta-down { color: #f87171; }
+.kpi-delta-flat, .kpi-delta-none { color: var(--muted); font-weight: 500; }
+
+/* Proportional bar inside the outlet leaderboard. */
+.share-row { display: flex; align-items: center; gap: 10px; }
+.share-track {
+  flex: 1; height: 8px; min-width: 60px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 999px; overflow: hidden;
+}
+.share-fill { display: block; height: 100%; border-radius: 999px; }
+.share-pct { font-size: 12px; color: var(--text-2); min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+
+.spark { display: block; }
+
+/* Chart tooltip — matches the panel's own surfaces rather than recharts' default white. */
+.chart-tip {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.45);
+}
+.chart-tip-label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+.chart-tip-row { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text); }
+.chart-tip-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }

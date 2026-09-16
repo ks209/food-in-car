@@ -308,12 +308,6 @@ export default function MenuPage() {
                   {restaurant?.address}
                 </span>
               </div>
-              {restaurant?.fssaiLicense && (
-                <p style={{ fontSize: "0.72rem", color: "var(--muted)", marginTop: "0.35rem" }}>
-                  FSSAI Lic. No. {restaurant.fssaiLicense}
-                  {restaurant.gstin ? ` · GSTIN ${restaurant.gstin}` : ""}
-                </p>
-              )}
             </>
           )}
         </div>
@@ -499,7 +493,18 @@ export default function MenuPage() {
         </div>
       )}
 
-      <LegalLinks base={base} style={{ padding: "1.25rem 1rem", paddingBottom: itemCount > 0 ? "5.5rem" : "1.25rem" }} />
+      {/* Statutory identifiers live at the foot of the page, beside the policy
+          links — they're compliance text, not something a customer reads while
+          choosing food, and they crowded the hero. */}
+      {(restaurant?.fssaiLicense || restaurant?.gstin) && (
+        <p style={{ textAlign: "center", fontSize: "0.68rem", color: "var(--muted)", padding: "1.25rem 1rem 0", lineHeight: 1.6 }}>
+          {restaurant.fssaiLicense ? `FSSAI Lic. No. ${restaurant.fssaiLicense}` : ""}
+          {restaurant.fssaiLicense && restaurant.gstin ? " · " : ""}
+          {restaurant.gstin ? `GSTIN ${restaurant.gstin}` : ""}
+        </p>
+      )}
+
+      <LegalLinks base={base} style={{ padding: "0.75rem 1rem 1.25rem", paddingBottom: itemCount > 0 ? "5.5rem" : "1.25rem" }} />
 
       <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} restaurant={restaurant} restaurantId={restaurantId} />
 

@@ -29,7 +29,7 @@ export function WaiterManagement() {
       const res = await axios.get(`${API}/api/waiter`, { withCredentials: true })
       setWaiters(res.data)
     } catch {
-      toast.error("Failed to load waiters")
+      toast.error("Failed to load servers")
     } finally {
       setLoading(false)
     }
@@ -41,7 +41,7 @@ export function WaiterManagement() {
       const res = await axios.get(`${API}/api/waiter`, { params: { deleted: true }, withCredentials: true })
       setDeletedWaiters(res.data)
     } catch {
-      toast.error("Failed to load deleted waiters")
+      toast.error("Failed to load deleted servers")
     } finally {
       setDeletedLoading(false)
     }
@@ -54,11 +54,11 @@ export function WaiterManagement() {
     if (!name.trim()) return
     try {
       await axios.post(`${API}/api/waiter`, { name: name.trim(), phone: phone.trim() }, { withCredentials: true })
-      toast.success("Waiter added")
+      toast.success("Server added")
       setName(""); setPhone("")
       fetchWaiters()
     } catch {
-      toast.error("Failed to add waiter")
+      toast.error("Failed to add server")
     }
   }
 
@@ -67,7 +67,7 @@ export function WaiterManagement() {
       await axios.put(`${API}/api/waiter/${w.id}`, { isActive: !w.isActive }, { withCredentials: true })
       fetchWaiters()
     } catch {
-      toast.error("Failed to update waiter")
+      toast.error("Failed to update server")
     }
   }
 
@@ -75,21 +75,21 @@ export function WaiterManagement() {
     if (!window.confirm(`Delete ${w.name}? Their delivery history is kept, and you can restore them later.`)) return
     try {
       await axios.delete(`${API}/api/waiter/${w.id}`, { withCredentials: true })
-      toast.success("Waiter deleted")
+      toast.success("Server deleted")
       fetchWaiters()
     } catch {
-      toast.error("Failed to delete waiter")
+      toast.error("Failed to delete server")
     }
   }
 
   const restoreWaiter = async (w) => {
     try {
       await axios.post(`${API}/api/waiter/${w.id}/restore`, {}, { withCredentials: true })
-      toast.success("Waiter restored")
+      toast.success("Server restored")
       fetchDeletedWaiters()
       fetchWaiters()
     } catch {
-      toast.error("Failed to restore waiter")
+      toast.error("Failed to restore server")
     }
   }
 
@@ -114,19 +114,19 @@ export function WaiterManagement() {
 
   return (
     <div className="max-w-2xl space-y-5">
-      {/* Add waiter */}
+      {/* Add server */}
       <Card className="border-0 shadow-sm">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-2">
-            <UserPlus className="h-4 w-4" /> Add waiter
+            <UserPlus className="h-4 w-4" /> Add server
           </CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={createWaiter} className="flex flex-col sm:flex-row gap-2">
-            <Input placeholder="Waiter name" value={name} onChange={(e) => setName(e.target.value)} className="bg-white" />
+            <Input placeholder="Server name" value={name} onChange={(e) => setName(e.target.value)} className="bg-white" />
             <Input placeholder="Phone (optional)" value={phone} onChange={(e) => setPhone(e.target.value)} className="bg-white sm:max-w-[180px]" />
             <Button type="submit" className="brand-bg text-white">
-              <UserPlus className="h-4 w-4 mr-2" /> Add waiter
+              <UserPlus className="h-4 w-4 mr-2" /> Add server
             </Button>
           </form>
         </CardContent>
@@ -136,17 +136,17 @@ export function WaiterManagement() {
       <Card className="border-0 shadow-sm">
         <CardHeader className="pb-3 flex items-center justify-between">
           <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-2">
-            <Users className="h-4 w-4" /> Waiters
+            <Users className="h-4 w-4" /> Servers
           </CardTitle>
           <button onClick={openDeleted} className="text-xs text-slate-400 hover:text-slate-700 inline-flex items-center gap-1">
-            <History className="h-3.5 w-3.5" /> Deleted waiters
+            <History className="h-3.5 w-3.5" /> Deleted servers
           </button>
         </CardHeader>
         <CardContent className="p-0">
           {loading && waiters.length === 0 ? (
             <p className="text-slate-400 text-sm text-center py-10">Loading…</p>
           ) : waiters.length === 0 ? (
-            <p className="text-slate-400 text-sm text-center py-10">No waiters yet — add one above.</p>
+            <p className="text-slate-400 text-sm text-center py-10">No servers yet — add one above.</p>
           ) : (
             <div className="divide-y divide-slate-50">
               {waiters.map((w) => (
@@ -184,11 +184,11 @@ export function WaiterManagement() {
       {/* Deleted waiters — restore */}
       <Dialog open={deletedOpen} onOpenChange={setDeletedOpen}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Deleted waiters</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Deleted servers</DialogTitle></DialogHeader>
           {deletedLoading ? (
             <p className="text-sm text-slate-400 text-center py-6">Loading…</p>
           ) : deletedWaiters.length === 0 ? (
-            <p className="text-sm text-slate-400 text-center py-6">No deleted waiters.</p>
+            <p className="text-sm text-slate-400 text-center py-6">No deleted servers.</p>
           ) : (
             <div className="divide-y divide-slate-50 -mx-6">
               {deletedWaiters.map((w) => (
@@ -212,7 +212,7 @@ export function WaiterManagement() {
       {/* Scan link dialog */}
       <Dialog open={!!tokenInfo} onOpenChange={(o) => !o && setTokenInfo(null)}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Waiter app link · {tokenInfo?.waiter?.name}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Server app link · {tokenInfo?.waiter?.name}</DialogTitle></DialogHeader>
           {tokenInfo && (
             <div className="space-y-4 text-center">
               <p className="text-xs text-slate-500">

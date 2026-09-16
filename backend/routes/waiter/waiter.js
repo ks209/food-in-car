@@ -24,7 +24,7 @@ waiterRouter.get('/', restaurantAuth, async (req, res) => {
     });
     res.json(waiters.map(w => ({ ...w, deliveredCount: w._count.orders, _count: undefined })));
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch waiters', details: error.message });
+    res.status(500).json({ error: 'Failed to fetch servers', details: error.message });
   }
 });
 
@@ -38,7 +38,7 @@ waiterRouter.post('/', restaurantAuth, async (req, res) => {
     });
     res.status(201).json(waiter);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to create waiter', details: error.message });
+    res.status(500).json({ error: 'Failed to create server', details: error.message });
   }
 });
 
@@ -47,7 +47,7 @@ waiterRouter.put('/:id', restaurantAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const existing = await prisma.waiter.findFirst({ where: { id, restaurantId: req.restaurantId, deletedAt: null } });
-    if (!existing) return res.status(404).json({ error: 'Waiter not found' });
+    if (!existing) return res.status(404).json({ error: 'Server not found' });
 
     const { name, phone, isActive } = req.body;
     const waiter = await prisma.waiter.update({
@@ -60,7 +60,7 @@ waiterRouter.put('/:id', restaurantAuth, async (req, res) => {
     });
     res.json(waiter);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to update waiter', details: error.message });
+    res.status(500).json({ error: 'Failed to update server', details: error.message });
   }
 });
 
@@ -71,12 +71,12 @@ waiterRouter.delete('/:id', restaurantAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const existing = await prisma.waiter.findFirst({ where: { id, restaurantId: req.restaurantId, deletedAt: null } });
-    if (!existing) return res.status(404).json({ error: 'Waiter not found' });
+    if (!existing) return res.status(404).json({ error: 'Server not found' });
 
     await prisma.waiter.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } });
-    res.json({ message: 'Waiter deleted' });
+    res.json({ message: 'Server deleted' });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to delete waiter', details: error.message });
+    res.status(500).json({ error: 'Failed to delete server', details: error.message });
   }
 });
 
@@ -85,12 +85,12 @@ waiterRouter.post('/:id/restore', restaurantAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const existing = await prisma.waiter.findFirst({ where: { id, restaurantId: req.restaurantId, deletedAt: { not: null } } });
-    if (!existing) return res.status(404).json({ error: 'Deleted waiter not found' });
+    if (!existing) return res.status(404).json({ error: 'Deleted server not found' });
 
     const waiter = await prisma.waiter.update({ where: { id }, data: { deletedAt: null } });
     res.json(waiter);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to restore waiter', details: error.message });
+    res.status(500).json({ error: 'Failed to restore server', details: error.message });
   }
 });
 
@@ -99,8 +99,8 @@ waiterRouter.post('/:id/token', restaurantAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const waiter = await prisma.waiter.findFirst({ where: { id, restaurantId: req.restaurantId, deletedAt: null } });
-    if (!waiter) return res.status(404).json({ error: 'Waiter not found' });
-    if (!waiter.isActive) return res.status(400).json({ error: 'Waiter is inactive' });
+    if (!waiter) return res.status(404).json({ error: 'Server not found' });
+    if (!waiter.isActive) return res.status(400).json({ error: 'Server is inactive' });
 
     if (!DASHBOARD_URL) {
       return res.status(500).json({
@@ -116,12 +116,12 @@ waiterRouter.post('/:id/token', restaurantAuth, async (req, res) => {
   }
 });
 
-// Orders delivered by a specific waiter
+// Orders served by a specific server
 waiterRouter.get('/:id/orders', restaurantAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const waiter = await prisma.waiter.findFirst({ where: { id, restaurantId: req.restaurantId } });
-    if (!waiter) return res.status(404).json({ error: 'Waiter not found' });
+    if (!waiter) return res.status(404).json({ error: 'Server not found' });
 
     const orders = await prisma.order.findMany({
       where: { waiterId: id, restaurantId: req.restaurantId },
@@ -130,7 +130,7 @@ waiterRouter.get('/:id/orders', restaurantAuth, async (req, res) => {
     });
     res.json(orders);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch waiter orders', details: error.message });
+    res.status(500).json({ error: 'Failed to fetch server orders', details: error.message });
   }
 });
 

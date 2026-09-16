@@ -1,9 +1,15 @@
 // GST for restaurant orders (India).
 //
-// A restaurant charges GST only when it has a GSTIN and a rate above 0. Prices
-// on the menu either already include GST (it's split out on the bill) or
-// exclude it (it's added on top at checkout). For an intra-state sale the tax
-// is shown as CGST + SGST, half each.
+// A restaurant charges GST only when it has a GSTIN and a rate above 0.
+//
+// Menu prices ALWAYS include GST — the tax is split out for display on the
+// bill, never added on top at checkout, so the price a customer sees on the
+// menu is the price they pay. Restaurants used to be able to choose; the
+// exclusive option was removed, and `Restaurant.pricesIncludeGst` is now
+// vestigial (nothing reads it). `Order.pricesIncludeGst` stays, because it is a
+// snapshot of how an already-placed order was actually taxed.
+//
+// For an intra-state sale the tax is shown as CGST + SGST, half each.
 
 export const GST_RATES = [0, 5, 12, 18];
 
@@ -13,7 +19,9 @@ const FSSAI_RE = /^\d{14}$/;
 
 const round2 = (n) => Math.round(n * 100) / 100;
 
-export function validateTaxSettings({ gstin, gstRate, pricesIncludeGst, fssaiLicense }, existing = {}) {
+// `pricesIncludeGst` is deliberately NOT accepted — prices are always inclusive,
+// so a caller sending it is ignored rather than allowed to change anything.
+export function validateTaxSettings({ gstin, gstRate, fssaiLicense }, existing = {}) {
   const data = {};
 
   if (gstin !== undefined) {
@@ -26,7 +34,6 @@ export function validateTaxSettings({ gstin, gstRate, pricesIncludeGst, fssaiLic
     if (!GST_RATES.includes(rate)) return { ok: false, message: `GST rate must be one of ${GST_RATES.join(', ')}%` };
     data.gstRate = rate;
   }
-  if (pricesIncludeGst !== undefined) data.pricesIncludeGst = !!pricesIncludeGst;
   if (fssaiLicense !== undefined) {
     const v = (fssaiLicense || '').replace(/\s+/g, '');
     if (v && !FSSAI_RE.test(v)) return { ok: false, message: 'FSSAI licence number must be 14 digits' };
@@ -53,14 +60,16 @@ export function orderGst(restaurant, subtotal) {
     return { subtotalAmount: sub, gstRate: null, gstAmount: null, gstin: null, pricesIncludeGst: null, totalAmount: sub };
   }
   const rate = Number(restaurant.gstRate);
-  const inclusive = restaurant.pricesIncludeGst !== false;
-  const gstAmount = inclusive ? round2(sub - sub / (1 + rate / 100)) : round2((sub * rate) / 100);
+  // Inclusive: the menu price already contains the tax, so it is backed out for
+  // display rather than added. The customer pays exactly the menu subtotal —
+  // totalAmount === subtotalAmount by definition.
+  const gstAmount = round2(sub - sub / (1 + rate / 100));
   return {
     subtotalAmount: sub,
     gstRate: rate,
     gstAmount,
     gstin: restaurant.gstin,
-    pricesIncludeGst: inclusive,
-    totalAmount: inclusive ? sub : round2(sub + gstAmount),
+    pricesIncludeGst: true,
+    totalAmount: sub,
   };
 }

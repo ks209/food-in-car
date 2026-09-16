@@ -179,7 +179,7 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
                       <label>How would you like it?</label>
                       <div style={{ display:"flex", gap:"0.5rem" }}>
                         {[
-                          { key:"car", label:"Deliver in Car" },
+                          { key:"car", label:"Served in Car" },
                           { key:"pickup", label:"Pickup" },
                         ].map(opt => {
                           const active = orderType === opt.key

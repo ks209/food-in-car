@@ -293,7 +293,7 @@ function ReadyCard({ order, me, now, warnMin, critMin, busy, onClaim, onRelease,
 
       {takenByOther ? (
         <div className="flex items-center justify-between gap-2">
-          <p className="text-xs text-slate-500">Taken by <span className="font-semibold text-slate-700">{order.claimedBy?.name || "another waiter"}</span></p>
+          <p className="text-xs text-slate-500">Taken by <span className="font-semibold text-slate-700">{order.claimedBy?.name || "another server"}</span></p>
           <button onClick={() => onScan(order)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">
             <ScanLine className="h-4 w-4" /> Scan anyway
           </button>
@@ -457,7 +457,7 @@ function WaiterApp() {
       <div className="min-h-screen flex flex-col items-center justify-center gap-2 p-6 text-center bg-slate-50">
         <ScanLine className="h-10 w-10 text-slate-300" />
         <p className="font-semibold text-slate-800">Scan link not valid</p>
-        <p className="text-sm text-slate-600 max-w-xs">{fatal || "Missing or invalid scan link."} Ask the restaurant to share a new link from Waiters.</p>
+        <p className="text-sm text-slate-600 max-w-xs">{fatal || "Missing or invalid scan link."} Ask the restaurant to share a new link from Servers.</p>
       </div>
     )
   }
@@ -569,7 +569,7 @@ function WaiterApp() {
         ) : (
           <>
             <div className="rounded-xl bg-white border border-slate-200 p-3 flex items-center justify-between">
-              <span className="text-sm text-slate-600">Delivered by you today</span>
+              <span className="text-sm text-slate-600">Served by you today</span>
               <span className="text-lg font-bold text-slate-900">{delivered.length}</span>
             </div>
             {delivered.length === 0

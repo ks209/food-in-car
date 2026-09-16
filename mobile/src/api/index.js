@@ -17,6 +17,15 @@ export const restaurantApi = {
   nearby: (params) => api.get("/api/restaurant/nearby", { params }),
 }
 
+export const venueApi = {
+  // The place a customer at these coordinates is standing in, or { venue: null }.
+  detect: (params) => api.get("/api/venue/detect", { params }),
+  get: (slugOrId) => api.get(`/api/venue/${slugOrId}`),
+  // Same response shape as restaurantApi.nearby, so both feed RestCard directly.
+  restaurants: (slugOrId, params) => api.get(`/api/venue/${slugOrId}/restaurants`, { params }),
+  search: (params) => api.get("/api/venue", { params }),
+}
+
 export const cityApi = {
   all: () => api.get("/api/city"),
 }

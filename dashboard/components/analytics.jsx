@@ -277,9 +277,9 @@ export function Analytics() {
 
               {waiters.length > 0 && (
                 <Select value={waiterId} onValueChange={setWaiterId}>
-                  <SelectTrigger className="h-7 text-xs w-[100px] bg-white"><SelectValue placeholder="Waiter" /></SelectTrigger>
+                  <SelectTrigger className="h-7 text-xs w-[100px] bg-white"><SelectValue placeholder="Server" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All waiters</SelectItem>
+                    <SelectItem value="all">All servers</SelectItem>
                     {waiters.map((w) => <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>)}
                   </SelectContent>
                 </Select>

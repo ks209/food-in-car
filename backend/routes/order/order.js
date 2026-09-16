@@ -301,7 +301,7 @@ orderRouter.post('/pos', restaurantAuth, async (req, res) => {
     // consistent even if a queued offline bill was rung up with older settings.
     const taxSettings = await prisma.restaurant.findUnique({
       where: { id: req.restaurantId },
-      select: { gstin: true, gstRate: true, pricesIncludeGst: true },
+      select: { gstin: true, gstRate: true },
     });
     const subtotal = items.reduce((s, i) => s + (Number(i.price) || 0) * (i.quantity || 1), 0);
     const tax = orderGst(taxSettings, subtotal);

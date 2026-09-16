@@ -24,6 +24,16 @@ const RESERVED_SLUGS = new Set([
   'cart', 'checkout', 'payment', 'assets', 'static', 'public', 'health', 'support',
   'settings', 'about', 'menu', 'category', 'user', 'waiter', 'city', 'config',
   'legal', 'privacy', 'terms', 'refunds', 'parking',
+  // Venues live under /at/<slug>, so the two slug namespaces never collide —
+  // but /at itself has to be off-limits to restaurants.
+  'at', 'venue', 'venues', 'place', 'places',
+]);
+
+// The venue namespace is separate: a venue is only ever served under /at/, so
+// it only has to dodge the sibling segments of GET /api/venue/* that are
+// matched before that router's :idOrSlug route.
+export const VENUE_RESERVED_SLUGS = new Set([
+  'all', 'detect', 'search', 'create', 'update', 'activate', 'delete', 'analytics', 'overview',
 ]);
 
 export function slugify(text) {
@@ -41,7 +51,7 @@ export function slugify(text) {
 
 // Returns { ok: true, slug } or { ok: false, message }. `null` is a valid value
 // — it means "no vanity URL", and the restaurant stays reachable on /restaurant/<id>.
-export function validateSlug(input) {
+export function validateSlug(input, reserved = RESERVED_SLUGS) {
   if (input === null || input === undefined || String(input).trim() === '') {
     return { ok: true, slug: null };
   }
@@ -55,7 +65,7 @@ export function validateSlug(input) {
   if (/^\d+$/.test(slug)) {
     return { ok: false, message: 'A web address cannot be only numbers — add a word, e.g. cafe-24' };
   }
-  if (RESERVED_SLUGS.has(slug)) {
+  if (reserved.has(slug)) {
     return { ok: false, message: `"${slug}" is reserved — please choose another web address` };
   }
   return { ok: true, slug };
@@ -64,21 +74,21 @@ export function validateSlug(input) {
 // First free slug at or after `base`, ignoring the row being updated. Used for
 // slugs the system derives itself (on create); a slug the user typed is
 // reported back as taken instead of being silently renamed.
-export async function uniqueSlug(base, excludeId = null) {
+export async function uniqueSlug(base, excludeId = null, delegate = prisma.restaurant) {
   let candidate = base;
   let n = 1;
   // Bounded only by the number of restaurants sharing a name, which is tiny.
   for (;;) {
-    const existing = await prisma.restaurant.findUnique({ where: { slug: candidate }, select: { id: true } });
+    const existing = await delegate.findUnique({ where: { slug: candidate }, select: { id: true } });
     if (!existing || existing.id === excludeId) return candidate;
     n += 1;
     candidate = `${base}-${n}`;
   }
 }
 
-export async function isSlugTaken(slug, excludeId = null) {
+export async function isSlugTaken(slug, excludeId = null, delegate = prisma.restaurant) {
   if (!slug) return false;
-  const existing = await prisma.restaurant.findUnique({ where: { slug }, select: { id: true } });
+  const existing = await delegate.findUnique({ where: { slug }, select: { id: true } });
   return !!existing && existing.id !== excludeId;
 }
 
@@ -109,4 +119,28 @@ export function orderingUrlFor(restaurant, frontendUrl) {
   return restaurant.slug
     ? `${frontendUrl}/${restaurant.slug}`
     : `${frontendUrl}/restaurant/${restaurant.id}`;
+}
+
+// Venue equivalent of resolveRestaurantId — the public /api/venue routes accept
+// the numeric id or the slug in the same path segment, and the ordering app's
+// /at/<slug> resolves through here.
+export async function resolveVenueId(param) {
+  if (param === undefined || param === null) return null;
+  const raw = String(param).trim();
+
+  if (/^\d+$/.test(raw)) {
+    const id = Number(raw);
+    return Number.isSafeInteger(id) && id > 0 ? id : null;
+  }
+
+  const slug = slugify(raw);
+  if (!slug) return null;
+  const row = await prisma.venue.findUnique({ where: { slug }, select: { id: true } });
+  return row?.id ?? null;
+}
+
+// The customer-facing URL for a venue. Always the vanity form — Venue.slug is
+// non-nullable, unlike a restaurant's.
+export function venueUrlFor(venue, frontendUrl) {
+  return `${frontendUrl}/at/${venue.slug}`;
 }

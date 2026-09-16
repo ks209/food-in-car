@@ -31,7 +31,7 @@ const apiError = (err, fallback) => {
   return message ? `Error: ${message}` : fallback;
 };
 
-const Admin = ({ onLogout }) => {
+const Admin = () => {
   const [restaurants, setRestaurants] = useState([]);
   const [cities, setCities] = useState([]);
   const [form, setForm] = useState(emptyForm);
@@ -147,226 +147,209 @@ const Admin = ({ onLogout }) => {
       r.domain.toLowerCase().includes(q));
 
   return (
-    <div className="app-shell">
-      {/* Sidebar */}
-      <div className="sidebar">
-        <div>
-          <div className="sidebar-logo">
-            <img src="/carkhanaalogo.png" alt="Carkhanaa" style={{ width: 32, height: 32, borderRadius: 8, objectFit: 'cover' }} />
-            <span>Carkhanaa</span>
-          </div>
-          <div className="sidebar-label">Admin Portal</div>
-        </div>
-        <button className="btn btn-outline btn-sm sidebar-logout" onClick={onLogout}>
-          Sign Out
-        </button>
+    <>
+      {/* Page header */}
+      <div className="page-header">
+        <h1>Restaurants</h1>
+        <p>Create and manage restaurant accounts</p>
       </div>
 
-      {/* Main */}
-      <div className="main">
-        {/* Page header */}
-        <div className="page-header">
-          <h1>Restaurants</h1>
-          <p>Create and manage restaurant accounts</p>
+      {msg && (
+        <div className="anim-fade-up" style={{
+          padding: '10px 14px', borderRadius: 8, marginBottom: 20, fontSize: 13,
+          background: msg.includes('Error') || msg.includes('Failed') ? 'rgba(248,113,113,0.14)' : 'rgba(52,211,153,0.14)',
+          color: msg.includes('Error') || msg.includes('Failed') ? '#f87171' : '#4ade80',
+          border: `1px solid ${msg.includes('Error') || msg.includes('Failed') ? 'rgba(248,113,113,0.3)' : 'rgba(52,211,153,0.3)'}`,
+        }}>
+          {msg}
         </div>
+      )}
 
-        {msg && (
-          <div className="anim-fade-up" style={{
-            padding: '10px 14px', borderRadius: 8, marginBottom: 20, fontSize: 13,
-            background: msg.includes('Error') || msg.includes('Failed') ? 'rgba(248,113,113,0.14)' : 'rgba(52,211,153,0.14)',
-            color: msg.includes('Error') || msg.includes('Failed') ? '#f87171' : '#4ade80',
-            border: `1px solid ${msg.includes('Error') || msg.includes('Failed') ? 'rgba(248,113,113,0.3)' : 'rgba(52,211,153,0.3)'}`,
-          }}>
-            {msg}
-          </div>
-        )}
-
-        {/* Form card */}
-        <div className="card" style={{ marginBottom: 24 }}>
-          <div className="card-header">
-            <span className="card-title">{editingId ? 'Edit Restaurant' : 'New Restaurant'}</span>
-            {editingId && (
-              <button className="btn btn-outline btn-sm" onClick={cancelEdit}>Cancel</button>
-            )}
-          </div>
-          <div className="card-body">
-            <div className="form-grid">
-              <div className="field">
-                <label>Display Name</label>
-                <input name="name" value={form.name} onChange={handleChange} placeholder="Spice Garden" />
-              </div>
-              <div className="field">
-                <label>Username *</label>
-                <input name="username" value={form.username} onChange={handleChange} placeholder="spicegarden" />
-              </div>
-              <div className="field">
-                <label>{editingId ? 'New password (leave blank to keep)' : 'Password *'}</label>
-                <input name="password" type="password" value={form.password} onChange={handleChange} placeholder="••••••••" />
-              </div>
-              <div className="field">
-                <label>Web address</label>
-                <input name="slug" value={form.slug} onChange={handleChange} placeholder="spice-garden" />
-                <small style={{ color: '#94a3b8' }}>
-                  Public ordering URL (/spice-garden). Leave blank on create to derive one from the name.
-                </small>
-              </div>
-              <div className="field">
-                <label>Domain *</label>
-                <input name="domain" value={form.domain} onChange={handleChange} placeholder="spicegarden.food" />
-              </div>
-              <div className="field" style={{ gridColumn: 'span 2' }}>
-                <label>Address *</label>
-                <input name="address" value={form.address} onChange={handleChange} placeholder="12 Curry Lane, Mumbai" />
-              </div>
-              <div className="field">
-                <label>Phone</label>
-                <input name="phone" value={form.phone} onChange={handleChange} placeholder="+91 98200 11111" />
-              </div>
-              <div className="field">
-                <label>Payment Gateway</label>
-                <select name="paymentGateway" value={form.paymentGateway} onChange={handleChange}>
-                  <option value="">Select gateway…</option>
-                  {GATEWAYS.map((g) => <option key={g} value={g}>{g}</option>)}
-                </select>
-              </div>
-              <div className="field">
-                <label>Theme Color</label>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <input name="themeColor" type="color" value={form.themeColor} onChange={handleChange} style={{ width: 40 }} />
-                  <input name="themeColor" value={form.themeColor} onChange={handleChange} placeholder="#f97316" style={{ flex: 1 }} />
-                </div>
-              </div>
-              <div className="field">
-                <label>Logo URL</label>
-                <input name="logoUrl" value={form.logoUrl} onChange={handleChange} placeholder="https://…" />
-              </div>
-              <div className="field">
-                <label>Latitude</label>
-                <input name="latitude" type="number" step="any" min="-90" max="90" value={form.latitude} onChange={handleChange} placeholder="19.0760" />
-              </div>
-              <div className="field">
-                <label>Longitude</label>
-                <input name="longitude" type="number" step="any" min="-180" max="180" value={form.longitude} onChange={handleChange} placeholder="72.8777" />
-              </div>
-              <div className="field">
-                <label>City</label>
-                <select name="cityId" value={form.cityId} onChange={handleChange}>
-                  <option value="">No city set</option>
-                  {cities.map((c) => <option key={c.id} value={c.id}>{c.name}{c.state ? `, ${c.state}` : ''}</option>)}
-                </select>
+      {/* Form card */}
+      <div className="card" style={{ marginBottom: 24 }}>
+        <div className="card-header">
+          <span className="card-title">{editingId ? 'Edit Restaurant' : 'New Restaurant'}</span>
+          {editingId && (
+            <button className="btn btn-outline btn-sm" onClick={cancelEdit}>Cancel</button>
+          )}
+        </div>
+        <div className="card-body">
+          <div className="form-grid">
+            <div className="field">
+              <label>Display Name</label>
+              <input name="name" value={form.name} onChange={handleChange} placeholder="Spice Garden" />
+            </div>
+            <div className="field">
+              <label>Username *</label>
+              <input name="username" value={form.username} onChange={handleChange} placeholder="spicegarden" />
+            </div>
+            <div className="field">
+              <label>{editingId ? 'New password (leave blank to keep)' : 'Password *'}</label>
+              <input name="password" type="password" value={form.password} onChange={handleChange} placeholder="••••••••" />
+            </div>
+            <div className="field">
+              <label>Web address</label>
+              <input name="slug" value={form.slug} onChange={handleChange} placeholder="spice-garden" />
+              <small style={{ color: '#94a3b8' }}>
+                Public ordering URL (/spice-garden). Leave blank on create to derive one from the name.
+              </small>
+            </div>
+            <div className="field">
+              <label>Domain *</label>
+              <input name="domain" value={form.domain} onChange={handleChange} placeholder="spicegarden.food" />
+            </div>
+            <div className="field" style={{ gridColumn: 'span 2' }}>
+              <label>Address *</label>
+              <input name="address" value={form.address} onChange={handleChange} placeholder="12 Curry Lane, Mumbai" />
+            </div>
+            <div className="field">
+              <label>Phone</label>
+              <input name="phone" value={form.phone} onChange={handleChange} placeholder="+91 98200 11111" />
+            </div>
+            <div className="field">
+              <label>Payment Gateway</label>
+              <select name="paymentGateway" value={form.paymentGateway} onChange={handleChange}>
+                <option value="">Select gateway…</option>
+                {GATEWAYS.map((g) => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label>Theme Color</label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input name="themeColor" type="color" value={form.themeColor} onChange={handleChange} style={{ width: 40 }} />
+                <input name="themeColor" value={form.themeColor} onChange={handleChange} placeholder="#f97316" style={{ flex: 1 }} />
               </div>
             </div>
-            <p style={{ fontSize: 12, color: '#94a3b8', marginTop: 8 }}>
-              Latitude/longitude power the mobile app's "nearby restaurants" homepage — leave blank to exclude this restaurant from that list until set.
-              City is the fallback shown when a customer's location isn't available.
-            </p>
-            <div style={{ marginTop: 16 }}>
+            <div className="field">
+              <label>Logo URL</label>
+              <input name="logoUrl" value={form.logoUrl} onChange={handleChange} placeholder="https://…" />
+            </div>
+            <div className="field">
+              <label>Latitude</label>
+              <input name="latitude" type="number" step="any" min="-90" max="90" value={form.latitude} onChange={handleChange} placeholder="19.0760" />
+            </div>
+            <div className="field">
+              <label>Longitude</label>
+              <input name="longitude" type="number" step="any" min="-180" max="180" value={form.longitude} onChange={handleChange} placeholder="72.8777" />
+            </div>
+            <div className="field">
+              <label>City</label>
+              <select name="cityId" value={form.cityId} onChange={handleChange}>
+                <option value="">No city set</option>
+                {cities.map((c) => <option key={c.id} value={c.id}>{c.name}{c.state ? `, ${c.state}` : ''}</option>)}
+              </select>
+            </div>
+          </div>
+          <p style={{ fontSize: 12, color: '#94a3b8', marginTop: 8 }}>
+            Latitude/longitude power the mobile app's "nearby restaurants" homepage — leave blank to exclude this restaurant from that list until set.
+            City is the fallback shown when a customer's location isn't available.
+          </p>
+          <div style={{ marginTop: 16 }}>
+            <button
+              className="btn btn-primary"
+              onClick={editingId ? handleUpdate : handleCreate}
+              disabled={loading}
+            >
+              {loading ? '…' : editingId ? 'Save Changes' : 'Create Restaurant'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Table card */}
+      <div className="card">
+        <div className="card-header" style={{ paddingBottom: 16, gap: 12, flexWrap: 'wrap' }}>
+          <span className="card-title">Restaurants ({filtered.length})</span>
+          <div className="filter-tabs">
+            {STATUS_FILTERS.map((f) => (
               <button
-                className="btn btn-primary"
-                onClick={editingId ? handleUpdate : handleCreate}
-                disabled={loading}
+                key={f.key}
+                className={`filter-tab ${statusFilter === f.key ? 'filter-tab-active' : ''}`}
+                onClick={() => setStatusFilter(f.key)}
               >
-                {loading ? '…' : editingId ? 'Save Changes' : 'Create Restaurant'}
+                {f.label} <span className="filter-tab-count">{counts[f.key]}</span>
               </button>
-            </div>
+            ))}
           </div>
+          <input
+            className="search-input"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search name, username or domain…"
+          />
         </div>
-
-        {/* Table card */}
-        <div className="card">
-          <div className="card-header" style={{ paddingBottom: 16, gap: 12, flexWrap: 'wrap' }}>
-            <span className="card-title">Restaurants ({filtered.length})</span>
-            <div className="filter-tabs">
-              {STATUS_FILTERS.map((f) => (
-                <button
-                  key={f.key}
-                  className={`filter-tab ${statusFilter === f.key ? 'filter-tab-active' : ''}`}
-                  onClick={() => setStatusFilter(f.key)}
-                >
-                  {f.label} <span className="filter-tab-count">{counts[f.key]}</span>
-                </button>
-              ))}
-            </div>
-            <input
-              className="search-input"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search name, username or domain…"
-            />
-          </div>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Name</th>
-                  <th>Username</th>
-                  <th>Web address</th>
-                  <th>Domain</th>
-                  <th>Phone</th>
-                  <th>Gateway</th>
-                  <th>Theme</th>
-                  <th>Parking spots</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.length === 0 ? (
-                  <tr><td colSpan="11" style={{ textAlign: 'center', color: '#94a3b8', padding: '24px 0' }}>No restaurants found</td></tr>
-                ) : (
-                  filtered.map((r) => (
-                    <tr key={r.id} className={r.isActive ? '' : 'row-inactive'}>
-                      <td style={{ color: '#94a3b8', fontFamily: 'monospace' }}>{r.id}</td>
-                      <td style={{ fontWeight: 500 }}>{r.name || '—'}</td>
-                      <td>{r.username}</td>
-                      <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{r.slug ? `/${r.slug}` : '—'}</td>
-                      <td>{r.domain}</td>
-                      <td style={{ whiteSpace: 'nowrap' }}>{r.phone || '—'}</td>
-                      <td>{r.paymentGateway || '—'}</td>
-                      <td>
-                        <div className="color-dot">
-                          <span className="color-dot-circle" style={{ backgroundColor: r.themeColor || '#f97316' }} />
-                          <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{r.themeColor || '#f97316'}</span>
-                        </div>
-                      </td>
-                      {/* Read-only — spots are managed by the restaurant in its dashboard. */}
-                      <td style={{ minWidth: 160 }}>
-                        {r.parkingSpots?.length ? (
-                          <>
-                            <div style={{ fontSize: 12 }}>{r.parkingSpots.map((s) => s.name).join(', ')}</div>
-                            <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
-                              {r.parkingSpotRequired ? 'Required at checkout' : 'Optional at checkout'}
-                            </div>
-                          </>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Username</th>
+                <th>Web address</th>
+                <th>Domain</th>
+                <th>Phone</th>
+                <th>Gateway</th>
+                <th>Theme</th>
+                <th>Parking spots</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr><td colSpan="11" style={{ textAlign: 'center', color: '#94a3b8', padding: '24px 0' }}>No restaurants found</td></tr>
+              ) : (
+                filtered.map((r) => (
+                  <tr key={r.id} className={r.isActive ? '' : 'row-inactive'}>
+                    <td style={{ color: '#94a3b8', fontFamily: 'monospace' }}>{r.id}</td>
+                    <td style={{ fontWeight: 500 }}>{r.name || '—'}</td>
+                    <td>{r.username}</td>
+                    <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{r.slug ? `/${r.slug}` : '—'}</td>
+                    <td>{r.domain}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{r.phone || '—'}</td>
+                    <td>{r.paymentGateway || '—'}</td>
+                    <td>
+                      <div className="color-dot">
+                        <span className="color-dot-circle" style={{ backgroundColor: r.themeColor || '#f97316' }} />
+                        <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{r.themeColor || '#f97316'}</span>
+                      </div>
+                    </td>
+                    {/* Read-only — spots are managed by the restaurant in its dashboard. */}
+                    <td style={{ minWidth: 160 }}>
+                      {r.parkingSpots?.length ? (
+                        <>
+                          <div style={{ fontSize: 12 }}>{r.parkingSpots.map((s) => s.name).join(', ')}</div>
+                          <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+                            {r.parkingSpotRequired ? 'Required at checkout' : 'Optional at checkout'}
+                          </div>
+                        </>
+                      ) : (
+                        <span style={{ color: '#94a3b8' }}>None</span>
+                      )}
+                    </td>
+                    <td>
+                      <span className={`badge ${r.isActive ? 'badge-active' : 'badge-inactive'}`}>
+                        {r.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td>
+                      <div className="action-row">
+                        <button className="btn btn-outline btn-sm" onClick={() => handleEdit(r)}>Edit</button>
+                        {r.isActive ? (
+                          <button className="btn btn-danger btn-sm" onClick={() => handleDeactivate(r.id)}>Deactivate</button>
                         ) : (
-                          <span style={{ color: '#94a3b8' }}>None</span>
+                          <button className="btn btn-outline btn-sm" onClick={() => handleActivate(r.id)}>Reactivate</button>
                         )}
-                      </td>
-                      <td>
-                        <span className={`badge ${r.isActive ? 'badge-active' : 'badge-inactive'}`}>
-                          {r.isActive ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td>
-                        <div className="action-row">
-                          <button className="btn btn-outline btn-sm" onClick={() => handleEdit(r)}>Edit</button>
-                          {r.isActive ? (
-                            <button className="btn btn-danger btn-sm" onClick={() => handleDeactivate(r.id)}>Deactivate</button>
-                          ) : (
-                            <button className="btn btn-outline btn-sm" onClick={() => handleActivate(r.id)}>Reactivate</button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
-    </div>
+    </>
   );
 };
 
