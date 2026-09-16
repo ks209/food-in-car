@@ -9,6 +9,7 @@ import { validateAndPriceCart } from '../../utils/validateCart.js';
 import { isDevMode, baseUrl, xVerifyForPay, reconcileTransaction } from '../../utils/phonepe.js';
 import { resolveOrderParkingSpot } from '../parking/parking.js';
 import { customerOpenState } from '../../utils/businessHours.js';
+import { orderGst } from '../../utils/gst.js';
 
 const paymentRouter = express.Router();
 
@@ -34,7 +35,7 @@ const BACKEND_URL  = absoluteUrl('BACKEND_URL',  'http://localhost:5000');
 // `status` is PENDING for the real gateway flow (nothing is owed to the kitchen
 // until PhonePe confirms) but PAID in dev mode, where there is no gateway to
 // wait on and the order is final the moment it's created.
-async function createOrder(restaurantId, { pricedItems, totalAmount, deliveryInstructions, guestName, vehicle, parkingSpot, mobileNumber, deviceKey, status = 'PENDING' }) {
+async function createOrder(restaurantId, { pricedItems, tax, deliveryInstructions, guestName, vehicle, parkingSpot, mobileNumber, deviceKey, status = 'PENDING' }) {
   const customer = await resolveCustomerByPhone(mobileNumber, guestName, vehicle);
   const dailyOrderNumber = await nextDailyOrderNumber(parseInt(restaurantId));
   return prisma.order.create({
@@ -45,7 +46,13 @@ async function createOrder(restaurantId, { pricedItems, totalAmount, deliveryIns
       guestName,
       guestVehicle: vehicle,
       parkingSpot,
-      totalAmount,
+      // GST snapshot + the amount actually charged (see utils/gst.js)
+      subtotalAmount: tax.subtotalAmount,
+      gstRate: tax.gstRate,
+      gstAmount: tax.gstAmount,
+      gstin: tax.gstin,
+      pricesIncludeGst: tax.pricesIncludeGst,
+      totalAmount: tax.totalAmount,
       deliveryCode: genDeliveryCode(),
       deviceKey: deviceKey || null,
       deliveryInstructions: deliveryInstructions || '',
@@ -91,6 +98,11 @@ paymentRouter.post('/initiate', async (req, res) => {
     const parking = await resolveOrderParkingSpot(restaurant.id, { isDelivery: !!vehicle, parkingSpotId });
     if (!parking.ok) return res.status(400).json({ error: parking.error });
 
+    // GST on the server-priced subtotal: added on top when menu prices exclude
+    // it, split out of the price when they include it. tax.totalAmount is
+    // what PhonePe charges.
+    const tax = orderGst(restaurant, priced.totalAmount);
+
     // No PhonePe credentials configured for THIS restaurant — skip the gateway
     // (matches the old global dev-mode fallback, just scoped per-tenant now).
     //
@@ -104,7 +116,7 @@ paymentRouter.post('/initiate', async (req, res) => {
     const devMode = isDevMode(restaurant);
 
     const order = await createOrder(restaurantId, {
-      pricedItems: priced.items, totalAmount: priced.totalAmount,
+      pricedItems: priced.items, tax,
       deliveryInstructions, guestName, vehicle, parkingSpot: parking.name, mobileNumber, deviceKey,
       status: devMode ? 'PAID' : 'PENDING',
     });
@@ -115,7 +127,7 @@ paymentRouter.post('/initiate', async (req, res) => {
     }
 
     const merchantTransactionId = `MT${Date.now()}O${order.id}`;
-    const amountPaise = Math.round(priced.totalAmount * 100);
+    const amountPaise = Math.round(tax.totalAmount * 100);
 
     const payload = {
       merchantId: restaurant.phonepeMerchantId,

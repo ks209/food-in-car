@@ -8,6 +8,7 @@ import { genDeliveryCode } from '../../utils/deliveryCode.js';
 import { resolveCustomerByPhone } from '../../utils/customer.js';
 import { nextDailyOrderNumber } from '../../utils/dailyOrderNumber.js';
 import { orderEta } from '../../utils/waitEstimate.js';
+import { orderGst } from '../../utils/gst.js';
 
 const orderRouter = express.Router();
 
@@ -15,7 +16,7 @@ const ORDER_INCLUDE = {
   user: { select: { id: true, customerName: true, phoneNumber: true, vehicles: { select: { vehicleNo: true } } } },
   waiter: { select: { id: true, name: true } },
   claimedBy: { select: { id: true, name: true } },
-  restaurant: { select: { id: true, name: true, phone: true, address: true } },
+  restaurant: { select: { id: true, name: true, phone: true, address: true, fssaiLicense: true } },
   orderItems: { include: { options: true }, orderBy: { id: 'asc' } },
   orderStatusHistory: { orderBy: { updatedAt: 'desc' } },
 };
@@ -295,6 +296,16 @@ orderRouter.post('/pos', restaurantAuth, async (req, res) => {
 
     const dailyOrderNumber = await nextDailyOrderNumber(req.restaurantId);
 
+    // GST computed here from the bill's items and the restaurant's current tax
+    // settings (the POS screen shows the same breakdown), so the stored bill is
+    // consistent even if a queued offline bill was rung up with older settings.
+    const taxSettings = await prisma.restaurant.findUnique({
+      where: { id: req.restaurantId },
+      select: { gstin: true, gstRate: true, pricesIncludeGst: true },
+    });
+    const subtotal = items.reduce((s, i) => s + (Number(i.price) || 0) * (i.quantity || 1), 0);
+    const tax = orderGst(taxSettings, subtotal);
+
     const order = await prisma.order.create({
       data: {
         restaurantId: req.restaurantId,
@@ -303,7 +314,12 @@ orderRouter.post('/pos', restaurantAuth, async (req, res) => {
         idempotencyKey,
         guestName: (guestName || '').trim() || 'Walk-in Customer',
         guestVehicle: vehicle,
-        totalAmount: parseFloat(totalAmount),
+        subtotalAmount: tax.subtotalAmount,
+        gstRate: tax.gstRate,
+        gstAmount: tax.gstAmount,
+        gstin: tax.gstin,
+        pricesIncludeGst: tax.pricesIncludeGst,
+        totalAmount: tax.totalAmount,
         deliveryCode: genDeliveryCode(),
         deliveryInstructions: '',
         status: 'COMPLETED',

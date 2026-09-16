@@ -26,12 +26,24 @@ function Row({ label, value }) {
   )
 }
 
+// Tax lines need paise, not the whole-rupee formatCurrency used elsewhere.
+const money = (n) => `₹${Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+// SAC for restaurant services, required on a GST invoice.
+const RESTAURANT_SAC = "996331"
+
 function InvoiceBody({ order, className }) {
   const customer = order.user?.customerName || order.guestName || "Guest"
   const vehicle = order.guestVehicle
   const phone = order.user?.phoneNumber
   const r = order.restaurant || {}
   const paymentLabel = PAYMENT_METHOD_LABELS[order.paymentMethod] || "Cash on Delivery"
+  // GST as it was applied when the order was placed (snapshot on the order),
+  // so later changes to tax settings don't rewrite old bills.
+  const hasGst = !!order.gstin && order.gstAmount != null && order.gstRate > 0
+  const taxable = hasGst ? order.totalAmount - order.gstAmount : null
+  const halfRate = hasGst ? order.gstRate / 2 : null
+  const halfTax = hasGst ? Math.round((order.gstAmount / 2) * 100) / 100 : null
 
   return (
     <div
@@ -40,9 +52,12 @@ function InvoiceBody({ order, className }) {
     >
       {/* Header */}
       <div style={{ textAlign: "center", borderBottom: `1px dashed ${DIVIDER}`, paddingBottom: 12, marginBottom: 12 }}>
+        {hasGst && <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: MUTED, marginBottom: 4 }}>TAX INVOICE</p>}
         <p style={{ fontSize: 17, fontWeight: 700, color: INK }}>{r.name || "Restaurant"}</p>
         {r.address && <p style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>{r.address}</p>}
         {r.phone && <p style={{ fontSize: 11, color: MUTED }}>{r.phone}</p>}
+        {hasGst && <p style={{ fontSize: 11, color: INK, marginTop: 4 }}>GSTIN: {order.gstin}</p>}
+        {r.fssaiLicense && <p style={{ fontSize: 11, color: INK }}>FSSAI Lic. No: {r.fssaiLicense}</p>}
       </div>
 
       {/* Meta */}
@@ -82,13 +97,29 @@ function InvoiceBody({ order, className }) {
           ))}
         </div>
 
+        {hasGst && (
+          <div style={{ borderTop: `1px dashed ${DIVIDER}`, marginTop: 12, paddingTop: 10, display: "flex", flexDirection: "column", gap: 3, fontSize: 12 }}>
+            {/* With GST added on top, the item total and the taxable value are
+                the same number — only worth a line when prices include GST. */}
+            {order.pricesIncludeGst && <Row label="Item total" value={money(order.subtotalAmount ?? order.totalAmount)} />}
+            <Row label={`Taxable value (SAC ${RESTAURANT_SAC})`} value={money(taxable)} />
+            <Row label={`CGST @ ${halfRate}%`} value={money(halfTax)} />
+            <Row label={`SGST @ ${halfRate}%`} value={money(order.gstAmount - halfTax)} />
+          </div>
+        )}
+
         <div style={{
           borderTop: `1px dashed ${DIVIDER}`, marginTop: 12, paddingTop: 10,
           display: "flex", justifyContent: "space-between", alignItems: "baseline",
         }}>
           <span style={{ fontWeight: 700, fontSize: 14, color: INK }}>Total</span>
-          <span style={{ fontWeight: 700, fontSize: 16, color: INK }}>{formatCurrency(order.totalAmount)}</span>
+          <span style={{ fontWeight: 700, fontSize: 16, color: INK }}>{hasGst ? money(order.totalAmount) : formatCurrency(order.totalAmount)}</span>
         </div>
+        {hasGst && (
+          <p style={{ fontSize: 10, color: MUTED, marginTop: 4, textAlign: "right" }}>
+            {order.pricesIncludeGst ? "Prices inclusive of GST" : "GST added to menu prices"}
+          </p>
+        )}
       </div>
 
       <p style={{ textAlign: "center", fontSize: 10, color: MUTED, marginTop: 16 }}>Thank you for your order!</p>

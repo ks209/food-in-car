@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { useNavigate } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
 import { Car, ShoppingCart, X } from "lucide-react"
 import { useCart } from "../context/CartContext"
 import { useAuth } from "../context/AuthContext"
@@ -7,6 +7,7 @@ import { getDeviceKey } from "../lib/device"
 import { saveActiveOrder } from "../lib/activeOrder"
 import { useRestaurantBase } from "../lib/restaurantPath"
 import api from "../api"
+import { orderGst, rupees } from "../lib/gst"
 
 export default function CartDrawer({ open, onClose, restaurant, restaurantId }) {
   const { cart, addItem, decrementItem, clearCart, total, itemCount } = useCart()
@@ -42,6 +43,9 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
   const parkingSpots = restaurant?.parkingSpots || []
   const askParking = needsVehicle && parkingSpots.length > 0
   const parkingRequired = askParking && (restaurant?.parkingSpotRequired ?? true)
+  // What checkout will charge — GST added on top when the restaurant's menu
+  // prices exclude it (the server computes the same, see utils/gst.js).
+  const tax = orderGst(restaurant, total)
   const canOrder = name.trim() && phoneValid && cart.length > 0 && (!needsVehicle || vehicle.trim()) && (!parkingRequired || parkingSpotId)
 
   // Snap orderType to whichever single mode is actually allowed once the
@@ -258,7 +262,12 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"0.875rem" }}>
               <div>
                 <p style={{ fontSize:"0.8rem", color:"var(--muted)", fontWeight:500 }}>{itemCount} items</p>
-                <p style={{ fontWeight:800, fontSize:"1.25rem", color:"var(--text)" }}>₹{total.toFixed(0)}</p>
+                <p style={{ fontWeight:800, fontSize:"1.25rem", color:"var(--text)" }}>{rupees(tax.total)}</p>
+                {tax.rate > 0 && (
+                  <p style={{ fontSize:"0.72rem", color:"var(--muted)" }}>
+                    {tax.inclusive ? `Incl. ${rupees(tax.gstAmount)} GST` : `${rupees(tax.subtotal)} + ${rupees(tax.gstAmount)} GST (${tax.rate}%)`}
+                  </p>
+                )}
               </div>
 
               <button onClick={handlePhonePe} disabled={placing || !canOrder}
@@ -296,6 +305,13 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
                 Secured by PhonePe · You'll be redirected to pay
               </p>
             )}
+            {/* Required, but kept deliberately small so it doesn't compete
+                with the Pay button. */}
+            <p style={{ textAlign:"center", fontSize:"0.65rem", lineHeight:1.5, color:"var(--muted)", marginTop:"0.4rem" }}>
+              By ordering you agree to the{" "}
+              <Link to={`${base}/legal/terms`} style={{ textDecoration:"underline" }}>Terms</Link> &amp;{" "}
+              <Link to={`${base}/legal/refunds`} style={{ textDecoration:"underline" }}>Refund Policy</Link>
+            </p>
           </div>
         )}
       </div>

@@ -8,6 +8,8 @@ import MenuItemCard from "../components/MenuItemCard"
 import AccountMenu from "../components/AccountMenu"
 import ActiveOrderBanner from "../components/ActiveOrderBanner"
 import { useRestaurantTheme } from "../lib/theme"
+import { useRestaurantBase } from "../lib/restaurantPath"
+import { LegalLinks } from "./LegalPage"
 
 // The first chip. Not a filter any more — the menu is one continuous list of
 // every category, so "All" means "you're at the top of it" and tapping it
@@ -40,6 +42,8 @@ export default function MenuPage() {
   const { restaurantId } = useParams()
   const { itemCount, total, setActiveRestaurant } = useCart()
   const tabsRef = useRef(null)
+  // Links keep whichever URL shape the customer arrived on (/<slug> or /restaurant/<id>).
+  const base = useRestaurantBase()
   useRestaurantTheme(restaurantId)
 
   const [restaurant, setRestaurant] = useState(null)
@@ -304,6 +308,12 @@ export default function MenuPage() {
                   {restaurant?.address}
                 </span>
               </div>
+              {restaurant?.fssaiLicense && (
+                <p style={{ fontSize: "0.72rem", color: "var(--muted)", marginTop: "0.35rem" }}>
+                  FSSAI Lic. No. {restaurant.fssaiLicense}
+                  {restaurant.gstin ? ` · GSTIN ${restaurant.gstin}` : ""}
+                </p>
+              )}
             </>
           )}
         </div>
@@ -488,6 +498,8 @@ export default function MenuPage() {
           </button>
         </div>
       )}
+
+      <LegalLinks base={base} style={{ padding: "1.25rem 1rem", paddingBottom: itemCount > 0 ? "5.5rem" : "1.25rem" }} />
 
       <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} restaurant={restaurant} restaurantId={restaurantId} />
 

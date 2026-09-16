@@ -1,7 +1,6 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import morgan from 'morgan';
-import rateLimit from 'express-rate-limit';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import orderRouter from './routes/order/order.js';
@@ -54,16 +53,12 @@ app.use(morgan("combined"));
 
 app.use(cookieParser());
 
-const limiter = rateLimit({
-    max:1000,
-    windowMs: 5*60*1000,
-    message: {
-        code:429,
-        message:"Too Many Requests, Please Control Your Hunger."
-    }
-});
-
-app.use(limiter);
+// No global rate limiter. The old one (1000 requests / 5 min per IP) was
+// shared by every customer behind the HTTPS proxy (no trust proxy set, so all
+// requests came from the proxy's IP) and the 2-second polling of the order
+// status page, dashboard and waiter app would have exhausted it with a handful
+// of users. If brute-force protection is needed, add a strict limiter on the
+// login routes only.
 
 
 app.use('/api/order', orderRouter);

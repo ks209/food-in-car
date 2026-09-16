@@ -8,6 +8,7 @@ import supportAuth from '../../middlewares/support.auth.js';
 import { slugify, validateSlug, uniqueSlug, isSlugTaken, resolveRestaurantId, orderingUrlFor } from '../../utils/slug.js';
 import { validateHours, customerOpenState } from '../../utils/businessHours.js';
 import { menuWaitEstimate } from '../../utils/waitEstimate.js';
+import { validateTaxSettings } from '../../utils/gst.js';
 
 const restaurantRouter = express.Router();
 restaurantRouter.use(cookieParser());
@@ -21,7 +22,7 @@ restaurantRouter.get('/me', restaurantAuth, async (req, res) => {
     try {
         const restaurant = await prisma.restaurant.findUnique({
             where: { id: req.restaurantId },
-            select: { id: true, name: true, slug: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true, openingTime: true, closingTime: true, latitude: true, longitude: true, cityId: true, phonepeMerchantId: true, phonepeSaltIndex: true, phonepeSandbox: true, phonepeSaltKey: true },
+            select: { id: true, name: true, slug: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true, openingTime: true, closingTime: true, gstin: true, gstRate: true, pricesIncludeGst: true, fssaiLicense: true, legalName: true, supportEmail: true, supportPhone: true, latitude: true, longitude: true, cityId: true, phonepeMerchantId: true, phonepeSaltIndex: true, phonepeSandbox: true, phonepeSaltKey: true },
         });
         if (!restaurant) return res.status(404).json({ message: 'Restaurant not found' });
         // phonepeSaltKey is fetched only to derive this flag — it must never
@@ -38,7 +39,7 @@ const FONT_KEYS = ['manrope', 'inter', 'poppins', 'playfair', 'spacegrotesk', 'f
 const CARD_STYLES = ['rounded', 'sharp'];
 
 restaurantRouter.put('/me', restaurantAuth, async (req, res) => {
-    const { name, slug, phone, address, themeColor, secondaryColor, accentColor, fontFamily, cardStyle, logoUrl, coverUrl, pickupEnabled, deliveryEnabled, isOpen, slaWarnMinutes, slaCritMinutes, openingTime, closingTime, latitude, longitude, cityId, phonepeMerchantId, phonepeSaltKey, phonepeSaltIndex, phonepeSandbox } = req.body;
+    const { name, slug, phone, address, themeColor, secondaryColor, accentColor, fontFamily, cardStyle, logoUrl, coverUrl, pickupEnabled, deliveryEnabled, isOpen, slaWarnMinutes, slaCritMinutes, openingTime, closingTime, gstin, gstRate, pricesIncludeGst, fssaiLicense, legalName, supportEmail, supportPhone, latitude, longitude, cityId, phonepeMerchantId, phonepeSaltKey, phonepeSaltIndex, phonepeSandbox } = req.body;
     try {
         const data = {};
         if (name !== undefined) data.name = name || null;
@@ -109,6 +110,34 @@ restaurantRouter.put('/me', restaurantAuth, async (req, res) => {
             Object.assign(data, hours.data);
         }
 
+        // Tax & compliance — validated against the saved values so e.g. setting a
+        // GST rate without a GSTIN is refused even if the GSTIN isn't in this request.
+        if (gstin !== undefined || gstRate !== undefined || pricesIncludeGst !== undefined || fssaiLicense !== undefined) {
+            const existing = await prisma.restaurant.findUnique({ where: { id: req.restaurantId }, select: { gstin: true, gstRate: true } });
+            const tax = validateTaxSettings({ gstin, gstRate, pricesIncludeGst, fssaiLicense }, existing);
+            if (!tax.ok) return res.status(400).json({ message: tax.message });
+            Object.assign(data, tax.data);
+        }
+
+        // Seller details for this restaurant's policy pages. Payment gateways
+        // check these against the merchant's KYC, so they're validated rather
+        // than stored as free text.
+        if (legalName !== undefined) data.legalName = (legalName || '').trim() || null;
+        if (supportEmail !== undefined) {
+            const v = (supportEmail || '').trim();
+            if (v && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v)) {
+                return res.status(400).json({ message: 'Support email must be a valid address' });
+            }
+            data.supportEmail = v || null;
+        }
+        if (supportPhone !== undefined) {
+            const v = (supportPhone || '').replace(/[^\d+]/g, '');
+            if (v && !/^\+?\d{10,13}$/.test(v)) {
+                return res.status(400).json({ message: 'Support phone must be 10-13 digits' });
+            }
+            data.supportPhone = v || null;
+        }
+
         // Pickup and delivery-in-car are validated together — at least one must stay
         // enabled, whether this request is touching one of them or both at once.
         if (pickupEnabled !== undefined || deliveryEnabled !== undefined) {
@@ -137,7 +166,7 @@ restaurantRouter.put('/me', restaurantAuth, async (req, res) => {
         const updated = await prisma.restaurant.update({
             where: { id: req.restaurantId },
             data,
-            select: { id: true, name: true, slug: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true, openingTime: true, closingTime: true, latitude: true, longitude: true, cityId: true, phonepeMerchantId: true, phonepeSaltIndex: true, phonepeSandbox: true, phonepeSaltKey: true },
+            select: { id: true, name: true, slug: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true, openingTime: true, closingTime: true, gstin: true, gstRate: true, pricesIncludeGst: true, fssaiLicense: true, legalName: true, supportEmail: true, supportPhone: true, latitude: true, longitude: true, cityId: true, phonepeMerchantId: true, phonepeSaltIndex: true, phonepeSandbox: true, phonepeSaltKey: true },
         });
         const { phonepeSaltKey: _saltKey, ...safeUpdated } = updated;
         res.json({ ...safeUpdated, phonepeConfigured: !!(updated.phonepeMerchantId && _saltKey), orderingUrl: orderingUrlFor(updated, FRONTEND_URL) });

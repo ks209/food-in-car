@@ -3,6 +3,7 @@ import { Link } from "react-router-dom"
 import { MapPin, Star, UtensilsCrossed, LocateFixed, Search, X, Download, Share2 } from "lucide-react"
 import { restaurantApi, configApi } from "../api"
 import { applyTheme, DEFAULT_HEX } from "../lib/theme"
+import { LegalLinks } from "./LegalPage"
 
 const PAGE_SIZE = 10
 const SEARCH_DEBOUNCE_MS = 400
@@ -427,6 +428,8 @@ export default function HomePage() {
       )}
       </>
       )}
+
+      <LegalLinks style={{ margin: "auto 0 0", padding: "2rem 1rem 1.5rem" }} />
     </div>
   )
 }

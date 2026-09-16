@@ -6,6 +6,7 @@ import MenuPage from "./pages/MenuPage"
 import LoginPage from "./pages/LoginPage"
 import OrderStatusPage from "./pages/OrderStatusPage"
 import OrdersPage from "./pages/OrdersPage"
+import LegalPage from "./pages/LegalPage"
 
 export default function App() {
   return (
@@ -14,6 +15,8 @@ export default function App() {
         <CartProvider>
           <Routes>
             <Route path="/" element={<HomePage />} />
+            {/* Privacy / Terms / Refunds. "legal" is a reserved slug (backend utils/slug.js). */}
+            <Route path="/legal/:doc" element={<LegalPage />} />
 
             {/* Original numeric URLs. Kept working alongside the vanity ones so
                 already-printed QR codes, bookmarks and shared order links don't
@@ -22,6 +25,7 @@ export default function App() {
             <Route path="/restaurant/:restaurantId/login" element={<LoginPage />} />
             <Route path="/restaurant/:restaurantId/orders" element={<OrdersPage />} />
             <Route path="/restaurant/:restaurantId/order/:orderId" element={<OrderStatusPage />} />
+            <Route path="/restaurant/:restaurantId/legal/:doc" element={<LegalPage />} />
 
             {/* Vanity URLs — /spice-garden resolves to exactly the same pages.
                 The param still holds "id or slug"; the API accepts either.
@@ -33,6 +37,8 @@ export default function App() {
             <Route path="/:restaurantId/login" element={<LoginPage />} />
             <Route path="/:restaurantId/orders" element={<OrdersPage />} />
             <Route path="/:restaurantId/order/:orderId" element={<OrderStatusPage />} />
+            {/* The restaurant as seller — its own policy pages. */}
+            <Route path="/:restaurantId/legal/:doc" element={<LegalPage />} />
 
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

@@ -61,6 +61,22 @@ model Restaurant {
   // hours (always open, midnight-to-midnight day).
   openingTime    String?
   closingTime    String?
+  // Tax & compliance (dashboard Settings). GST is only charged/shown when a
+  // GSTIN is set and gstRate > 0 — an unregistered business can't collect it.
+  // pricesIncludeGst: menu prices already contain GST (split out on the bill)
+  // vs. GST added on top at checkout. See utils/gst.js.
+  gstin            String?
+  gstRate          Float    @default(0)
+  pricesIncludeGst Boolean  @default(true)
+  // 14-digit FSSAI licence/registration number, shown on the menu and bills.
+  fssaiLicense     String?
+  // Seller identity for this restaurant's own policy pages (/<slug>/legal/…).
+  // The restaurant is the merchant of record — payments go to its own PhonePe
+  // account — so its legal name and support contact appear there, while the
+  // platform's grievance officer stays in the mobile app's lib/legal.js.
+  legalName        String?
+  supportEmail     String?
+  supportPhone     String?
   // Kitchen SLA thresholds (minutes) — Analytics + Kitchen Display flag a
   // PREPARING order "slow" past slaWarnMinutes and "over SLA" past slaCritMinutes.
   slaWarnMinutes Int         @default(8)
@@ -161,7 +177,15 @@ model Order {
   // Name of the parking spot the customer picked, copied at order time (like
   // OrderItem.name) so renaming or removing a spot never rewrites past orders.
   parkingSpot          String?
-  totalAmount          Float
+  // GST as applied when the order was placed (snapshot, like item prices), so
+  // changing tax settings later never rewrites past invoices. All null on
+  // orders from before GST support / restaurants without a GSTIN.
+  subtotalAmount       Float?     // sum of item prices as listed on the menu
+  gstRate              Float?
+  gstAmount            Float?
+  gstin                String?
+  pricesIncludeGst     Boolean?
+  totalAmount          Float      // what the customer paid (incl. GST)
   status               OrderStatus
   paymentMethod        PaymentMethod        @default(COD)
   deliveryCode         String?              @unique

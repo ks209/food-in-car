@@ -23,6 +23,7 @@ const RESERVED_SLUGS = new Set([
   'restaurant', 'restaurants', 'api', 'admin', 'dashboard', 'scan', 'orders', 'order',
   'cart', 'checkout', 'payment', 'assets', 'static', 'public', 'health', 'support',
   'settings', 'about', 'menu', 'category', 'user', 'waiter', 'city', 'config',
+  'legal', 'privacy', 'terms', 'refunds', 'parking',
 ]);
 
 export function slugify(text) {

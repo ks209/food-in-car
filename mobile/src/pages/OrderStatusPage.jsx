@@ -357,10 +357,21 @@ export default function OrderStatusPage() {
               )
             })}
           </div>
-          <div style={{ borderTop:"1.5px solid var(--border)", marginTop:"1rem", paddingTop:"0.875rem",
+          {order.gstAmount > 0 && (
+            <div style={{ borderTop:"1.5px solid var(--border)", marginTop:"1rem", paddingTop:"0.6rem", display:"flex", flexDirection:"column", gap:"0.2rem", fontSize:"0.8rem", color:"var(--text-secondary)" }}>
+              {!order.pricesIncludeGst && (
+                <div style={{ display:"flex", justifyContent:"space-between" }}><span>Item total</span><span>₹{Number(order.subtotalAmount).toFixed(2)}</span></div>
+              )}
+              <div style={{ display:"flex", justifyContent:"space-between" }}>
+                <span>GST {order.gstRate}%{order.pricesIncludeGst ? " (included)" : ""}</span>
+                <span>₹{Number(order.gstAmount).toFixed(2)}</span>
+              </div>
+            </div>
+          )}
+          <div style={{ borderTop:"1.5px solid var(--border)", marginTop: order.gstAmount > 0 ? "0.6rem" : "1rem", paddingTop:"0.875rem",
             display:"flex", justifyContent:"space-between", alignItems:"center" }}>
             <span style={{ fontWeight:700 }}>Total</span>
-            <span style={{ fontWeight:800, fontSize:"1.1rem", color:"var(--success)" }}>₹{order.totalAmount.toFixed(0)}</span>
+            <span style={{ fontWeight:800, fontSize:"1.1rem", color:"var(--success)" }}>₹{Number.isInteger(order.totalAmount) ? order.totalAmount : order.totalAmount.toFixed(2)}</span>
           </div>
           {order.deliveryInstructions && (
             <div style={{ marginTop:"0.75rem", padding:"0.6rem 0.75rem", background:"var(--bg)", borderRadius:8, fontSize:"0.82rem", color:"var(--text-secondary)", display:"flex", alignItems:"flex-start", gap:"0.45rem" }}>

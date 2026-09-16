@@ -1,0 +1,4 @@
+# Shell scripts run on the Linux server — keep LF line endings even when
+# committed from Windows (core.autocrlf would otherwise check them out with
+# CRLF, and bash fails on the stray \r).
+*.sh text eol=lf

@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Loader2, Store, Car, Paintbrush, Power, AlertCircle, Timer, MapPin, CreditCard, ShieldCheck, Clock } from "lucide-react"
+import { Loader2, Store, Car, Paintbrush, Power, AlertCircle, Timer, MapPin, CreditCard, ShieldCheck, Clock, Landmark, Scale } from "lucide-react"
 import { formatTime12, parseTime } from "@/lib/business-day"
 import Link from "next/link"
 import { toast } from "sonner"
@@ -47,6 +47,13 @@ export function RestaurantSettings() {
           slaCritMinutes: r.data.slaCritMinutes ?? 15,
           openingTime: r.data.openingTime || "",
           closingTime: r.data.closingTime || "",
+          gstin: r.data.gstin || "",
+          gstRate: String(r.data.gstRate ?? 0),
+          pricesIncludeGst: r.data.pricesIncludeGst ?? true,
+          fssaiLicense: r.data.fssaiLicense || "",
+          legalName: r.data.legalName || "",
+          supportEmail: r.data.supportEmail || "",
+          supportPhone: r.data.supportPhone || "",
           latitude: r.data.latitude ?? "",
           longitude: r.data.longitude ?? "",
           cityId: r.data.cityId ?? "",
@@ -107,6 +114,8 @@ export function RestaurantSettings() {
     if (!slaValid) { toast.error("The warning threshold must be less than the critical threshold"); return }
     if (!locationValid) { toast.error("Set both latitude and longitude, or leave both blank"); return }
     if (!slugValid) { toast.error("That web address isn't valid — use lowercase letters, numbers and hyphens"); return }
+    if (!sellerValid) { toast.error("Check the Business & legal section — support email or phone isn't valid"); return }
+    if (!taxValid) { toast.error("Check the Tax & compliance section — GSTIN, GST rate or FSSAI number isn't valid"); return }
     if (!hoursValid) { toast.error("Set both opening and closing time (and make them different), or leave both blank"); return }
     setSaving(true)
     try {
@@ -120,6 +129,13 @@ export function RestaurantSettings() {
         slaCritMinutes: Number(form.slaCritMinutes),
         openingTime: form.openingTime || null,
         closingTime: form.closingTime || null,
+        gstin: form.gstin,
+        gstRate: Number(form.gstRate),
+        pricesIncludeGst: form.pricesIncludeGst,
+        fssaiLicense: form.fssaiLicense,
+        legalName: form.legalName,
+        supportEmail: form.supportEmail,
+        supportPhone: form.supportPhone,
         latitude: form.latitude === "" ? null : Number(form.latitude),
         longitude: form.longitude === "" ? null : Number(form.longitude),
         cityId: form.cityId === "" ? null : Number(form.cityId),
@@ -176,6 +192,16 @@ export function RestaurantSettings() {
   const hoursValid = (form.openingTime === "" && form.closingTime === "") ||
     (parseTime(form.openingTime) !== null && parseTime(form.closingTime) !== null && form.openingTime !== form.closingTime)
   const closesAfterMidnight = hoursValid && form.openingTime !== "" && parseTime(form.closingTime) < parseTime(form.openingTime)
+  // Mirrors backend/utils/gst.js validation.
+  const gstinValid = form.gstin === "" || /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(form.gstin)
+  const fssaiValid = form.fssaiLicense === "" || /^\d{14}$/.test(form.fssaiLicense)
+  const gstNeedsGstin = Number(form.gstRate) > 0 && form.gstin === ""
+  const taxValid = gstinValid && fssaiValid && !gstNeedsGstin
+  // Mirrors the backend checks in routes/restaurant/restaurant.js.
+  const supportEmailValid = form.supportEmail === "" || /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(form.supportEmail)
+  const supportPhoneValid = form.supportPhone === "" || /^\+?\d{10,13}$/.test(form.supportPhone.replace(/\s/g, ""))
+  const sellerValid = supportEmailValid && supportPhoneValid
+  const sellerComplete = !!form.legalName && !!form.supportEmail && !!form.supportPhone
   const latSet = form.latitude !== ""
   const lngSet = form.longitude !== ""
   const locationValid = latSet === lngSet && (!latSet || (Number(form.latitude) >= -90 && Number(form.latitude) <= 90 && Number(form.longitude) >= -180 && Number(form.longitude) <= 180))
@@ -402,6 +428,108 @@ export function RestaurantSettings() {
           <Card className="border-0">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-2">
+                <Scale className="h-4 w-4" /> Business &amp; legal
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-xs text-muted-foreground -mt-1">
+                You are the seller for your orders — payments go to your own PhonePe account. These details appear on
+                your Privacy, Terms and Refund pages, which payment gateways check during onboarding.
+              </p>
+              <div className="space-y-1.5">
+                <Label className="text-sm">Registered business name</Label>
+                <Input value={form.legalName} placeholder="e.g. Spice Garden Foods Pvt Ltd"
+                  onChange={(e) => setField("legalName", e.target.value)} />
+                <p className="text-xs text-muted-foreground">As on your GST/PhonePe registration. Leave blank to use your display name.</p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Support email</Label>
+                  <Input type="email" value={form.supportEmail} placeholder="support@yourrestaurant.in"
+                    onChange={(e) => setField("supportEmail", e.target.value.trim())} />
+                  {!supportEmailValid && <p className="text-xs text-red-500">Enter a valid email address</p>}
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Support phone</Label>
+                  <Input value={form.supportPhone} placeholder="+91 98200 11111"
+                    onChange={(e) => setField("supportPhone", e.target.value.replace(/[^\d+ ]/g, ""))} />
+                  {!supportPhoneValid && <p className="text-xs text-red-500">10-13 digits, optionally with +91</p>}
+                </div>
+              </div>
+              {!sellerComplete && (
+                <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  Fill all three in before applying to PhonePe — your policy pages show a warning until then.
+                </p>
+              )}
+              {publicOrigin && (
+                <p className="text-xs text-muted-foreground">
+                  Your policy pages:{" "}
+                  <a href={`${publicOrigin}/${form.slug || ""}/legal/refunds`} target="_blank" rel="noreferrer" className="underline">
+                    {publicOrigin}/{form.slug || "<web address>"}/legal/refunds
+                  </a>{" "}(also /legal/terms and /legal/privacy)
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-0">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-2">
+                <Landmark className="h-4 w-4" /> Tax &amp; compliance
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-xs text-muted-foreground -mt-1">
+                Shown on your menu and printed on every bill. GST is only charged when a GSTIN is set.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-sm">GSTIN</Label>
+                  <Input value={form.gstin} maxLength={15} placeholder="27AAPFU0939F1ZV"
+                    onChange={(e) => setField("gstin", e.target.value.toUpperCase().replace(/\s+/g, ""))} />
+                  {!gstinValid && <p className="text-xs text-red-500">15 characters, e.g. 27AAPFU0939F1ZV</p>}
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm">FSSAI licence number</Label>
+                  <Input value={form.fssaiLicense} maxLength={14} inputMode="numeric" placeholder="14-digit number"
+                    onChange={(e) => setField("fssaiLicense", e.target.value.replace(/\D/g, ""))} />
+                  {!fssaiValid && <p className="text-xs text-red-500">Must be 14 digits</p>}
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm">GST rate</Label>
+                  <Select value={form.gstRate} onValueChange={(v) => setField("gstRate", v)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {["0", "5", "12", "18"].map((r) => (
+                        <SelectItem key={r} value={r}>{r === "0" ? "No GST" : `${r}%`}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {gstNeedsGstin && <p className="text-xs text-red-500">Add your GSTIN to charge GST</p>}
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Menu prices</Label>
+                  <div className="flex items-center gap-2 h-9">
+                    <Switch checked={form.pricesIncludeGst} onCheckedChange={(v) => setField("pricesIncludeGst", v)}
+                      disabled={Number(form.gstRate) === 0} />
+                    <span className="text-sm text-muted-foreground">{form.pricesIncludeGst ? "Include GST" : "GST added at checkout"}</span>
+                  </div>
+                </div>
+              </div>
+              {Number(form.gstRate) > 0 && form.gstin && (
+                <p className="text-xs text-muted-foreground rounded-lg border border-border px-3 py-2">
+                  Example: a ₹100 item — {form.pricesIncludeGst
+                    ? `customer pays ₹100; the bill shows ₹${(100 / (1 + Number(form.gstRate) / 100)).toFixed(2)} + GST ₹${(100 - 100 / (1 + Number(form.gstRate) / 100)).toFixed(2)}.`
+                    : `customer pays ₹${(100 + Number(form.gstRate)).toFixed(2)} (₹100 + GST ₹${Number(form.gstRate).toFixed(2)}).`}
+                  {" "}Bills show it as CGST + SGST. Check the correct rate for your business with your accountant.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-0">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-2">
                 <CreditCard className="h-4 w-4" /> Payments
               </CardTitle>
             </CardHeader>
@@ -537,7 +665,7 @@ export function RestaurantSettings() {
             <Button variant="outline" size="sm" className="bg-transparent border-amber-950/30 text-amber-950 hover:bg-amber-600/20" onClick={handleReset} disabled={saving}>
               Discard
             </Button>
-            <Button size="sm" className="bg-amber-950 text-white hover:bg-amber-900 min-w-28" onClick={handleSave} disabled={saving || !slaValid || !locationValid || !slugValid || !hoursValid}>
+            <Button size="sm" className="bg-amber-950 text-white hover:bg-amber-900 min-w-28" onClick={handleSave} disabled={saving || !slaValid || !locationValid || !slugValid || !hoursValid || !taxValid || !sellerValid}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save changes"}
             </Button>
           </div>

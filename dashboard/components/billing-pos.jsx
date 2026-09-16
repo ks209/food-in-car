@@ -13,6 +13,7 @@ import { useRestaurant } from "@/lib/restaurant-context"
 import { useBilling } from "@/lib/billing-context"
 import { cacheMenu, getCachedMenu } from "@/lib/billing-db"
 import { formatCurrency } from "@/lib/format"
+import { orderGst } from "@/lib/gst"
 
 const STATUS_META = {
   pending: { label: "Pending Sync", icon: Clock, cls: "bg-amber-50 text-amber-700 border-amber-200" },
@@ -76,7 +77,10 @@ export function BillingPos() {
   }
   const removeItem = (id) => setCart((prev) => prev.filter((c) => c.id !== id))
 
-  const total = cart.reduce((s, c) => s + c.price * c.quantity, 0)
+  const subtotal = cart.reduce((s, c) => s + c.price * c.quantity, 0)
+  // GST per the restaurant's Settings (the server recomputes the same when the bill syncs).
+  const tax = orderGst(restaurant, subtotal)
+  const total = tax.total
   const itemCount = cart.reduce((s, c) => s + c.quantity, 0)
 
   const resetForm = () => {
@@ -211,6 +215,17 @@ export function BillingPos() {
               </div>
             </div>
 
+            {tax.rate > 0 && cart.length > 0 && (
+              <div className="space-y-1 pt-2 text-xs text-slate-500">
+                {!tax.inclusive && (
+                  <div className="flex justify-between"><span>Item total</span><span>{formatCurrency(tax.subtotal)}</span></div>
+                )}
+                <div className="flex justify-between">
+                  <span>GST {tax.rate}%{tax.inclusive ? " (included)" : ""}</span>
+                  <span>{formatCurrency(tax.gstAmount)}</span>
+                </div>
+              </div>
+            )}
             <div className="flex items-center justify-between pt-2">
               <span className="text-sm text-slate-500">{itemCount} item{itemCount === 1 ? "" : "s"}</span>
               <span className="text-lg font-bold text-slate-900">{formatCurrency(total)}</span>
