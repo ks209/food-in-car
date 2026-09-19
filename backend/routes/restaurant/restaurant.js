@@ -9,6 +9,9 @@ import { slugify, validateSlug, uniqueSlug, isSlugTaken, resolveRestaurantId, or
 import { validateHours, customerOpenState } from '../../utils/businessHours.js';
 import { menuWaitEstimate } from '../../utils/waitEstimate.js';
 import { validateTaxSettings } from '../../utils/gst.js';
+import { createLoginLimiter } from '../../middlewares/loginLimiter.js';
+
+const restaurantLoginLimiter = createLoginLimiter({ limit: 10 });
 
 const restaurantRouter = express.Router();
 restaurantRouter.use(cookieParser());
@@ -561,7 +564,7 @@ restaurantRouter.delete('/delete/:id', supportAuth, async (req, res) => {
     }
 });
 
-restaurantRouter.post('/login',async(req,res)=>{
+restaurantRouter.post('/login', restaurantLoginLimiter, async(req,res)=>{
     const {username,password}=req.body || {};
     if(!username || !password) return res.status(400).json({code:400, message:"Missing fields"});
 

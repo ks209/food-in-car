@@ -23,7 +23,7 @@ const RESERVED_SLUGS = new Set([
   'restaurant', 'restaurants', 'api', 'admin', 'dashboard', 'scan', 'orders', 'order',
   'cart', 'checkout', 'payment', 'assets', 'static', 'public', 'health', 'support',
   'settings', 'about', 'menu', 'category', 'user', 'waiter', 'city', 'config',
-  'legal', 'privacy', 'terms', 'refunds', 'parking',
+  'legal', 'privacy', 'terms', 'refunds', 'parking', 'profile',
   // Venues live under /at/<slug>, so the two slug namespaces never collide —
   // but /at itself has to be off-limits to restaurants.
   'at', 'venue', 'venues', 'place', 'places',

@@ -289,8 +289,9 @@ orderRouter.post('/pos', restaurantAuth, async (req, res) => {
     const vehicle = guestVehicle && guestVehicle.trim() ? guestVehicle.trim().toUpperCase() : null;
 
     let userId = null;
+    let customer = null;
     if (mobileNumber && mobileNumber.trim()) {
-      const customer = await resolveCustomerByPhone(mobileNumber.trim(), guestName || 'Walk-in Customer', vehicle);
+      customer = await resolveCustomerByPhone(mobileNumber.trim(), guestName || 'Walk-in Customer', vehicle);
       userId = customer.id;
     }
 
@@ -312,7 +313,8 @@ orderRouter.post('/pos', restaurantAuth, async (req, res) => {
         userId,
         dailyOrderNumber,
         idempotencyKey,
-        guestName: (guestName || '').trim() || 'Walk-in Customer',
+        // No name typed at the counter → use the known customer's name for this phone
+        guestName: (guestName || '').trim() || customer?.customerName || 'Walk-in Customer',
         guestVehicle: vehicle,
         subtotalAmount: tax.subtotalAmount,
         gstRate: tax.gstRate,

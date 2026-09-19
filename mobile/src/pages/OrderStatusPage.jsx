@@ -67,9 +67,9 @@ const STATUS_DESC = {
   PAID: "Payment confirmed! We're about to start preparing.",
   PROCESSING: "The kitchen is working on your order.",
   PREPARING: "The kitchen is working on your order.",
-  READY: "Show the QR code below to your delivery person to collect your food.",
-  DELIVERED: "Delivered & completed. Enjoy your meal!",
-  COMPLETED: "Delivered & completed. Enjoy your meal!",
+  READY: "Show the QR code below to your server to collect your food.",
+  DELIVERED: "Served & completed. Enjoy your meal!",
+  COMPLETED: "Served & completed. Enjoy your meal!",
   CANCELLED: "This order was cancelled.",
   NOT_FULFILLED: "This order could not be fulfilled.",
 }
@@ -285,7 +285,7 @@ export default function OrderStatusPage() {
               <Bike size={18} strokeWidth={2} /> Your food is on the way
             </p>
             <p style={{ fontSize:"0.82rem", color:"var(--text-secondary)", marginBottom:"1rem" }}>
-              Show this QR to your delivery person to collect your order.
+              Show this QR to your server to collect your order.
             </p>
             <div style={{ display:"inline-flex", padding:"1rem", background:"white", borderRadius:16, boxShadow:"var(--shadow)" }}>
               <QRCodeSVG value={order.deliveryCode} size={176} level="M" includeMargin={false} />
@@ -303,7 +303,9 @@ export default function OrderStatusPage() {
         {isDone && (
           <div className="card" style={{ padding:"1.25rem", textAlign:"center", background:"linear-gradient(135deg, rgba(52,211,153,0.14), rgba(52,211,153,0.04))", border:"1.5px solid rgba(52,211,153,0.3)" }}>
             <PartyPopper size={28} strokeWidth={1.75} color="var(--success)" style={{ margin:"0 auto 0.4rem" }} />
-            <p style={{ fontWeight:700, color:"var(--success)" }}>Order delivered — enjoy your meal!</p>
+            {/* The hero above already says the order was served and to enjoy the
+                meal — this card thanks them instead of repeating it. */}
+            <p style={{ fontWeight:700, color:"var(--success)" }}>Thank You For Choosing Us</p>
           </div>
         )}
 

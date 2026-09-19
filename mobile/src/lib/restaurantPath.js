@@ -8,8 +8,11 @@ import { useLocation, useParams } from "react-router-dom"
 //
 // The route param is named `restaurantId` in both shapes and holds an id or a
 // slug; the API resolves either (see backend/utils/slug.js).
+//
+// Outside a restaurant (/login, /orders from the home page) the base is "".
 export function useRestaurantBase() {
   const { restaurantId } = useParams()
   const { pathname } = useLocation()
+  if (!restaurantId) return ""
   return pathname.startsWith("/restaurant/") ? `/restaurant/${restaurantId}` : `/${restaurantId}`
 }

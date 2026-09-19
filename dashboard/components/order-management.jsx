@@ -188,7 +188,7 @@ export function OrderManagement() {
                       <span className="text-xs font-mono text-slate-400 pt-0.5 w-10 flex-shrink-0">#{order.dailyOrderNumber ?? order.id}</span>
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-slate-800 truncate">
-                          {order.user?.customerName || order.guestName || "Guest"}
+                          {order.guestName || order.user?.customerName || "Guest"}
                         </p>
                         <p className="text-xs text-slate-400">
                           {order.guestVehicle
@@ -233,7 +233,7 @@ export function OrderManagement() {
                           <div className="space-y-4 pt-1">
                             <div>
                               <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Customer</p>
-                              <p className="text-sm font-medium">{selectedOrder.user?.customerName || selectedOrder.guestName}</p>
+                              <p className="text-sm font-medium">{selectedOrder.guestName || selectedOrder.user?.customerName}</p>
                               {selectedOrder.user?.phoneNumber && <p className="text-sm text-slate-500">{selectedOrder.user.phoneNumber}</p>}
                               <p className="text-sm text-slate-500">
                                 {selectedOrder.guestVehicle ? `Vehicle: ${selectedOrder.guestVehicle}` : "Pickup order"}
@@ -302,7 +302,7 @@ export function OrderManagement() {
                     )}
                     {order.status === "READY" && (
                       <span className="text-xs text-sky-600 font-medium inline-flex items-center gap-1 mr-1">
-                        <ScanLine className="h-3.5 w-3.5" /> Awaiting delivery scan
+                        <ScanLine className="h-3.5 w-3.5" /> Awaiting server scan
                       </span>
                     )}
                     {(order.status === "PENDING" || order.status === "PAID" || order.status === "PREPARING" || order.status === "READY") && (

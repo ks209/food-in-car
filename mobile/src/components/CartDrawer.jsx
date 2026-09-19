@@ -19,7 +19,7 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
   const [vehicle, setVehicle] = useState("")
   const [parkingSpotId, setParkingSpotId] = useState("")
   const [phone, setPhone] = useState("")
-  const [orderType, setOrderType] = useState("car") // "car" (deliver to vehicle) | "pickup"
+  const [orderType, setOrderType] = useState("car") // "car" (served at the vehicle) | "pickup"
   const [instructions, setInstructions] = useState("")
   const [placing, setPlacing] = useState(false)
   const [error, setError] = useState("")

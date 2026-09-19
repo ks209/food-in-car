@@ -1,29 +1,25 @@
 import prisma from '../config/prisma.js';
 
-// Find-or-create a customer keyed by PHONE NUMBER (the identity), keep their name fresh,
-// and record the vehicle they used in their saved-vehicle list (deduped per user).
-// Returns the User.
+// Find-or-create a customer keyed by PHONE NUMBER (the identity). Returns the User.
+//
+// Checkout phone numbers are typed in, not verified, so an EXISTING account is
+// only linked to (the order lands in its history) — never modified. Otherwise
+// anyone typing someone else's number could rename them or add vehicles to
+// their profile. Name and saved vehicles are the owner's to change, via OTP
+// login + Edit Profile. Only a brand-new customer gets the name/vehicle given.
 export async function resolveCustomerByPhone(phoneNumber, customerName, vehicleNo) {
   const phone = String(phoneNumber).trim();
 
-  let user = await prisma.user.findFirst({ where: { phoneNumber: phone } });
-  if (user) {
-    if (customerName && user.customerName !== customerName) {
-      user = await prisma.user.update({ where: { id: user.id }, data: { customerName } });
-    }
-  } else {
-    user = await prisma.user.create({
-      data: { customerName: customerName || 'Customer', phoneNumber: phone, isActive: true },
-    });
-  }
+  const existing = await prisma.user.findFirst({ where: { phoneNumber: phone } });
+  if (existing) return existing;
 
-  // Save / refresh the vehicle in the user's list (no-op duplicate thanks to @@unique)
-  if (vehicleNo) {
-    const v = vehicleNo.trim().toUpperCase();
-    await prisma.userVehicle.upsert({
-      where: { userId_vehicleNo: { userId: user.id, vehicleNo: v } },
-      update: {}, // lastUsedAt auto-updates via @updatedAt
-      create: { userId: user.id, vehicleNo: v },
+  const user = await prisma.user.create({
+    data: { customerName: customerName || 'Customer', phoneNumber: phone, isActive: true },
+  });
+
+  if (vehicleNo?.trim()) {
+    await prisma.userVehicle.create({
+      data: { userId: user.id, vehicleNo: vehicleNo.trim().toUpperCase() },
     });
   }
 

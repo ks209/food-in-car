@@ -72,7 +72,7 @@ export function WaiterManagement() {
   }
 
   const deleteWaiter = async (w) => {
-    if (!window.confirm(`Delete ${w.name}? Their delivery history is kept, and you can restore them later.`)) return
+    if (!window.confirm(`Delete ${w.name}? Their service history is kept, and you can restore them later.`)) return
     try {
       await axios.delete(`${API}/api/waiter/${w.id}`, { withCredentials: true })
       toast.success("Server deleted")
@@ -132,7 +132,7 @@ export function WaiterManagement() {
         </CardContent>
       </Card>
 
-      {/* Waiter list */}
+      {/* Server list */}
       <Card className="border-0 shadow-sm">
         <CardHeader className="pb-3 flex items-center justify-between">
           <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-2">
@@ -157,7 +157,7 @@ export function WaiterManagement() {
                       {!w.isActive && <StatusDot color="#94a3b8">Inactive</StatusDot>}
                     </p>
                     <p className="text-xs text-slate-400">
-                      {w.phone ? `${w.phone} · ` : ""}{w.deliveredCount} delivered
+                      {w.phone ? `${w.phone} · ` : ""}{w.deliveredCount} served
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -181,7 +181,7 @@ export function WaiterManagement() {
         </CardContent>
       </Card>
 
-      {/* Deleted waiters — restore */}
+      {/* Deleted servers — restore */}
       <Dialog open={deletedOpen} onOpenChange={setDeletedOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Deleted servers</DialogTitle></DialogHeader>
@@ -196,7 +196,7 @@ export function WaiterManagement() {
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-slate-800 truncate">{w.name}</p>
                     <p className="text-xs text-slate-400">
-                      {w.phone ? `${w.phone} · ` : ""}{w.deliveredCount} delivered
+                      {w.phone ? `${w.phone} · ` : ""}{w.deliveredCount} served
                     </p>
                   </div>
                   <Button size="sm" variant="outline" className="text-xs flex-shrink-0" onClick={() => restoreWaiter(w)}>
@@ -216,9 +216,9 @@ export function WaiterManagement() {
           {tokenInfo && (
             <div className="space-y-4 text-center">
               <p className="text-xs text-slate-500">
-                Have the waiter open this on their phone — they&apos;ll see orders ready to deliver, can take one,
+                Have the server open this on their phone — they&apos;ll see orders ready to serve, can take one,
                 and scan the customer&apos;s QR to complete it. Valid for 24 hours; deactivating or deleting the
-                waiter stops it immediately.
+                server stops it immediately.
               </p>
               <div className="flex justify-center">
                 <div className="p-3 bg-white rounded-xl border">

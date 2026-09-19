@@ -1,6 +1,10 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import supportAuth from '../../middlewares/support.auth.js';
+import { createLoginLimiter } from '../../middlewares/loginLimiter.js';
+
+// Super-admin: tighter, since it's one account with full access
+const adminLoginLimiter = createLoginLimiter({ limit: 5 });
 
 const supportRouter = express.Router();
 
@@ -8,7 +12,7 @@ const supportRouter = express.Router();
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 
-supportRouter.post('/login', (req, res) => {
+supportRouter.post('/login', adminLoginLimiter, (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) return res.status(400).json({ code: 400, message: 'Missing fields' });
 

@@ -6,6 +6,7 @@ import { applyTheme, DEFAULT_HEX } from "../lib/theme"
 import { LegalLinks } from "./LegalPage"
 import RestCard, { SkeletonRestCard } from "../components/RestCard"
 import VenueCard from "../components/VenueCard"
+import AccountMenu from "../components/AccountMenu"
 import { VENUE_TYPE_LABEL, VenueIcon } from "../lib/venue.jsx"
 
 const PAGE_SIZE = 10
@@ -360,6 +361,7 @@ export default function HomePage() {
           <img src="/carkhanaalogo.png" alt="Carkhanaa" className="home-brand-logo" />
           <span className="home-brand-name">Carkhanaa</span>
         </div>
+        <div className="home-topbar-actions">
         {showInstallButton && (
           <button className="btn btn-outline btn-sm home-install-btn" onClick={handleInstallClick}>
             <Download size={14} /> Install App
@@ -385,6 +387,8 @@ export default function HomePage() {
             )}
           </div>
         )}
+        <AccountMenu variant="bar" />
+        </div>
       </div>
 
       {/* Venue mode replaces the hero entirely — the place IS the context, so

@@ -32,7 +32,7 @@ function timeLabel(iso) {
 }
 
 // Short two-note ping + vibration for "new order ready". Audio only works after
-// the waiter has touched the page once (browser autoplay rules).
+// the server has touched the page once (browser autoplay rules).
 function useReadyAlert(enabled) {
   const ctxRef = useRef(null)
   useEffect(() => {
@@ -187,7 +187,7 @@ function ScannerSheet({ token, target, onClose, onDelivered }) {
           </div>
           <button type="submit" disabled={submitting || !manualCode.trim()}
             className="px-4 py-2 rounded-lg bg-orange-600 text-white text-sm font-semibold disabled:opacity-50">
-            Deliver
+            Serve
           </button>
         </form>
 
@@ -195,9 +195,9 @@ function ScannerSheet({ token, target, onClose, onDelivered }) {
           <div className={`rounded-xl p-3 text-sm ${result.ok ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-700"}`}>
             {result.ok ? (
               <div className="space-y-0.5">
-                <p className="font-semibold">✓ Order #{result.order.dailyOrderNumber ?? result.order.id} delivered</p>
+                <p className="font-semibold">✓ Order #{result.order.dailyOrderNumber ?? result.order.id} served</p>
                 <p className="text-slate-600">
-                  {result.order.user?.customerName || result.order.guestName || "Guest"}
+                  {result.order.guestName || result.order.user?.customerName || "Guest"}
                   {` · ${result.order.guestVehicle || "Pickup"}`}
                   {result.order.parkingSpot && ` · ${result.order.parkingSpot}`}
                 </p>
@@ -310,7 +310,7 @@ function ReadyCard({ order, me, now, warnMin, critMin, busy, onClaim, onRelease,
             </button>
           )}
           <button onClick={() => onScan(order)} className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-orange-600 py-2.5 text-sm font-semibold text-white">
-            <ScanLine className="h-4 w-4" /> Scan to deliver
+            <ScanLine className="h-4 w-4" /> Scan to serve
           </button>
         </div>
       )}
@@ -362,7 +362,7 @@ function DeliveredRow({ order }) {
 const TABS = [
   { key: "ready", label: "Ready", icon: CheckCircle2 },
   { key: "preparing", label: "Coming up", icon: Flame },
-  { key: "delivered", label: "My deliveries", icon: Car },
+  { key: "delivered", label: "Served by me", icon: Car },
 ]
 
 function WaiterApp() {
@@ -469,7 +469,7 @@ function WaiterApp() {
   const preparing = data?.preparing ?? []
   const delivered = data?.delivered ?? []
 
-  // Spot chips come from what's actually waiting, so a waiter heading to one
+  // Spot chips come from what's actually waiting, so a server heading to one
   // area can see (and take) everything going there in one trip.
   const spotChips = [...new Set(ready.map((o) => (o.guestVehicle ? o.parkingSpot || "No spot" : "Pickup")))]
   const readyVisible = ready
@@ -573,7 +573,7 @@ function WaiterApp() {
               <span className="text-lg font-bold text-slate-900">{delivered.length}</span>
             </div>
             {delivered.length === 0
-              ? <p className="text-center text-sm text-slate-500 py-10">No deliveries yet today.</p>
+              ? <p className="text-center text-sm text-slate-500 py-10">Nothing served yet today.</p>
               : delivered.map((o) => <DeliveredRow key={o.id} order={o} />)}
           </>
         )}
@@ -589,7 +589,7 @@ function WaiterApp() {
       <div className="fixed bottom-0 inset-x-0 z-30 bg-gradient-to-t from-slate-50/0 to-transparent pt-6 pb-[max(1rem,env(safe-area-inset-bottom))]">
         <div className="max-w-md mx-auto px-4">
           <button onClick={() => setScanTarget(null)} className="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-zinc-900 dark:bg-orange-600 py-3.5 text-white font-semibold shadow-lg">
-            <ScanLine className="h-5 w-5" /> Scan a delivery QR
+            <ScanLine className="h-5 w-5" /> Scan a QR to serve
           </button>
         </div>
       </div>

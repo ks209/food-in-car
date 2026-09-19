@@ -1,12 +1,14 @@
 import { useState, useRef, useEffect } from "react"
 import { useNavigate, useParams } from "react-router-dom"
-import { User, ReceiptText, LogOut } from "lucide-react"
+import { User, UserPen, ReceiptText, LogOut } from "lucide-react"
 import { useAuth } from "../context/AuthContext"
 import { useRestaurantBase } from "../lib/restaurantPath"
 
 // Floating account control for the menu hero. Logged out → "Sign in" pill.
 // Logged in → avatar with a small dropdown (My Orders / Sign out).
-export default function AccountMenu({ onLight = true }) {
+// variant="bar" renders the logged-out button as a plain outline button, for
+// the home page top bar (the default pill is styled to sit on a hero photo).
+export default function AccountMenu({ variant = "hero" }) {
   const { restaurantId } = useParams()
   const base = useRestaurantBase()
   const { user, logout } = useAuth()
@@ -21,6 +23,13 @@ export default function AccountMenu({ onLight = true }) {
   }, [])
 
   if (!user) {
+    if (variant === "bar") {
+      return (
+        <button className="btn btn-outline btn-sm home-install-btn" onClick={() => navigate(`${base}/login`)}>
+          <User size={14} /> Sign in
+        </button>
+      )
+    }
     return (
       <button
         onClick={() => navigate(`${base}/login`)}
@@ -65,6 +74,8 @@ export default function AccountMenu({ onLight = true }) {
           </div>
           <button onClick={() => { setOpen(false); navigate(`${base}/orders`) }}
             style={menuItemStyle}><ReceiptText size={15} strokeWidth={2} /> My Orders</button>
+          <button onClick={() => { setOpen(false); navigate(`${base}/profile`) }}
+            style={menuItemStyle}><UserPen size={15} strokeWidth={2} /> Edit Profile</button>
           <button onClick={async () => { setOpen(false); await logout() }}
             style={{ ...menuItemStyle, color:"var(--error)", borderTop:"1px solid var(--border)" }}><LogOut size={15} strokeWidth={2} /> Sign out</button>
         </div>

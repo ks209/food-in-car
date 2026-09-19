@@ -1,71 +1,133 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useNavigate, useParams, Link } from "react-router-dom"
+import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth"
 import { useAuth } from "../context/AuthContext"
+import { auth } from "../lib/firebase"
 import { useRestaurantTheme } from "../lib/theme"
 import { useRestaurantBase } from "../lib/restaurantPath"
+
+const RESEND_SECONDS = 30
+
+const FIREBASE_ERRORS = {
+  "auth/invalid-phone-number": "That phone number doesn't look right",
+  "auth/too-many-requests": "Too many attempts. Please try again later",
+  "auth/quota-exceeded": "SMS limit reached. Please try again later",
+  "auth/invalid-verification-code": "Incorrect OTP. Please check and try again",
+  "auth/code-expired": "OTP expired. Please request a new one",
+  "auth/captcha-check-failed": "Verification failed. Please try again",
+  "auth/network-request-failed": "Network error. Check your connection",
+}
+const errorMessage = (err, fallback) =>
+  FIREBASE_ERRORS[err?.code] || err?.response?.data?.message || (err?.code ? `${fallback} (${err.code})` : fallback)
+
+const labelStyle = { display: "block", fontWeight: 600, marginBottom: "0.4rem", fontSize: "0.9rem" }
 
 export default function LoginPage() {
   const { restaurantId } = useParams()
   const base = useRestaurantBase()
   useRestaurantTheme(restaurantId)
-  const { login, register } = useAuth()
+  const { phoneLogin } = useAuth()
   const navigate = useNavigate()
-  const [mode, setMode] = useState("login")
+
+  const [step, setStep] = useState("phone") // phone -> otp -> profile (first-time only)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+  const [phone, setPhone] = useState("")
+  const [code, setCode] = useState("")
+  const [profile, setProfile] = useState({ customerName: "", vehicleNo: "" })
+  const [resendIn, setResendIn] = useState(0)
 
-  const [loginForm, setLoginForm] = useState({ phoneNumber: "", password: "" })
-  const [registerForm, setRegisterForm] = useState({
-    customerName: "", phoneNumber: "", username: "", password: "", vehicleNo: "",
-  })
+  const confirmationRef = useRef(null)
+  const idTokenRef = useRef(null)
+  const verifierRef = useRef(null)
+  const captchaHostRef = useRef(null)
 
-  const handleLogin = async (e) => {
-    e.preventDefault()
+  const phoneValid = /^\d{10}$/.test(phone.trim())
+
+  useEffect(() => () => verifierRef.current?.clear(), [])
+
+  useEffect(() => {
+    if (resendIn <= 0) return
+    const t = setTimeout(() => setResendIn(s => s - 1), 1000)
+    return () => clearTimeout(t)
+  }, [resendIn])
+
+  // Invisible reCAPTCHA. Each verifier gets a fresh child element because a
+  // cleared widget can't be re-rendered into the same node.
+  const getVerifier = () => {
+    if (!verifierRef.current) {
+      const el = document.createElement("div")
+      captchaHostRef.current.replaceChildren(el)
+      verifierRef.current = new RecaptchaVerifier(auth, el, { size: "invisible" })
+    }
+    return verifierRef.current
+  }
+
+  const resetVerifier = () => {
+    verifierRef.current?.clear()
+    verifierRef.current = null
+  }
+
+  const sendOtp = async () => {
     setError(""); setLoading(true)
+    resetVerifier() // a solved token is single-use, so resends need a fresh widget
     try {
-      await login(loginForm.phoneNumber, loginForm.password)
-      navigate(`${base}/orders`)
+      confirmationRef.current = await signInWithPhoneNumber(auth, `+91${phone.trim()}`, getVerifier())
+      setCode("")
+      setStep("otp")
+      setResendIn(RESEND_SECONDS)
     } catch (err) {
-      setError(err.response?.data?.message || "Login failed")
+      resetVerifier()
+      setError(errorMessage(err, "Couldn't send OTP. Please try again"))
     } finally { setLoading(false) }
   }
 
-  const handleRegister = async (e) => {
+  const finish = async (extra) => {
+    const data = await phoneLogin(idTokenRef.current, extra)
+    if (data.needsProfile) setStep("profile")
+    else navigate(`${base}/orders`)
+  }
+
+  const handlePhone = (e) => {
+    e.preventDefault()
+    if (phoneValid) sendOtp()
+  }
+
+  const handleOtp = async (e) => {
     e.preventDefault()
     setError(""); setLoading(true)
     try {
-      await register(registerForm)
-      await login(registerForm.phoneNumber, registerForm.password)
-      navigate(`${base}/orders`)
+      const result = await confirmationRef.current.confirm(code.trim())
+      idTokenRef.current = await result.user.getIdToken()
+      await finish()
     } catch (err) {
-      setError(err.response?.data?.message || "Registration failed")
+      setError(errorMessage(err, "Verification failed"))
     } finally { setLoading(false) }
+  }
+
+  const handleProfile = async (e) => {
+    e.preventDefault()
+    setError(""); setLoading(true)
+    try {
+      await finish(profile)
+    } catch (err) {
+      setError(errorMessage(err, "Couldn't create your account"))
+    } finally { setLoading(false) }
+  }
+
+  const titles = {
+    phone: ["Sign In", "Enter your mobile number to continue"],
+    otp: ["Verify OTP", `Code sent to +91 ${phone}`],
+    profile: ["Almost there", "Tell us a bit about yourself"],
   }
 
   return (
     <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column" }}>
       {/* Header */}
       <div style={{ background: "var(--primary)", padding: "1.5rem 1rem", color: "white" }}>
-        <Link to={base} style={{ color: "white", fontSize: "0.9rem", opacity: 0.9 }}>← Back to Menu</Link>
-        <h1 style={{ fontSize: "1.5rem", fontWeight: 700, marginTop: "0.5rem" }}>
-          {mode === "login" ? "Sign In" : "Create Account"}
-        </h1>
-        <p style={{ opacity: 0.85, fontSize: "0.9rem" }}>
-          {mode === "login" ? "Welcome back!" : "Join to start ordering"}
-        </p>
-      </div>
-
-      {/* Mode Toggle */}
-      <div style={{ display: "flex", margin: "1.5rem 1rem 0", background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, padding: 4 }}>
-        {["login", "register"].map(m => (
-          <button key={m} onClick={() => { setMode(m); setError("") }}
-            style={{ flex: 1, padding: "0.6rem", borderRadius: 7, fontWeight: 600, fontSize: "0.9rem", transition: "all 0.15s",
-              background: mode === m ? "var(--surface-2)" : "transparent",
-              color: mode === m ? "var(--primary)" : "var(--muted)",
-              boxShadow: mode === m ? "var(--shadow)" : "none" }}>
-            {m === "login" ? "Sign In" : "Register"}
-          </button>
-        ))}
+        <Link to={base || "/"} style={{ color: "white", fontSize: "0.9rem", opacity: 0.9 }}>← {base ? "Back to Menu" : "Back"}</Link>
+        <h1 style={{ fontSize: "1.5rem", fontWeight: 700, marginTop: "0.5rem" }}>{titles[step][0]}</h1>
+        <p style={{ opacity: 0.85, fontSize: "0.9rem" }}>{titles[step][1]}</p>
       </div>
 
       <div style={{ padding: "1.5rem 1rem", flex: 1 }}>
@@ -75,54 +137,68 @@ export default function LoginPage() {
           </div>
         )}
 
-        {mode === "login" ? (
-          <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+        {step === "phone" && (
+          <form onSubmit={handlePhone} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
             <div>
-              <label style={{ display: "block", fontWeight: 600, marginBottom: "0.4rem", fontSize: "0.9rem" }}>Phone Number</label>
-              <input className="input" type="tel" placeholder="Enter your phone number"
-                value={loginForm.phoneNumber} onChange={e => setLoginForm({ ...loginForm, phoneNumber: e.target.value })} required />
+              <label style={labelStyle}>Phone Number</label>
+              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                <span style={{ fontWeight: 600, color: "var(--muted)" }}>+91</span>
+                <input className="input" type="tel" inputMode="numeric" maxLength={10} autoComplete="tel-national"
+                  placeholder="10-digit mobile number" value={phone}
+                  onChange={e => setPhone(e.target.value.replace(/\D/g, ""))} required />
+              </div>
             </div>
-            <div>
-              <label style={{ display: "block", fontWeight: 600, marginBottom: "0.4rem", fontSize: "0.9rem" }}>Password</label>
-              <input className="input" type="password" placeholder="Enter your password"
-                value={loginForm.password} onChange={e => setLoginForm({ ...loginForm, password: e.target.value })} required />
-            </div>
-            <button className="btn btn-primary" type="submit" disabled={loading} style={{ marginTop: "0.5rem" }}>
-              {loading ? "Signing in..." : "Sign In"}
+            <button className="btn btn-primary" type="submit" disabled={loading || !phoneValid} style={{ marginTop: "0.5rem" }}>
+              {loading ? "Sending OTP..." : "Send OTP"}
             </button>
           </form>
-        ) : (
-          <form onSubmit={handleRegister} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+        )}
+
+        {step === "otp" && (
+          <form onSubmit={handleOtp} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
             <div>
-              <label style={{ display: "block", fontWeight: 600, marginBottom: "0.4rem", fontSize: "0.9rem" }}>Full Name</label>
-              <input className="input" type="text" placeholder="Your full name"
-                value={registerForm.customerName} onChange={e => setRegisterForm({ ...registerForm, customerName: e.target.value })} required />
+              <label style={labelStyle}>OTP</label>
+              <input className="input" type="text" inputMode="numeric" maxLength={6} autoComplete="one-time-code" autoFocus
+                placeholder="6-digit code" value={code}
+                onChange={e => setCode(e.target.value.replace(/\D/g, ""))} required
+                style={{ letterSpacing: "0.3em", fontSize: "1.2rem" }} />
+            </div>
+            <button className="btn btn-primary" type="submit" disabled={loading || code.length !== 6} style={{ marginTop: "0.5rem" }}>
+              {loading ? "Verifying..." : "Verify & Continue"}
+            </button>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem" }}>
+              <button type="button" onClick={() => { setStep("phone"); setError("") }}
+                style={{ color: "var(--muted)", background: "none" }}>
+                Change number
+              </button>
+              <button type="button" onClick={sendOtp} disabled={loading || resendIn > 0}
+                style={{ color: resendIn > 0 ? "var(--muted)" : "var(--primary)", background: "none", fontWeight: 600 }}>
+                {resendIn > 0 ? `Resend in ${resendIn}s` : "Resend OTP"}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {step === "profile" && (
+          <form onSubmit={handleProfile} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+            <div>
+              <label style={labelStyle}>Full Name</label>
+              <input className="input" type="text" placeholder="Your full name" autoFocus
+                value={profile.customerName} onChange={e => setProfile({ ...profile, customerName: e.target.value })} required />
             </div>
             <div>
-              <label style={{ display: "block", fontWeight: 600, marginBottom: "0.4rem", fontSize: "0.9rem" }}>Phone Number</label>
-              <input className="input" type="tel" placeholder="Your phone number"
-                value={registerForm.phoneNumber} onChange={e => setRegisterForm({ ...registerForm, phoneNumber: e.target.value })} required />
-            </div>
-            <div>
-              <label style={{ display: "block", fontWeight: 600, marginBottom: "0.4rem", fontSize: "0.9rem" }}>Username</label>
-              <input className="input" type="text" placeholder="Choose a username"
-                value={registerForm.username} onChange={e => setRegisterForm({ ...registerForm, username: e.target.value })} required />
-            </div>
-            <div>
-              <label style={{ display: "block", fontWeight: 600, marginBottom: "0.4rem", fontSize: "0.9rem" }}>Password</label>
-              <input className="input" type="password" placeholder="Create a password"
-                value={registerForm.password} onChange={e => setRegisterForm({ ...registerForm, password: e.target.value })} required />
-            </div>
-            <div>
-              <label style={{ display: "block", fontWeight: 600, marginBottom: "0.4rem", fontSize: "0.9rem" }}>Vehicle Number</label>
+              <label style={labelStyle}>Vehicle Number <span style={{ fontWeight: 400, color: "var(--muted)" }}>(optional)</span></label>
               <input className="input" type="text" placeholder="e.g. DL 4C AB 1234"
-                value={registerForm.vehicleNo} onChange={e => setRegisterForm({ ...registerForm, vehicleNo: e.target.value })} required />
+                value={profile.vehicleNo} onChange={e => setProfile({ ...profile, vehicleNo: e.target.value })} />
             </div>
             <button className="btn btn-primary" type="submit" disabled={loading} style={{ marginTop: "0.5rem" }}>
               {loading ? "Creating account..." : "Create Account"}
             </button>
           </form>
         )}
+
+        {/* Invisible reCAPTCHA mounts here */}
+        <div ref={captchaHostRef} />
       </div>
     </div>
   )

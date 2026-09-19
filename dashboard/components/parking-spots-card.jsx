@@ -130,7 +130,7 @@ export function ParkingSpotsCard({ deliveryEnabled }) {
             <Label className="text-sm">Require a parking spot</Label>
             <p className="text-xs text-muted-foreground">
               {required
-                ? "Customers can’t check out for in-car delivery without picking a spot."
+                ? "Customers can’t check out for Served in Car without picking a spot."
                 : "Customers can pick a spot, or skip it."}
             </p>
           </div>

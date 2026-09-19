@@ -33,7 +33,7 @@ const money = (n) => `₹${Number(n || 0).toLocaleString("en-IN", { minimumFract
 const RESTAURANT_SAC = "996331"
 
 function InvoiceBody({ order, className }) {
-  const customer = order.user?.customerName || order.guestName || "Guest"
+  const customer = order.guestName || order.user?.customerName || "Guest"
   const vehicle = order.guestVehicle
   const phone = order.user?.phoneNumber
   const r = order.restaurant || {}

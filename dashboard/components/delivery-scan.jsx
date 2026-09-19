@@ -188,7 +188,7 @@ export function DeliveryScan() {
                   <CheckCircle2 className="h-5 w-5" /> Order #{result.order.dailyOrderNumber ?? result.order.id} delivered
                 </div>
                 <p className="text-sm text-slate-600">
-                  {result.order.user?.customerName || result.order.guestName || "Guest"}
+                  {result.order.guestName || result.order.user?.customerName || "Guest"}
                   {` · ${result.order.guestVehicle || "Pickup"}`}
                   {result.order.parkingSpot && ` · ${result.order.parkingSpot}`}
                 </p>

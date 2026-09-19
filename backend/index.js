@@ -31,11 +31,16 @@ if (process.env.NODE_ENV === 'production' && !process.env.DASHBOARD_URL) {
 
 const app =express();
 
+// Behind one HTTPS reverse proxy: take the client IP from X-Forwarded-For so
+// the login rate limiters count per customer, not per proxy.
+app.set('trust proxy', 1);
+
 const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:3001",
   "http://localhost:5173",
   "http://localhost:5174",
+  "http://127.0.0.1:5174",
   "https://app.carkhanaa.in",
   "https://dash.carkhanaa.in",
   "https://admin.carkhanaa.in",
@@ -58,8 +63,8 @@ app.use(cookieParser());
 // shared by every customer behind the HTTPS proxy (no trust proxy set, so all
 // requests came from the proxy's IP) and the 2-second polling of the order
 // status page, dashboard and waiter app would have exhausted it with a handful
-// of users. If brute-force protection is needed, add a strict limiter on the
-// login routes only.
+// of users. Brute-force protection lives on the login routes only — see
+// middlewares/loginLimiter.js.
 
 
 app.use('/api/order', orderRouter);

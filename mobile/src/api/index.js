@@ -8,8 +8,10 @@ const api = axios.create({
 export const userApi = {
   register: (data) => api.post("/api/user/register", data),
   login: (data) => api.post("/api/user/login", data),
+  firebaseLogin: (data) => api.post("/api/user/firebase-login", data),
   logout: () => api.post("/api/user/logout"),
   me: () => api.get("/api/user/me"),
+  updateMe: (data) => api.put("/api/user/me", data),
 }
 
 export const restaurantApi = {

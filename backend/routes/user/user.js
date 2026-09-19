@@ -1,10 +1,20 @@
 import express from 'express';
-import bcrypt from 'bcryptjs';
+// import bcrypt from 'bcryptjs'; // only used by the disabled password routes below
 import jwt from 'jsonwebtoken';
 import prisma from '../../config/prisma.js';
 import userAuth from '../../middlewares/user.auth.js';
+import { firebaseAuth } from '../../config/firebase.js';
+import loginLimiter from '../../middlewares/loginLimiter.js';
 
 const userRouter = express.Router();
+
+/*
+ * DISABLED — password register/login, replaced by phone OTP (/firebase-login).
+ * /register let anyone attach a password to a guest account (auto-created at
+ * checkout) knowing only the phone number — no OTP — and then read that
+ * customer's order history. Existing password users sign in with OTP instead;
+ * they're matched by phone number. Kept for reference; don't re-enable
+ * without phone verification.
 
 userRouter.post('/register', async (req, res) => {
   const { customerName, phoneNumber, username, password, vehicleNo } = req.body;
@@ -79,6 +89,72 @@ userRouter.post('/login', async (req, res) => {
     res.status(500).json({ message: 'Error logging in', error: err.message });
   }
 });
+*/
+
+// Phone-OTP sign-in. The client does the OTP with Firebase, then sends the
+// resulting ID token here; we trust the phone number inside it and issue our
+// own userToken cookie. First-time users get { needsProfile: true } until they
+// resend with customerName (and optionally vehicleNo).
+userRouter.post('/firebase-login', loginLimiter, async (req, res) => {
+  const { idToken, customerName, vehicleNo } = req.body;
+  if (!idToken) return res.status(400).json({ message: 'Missing idToken' });
+  if (!firebaseAuth) return res.status(500).json({ message: 'Phone login is not configured' });
+
+  let decoded;
+  try {
+    decoded = await firebaseAuth.verifyIdToken(idToken);
+  } catch {
+    return res.status(401).json({ message: 'Invalid or expired verification' });
+  }
+  if (!decoded.phone_number) return res.status(400).json({ message: 'No phone number on this account' });
+
+  // Firebase gives E.164 (+91XXXXXXXXXX); we store the bare 10-digit number.
+  const phoneNumber = decoded.phone_number.replace(/\D/g, '').slice(-10);
+
+  try {
+    let user = await prisma.user.findUnique({ where: { phoneNumber } });
+    if (user && !user.isActive) return res.status(403).json({ message: 'Account disabled' });
+
+    if (!user) {
+      if (!customerName?.trim()) return res.json({ needsProfile: true, phoneNumber });
+      user = await prisma.user.create({ data: { customerName: customerName.trim(), phoneNumber } });
+    }
+
+    if (vehicleNo?.trim()) {
+      const v = vehicleNo.trim().toUpperCase();
+      await prisma.userVehicle.upsert({
+        where: { userId_vehicleNo: { userId: user.id, vehicleNo: v } },
+        update: {},
+        create: { userId: user.id, vehicleNo: v },
+      });
+    }
+
+    const vehicles = await prisma.userVehicle.findMany({
+      where: { userId: user.id }, orderBy: { lastUsedAt: 'desc' }, select: { vehicleNo: true },
+    });
+
+    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET || 's3cret', { expiresIn: '7d' });
+    res.cookie('userToken', token, {
+      httpOnly: true,
+      secure: false,
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    res.json({
+      code: 200,
+      message: 'Logged in',
+      user: {
+        id: user.id,
+        customerName: user.customerName,
+        phoneNumber: user.phoneNumber,
+        vehicles: vehicles.map(v => v.vehicleNo),
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Error logging in', error: err.message });
+  }
+});
 
 userRouter.post('/logout', (req, res) => {
   res.clearCookie('userToken');
@@ -98,6 +174,43 @@ userRouter.get('/me', userAuth, async (req, res) => {
     res.json({ ...user, vehicles: user.vehicles.map(v => v.vehicleNo) });
   } catch (err) {
     res.status(500).json({ message: 'Error fetching user', error: err.message });
+  }
+});
+
+// Edit profile: name + saved vehicles. `vehicles` is the full desired list —
+// ones missing from it are removed (orders keep their own vehicleNo copy).
+userRouter.put('/me', userAuth, async (req, res) => {
+  const { customerName, vehicles } = req.body;
+  if (!customerName?.trim()) return res.status(400).json({ message: 'Name is required' });
+  if (vehicles !== undefined && !Array.isArray(vehicles)) {
+    return res.status(400).json({ message: 'vehicles must be a list' });
+  }
+
+  try {
+    await prisma.user.update({ where: { id: req.userId }, data: { customerName: customerName.trim() } });
+
+    if (vehicles) {
+      const wanted = [...new Set(vehicles.map(v => String(v).trim().toUpperCase()).filter(Boolean))];
+      await prisma.$transaction([
+        prisma.userVehicle.deleteMany({ where: { userId: req.userId, vehicleNo: { notIn: wanted } } }),
+        ...wanted.map(vehicleNo => prisma.userVehicle.upsert({
+          where: { userId_vehicleNo: { userId: req.userId, vehicleNo } },
+          update: {},
+          create: { userId: req.userId, vehicleNo },
+        })),
+      ]);
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.userId },
+      select: {
+        id: true, customerName: true, phoneNumber: true, username: true,
+        vehicles: { select: { vehicleNo: true }, orderBy: { lastUsedAt: 'desc' } },
+      },
+    });
+    res.json({ ...user, vehicles: user.vehicles.map(v => v.vehicleNo) });
+  } catch (err) {
+    res.status(500).json({ message: 'Error updating profile', error: err.message });
   }
 });
 

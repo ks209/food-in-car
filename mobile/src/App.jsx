@@ -6,6 +6,7 @@ import MenuPage from "./pages/MenuPage"
 import LoginPage from "./pages/LoginPage"
 import OrderStatusPage from "./pages/OrderStatusPage"
 import OrdersPage from "./pages/OrdersPage"
+import ProfilePage from "./pages/ProfilePage"
 import LegalPage from "./pages/LegalPage"
 import VenuePage from "./pages/VenuePage"
 
@@ -18,6 +19,11 @@ export default function App() {
             <Route path="/" element={<HomePage />} />
             {/* Privacy / Terms / Refunds. "legal" is a reserved slug (backend utils/slug.js). */}
             <Route path="/legal/:doc" element={<LegalPage />} />
+            {/* Sign-in / order history from the home page, outside any restaurant.
+                "login", "orders" and "profile" are reserved slugs too. */}
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/orders" element={<OrdersPage />} />
+            <Route path="/profile" element={<ProfilePage />} />
 
             {/* A place that clubs several restaurants together — a campus, a
                 mall. "at" is a reserved slug, so the literal segment can never
@@ -30,6 +36,7 @@ export default function App() {
             <Route path="/restaurant/:restaurantId" element={<MenuPage />} />
             <Route path="/restaurant/:restaurantId/login" element={<LoginPage />} />
             <Route path="/restaurant/:restaurantId/orders" element={<OrdersPage />} />
+            <Route path="/restaurant/:restaurantId/profile" element={<ProfilePage />} />
             <Route path="/restaurant/:restaurantId/order/:orderId" element={<OrderStatusPage />} />
             <Route path="/restaurant/:restaurantId/legal/:doc" element={<LegalPage />} />
 
@@ -42,6 +49,7 @@ export default function App() {
             <Route path="/:restaurantId" element={<MenuPage />} />
             <Route path="/:restaurantId/login" element={<LoginPage />} />
             <Route path="/:restaurantId/orders" element={<OrdersPage />} />
+            <Route path="/:restaurantId/profile" element={<ProfilePage />} />
             <Route path="/:restaurantId/order/:orderId" element={<OrderStatusPage />} />
             {/* The restaurant as seller — its own policy pages. */}
             <Route path="/:restaurantId/legal/:doc" element={<LegalPage />} />

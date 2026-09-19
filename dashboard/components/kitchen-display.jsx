@@ -240,7 +240,7 @@ export function KitchenDisplay() {
                     <div>
                       <p className="text-sm font-semibold text-slate-800 leading-snug">{itemsLine(order)}</p>
                       <p className="text-xs text-slate-400 mt-1">
-                        {order.user?.customerName || order.guestName || "Guest"}
+                        {order.guestName || order.user?.customerName || "Guest"}
                         {" · "}
                         {order.guestVehicle ? order.guestVehicle : <span className="text-amber-600 font-medium">Pickup</span>}{order.parkingSpot && ` · ${order.parkingSpot}`}
                       </p>

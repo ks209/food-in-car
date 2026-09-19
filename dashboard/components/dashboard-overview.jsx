@@ -295,7 +295,7 @@ export function DashboardOverview() {
                     </span>
                   </div>
                   <p className="text-sm font-medium text-slate-800 truncate">
-                    {order.user?.customerName || order.guestName || "Guest"}
+                    {order.guestName || order.user?.customerName || "Guest"}
                   </p>
                   <p className="text-xs text-slate-400 truncate mb-1.5">
                     {order.guestVehicle

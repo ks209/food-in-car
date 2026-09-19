@@ -249,14 +249,16 @@ export function MenuManagement() {
       key: String(c.id), id: c.id, name: c.name, isActive: c.isActive,
       items: menuItems.filter((i) => i.categoryId === c.id && matches(i)),
     })),
-    {
+    // Only surfaces when some item actually lacks a category, so it isn't
+    // mistaken for a real category the restaurant created.
+    ...(menuItems.some((i) => !i.categoryId) ? [{
       key: "uncategorized", id: null, name: "Uncategorized", isActive: true,
       items: menuItems.filter((i) => !i.categoryId && matches(i)),
-    },
+    }] : []),
   ]
 
   const groups = allGroups
-    .filter((g) => categoryFilter === "all" || g.key === categoryFilter)
+    .filter((g) => categoryFilter === "all" || g.key === categoryFilter || !allGroups.some((a) => a.key === categoryFilter))
     .filter((g) => !term || g.items.length > 0)
 
   return (

@@ -79,7 +79,7 @@ function Privacy({ seller }) {
       </P>
       <H>How we use it</H>
       <UL items={[
-        "To place your order with the restaurant and get it delivered to your car or ready for pickup.",
+        "To place your order with the restaurant and get it served to your car or ready for pickup.",
         "To show your order status and past orders, and to contact you about an order.",
         "To handle payments, refunds, invoices and tax records required by law.",
         "To keep the service secure and fix problems.",
@@ -181,7 +181,7 @@ function Refunds({ seller }) {
       ]} />
       <H>Problems with your food</H>
       <P>
-        If items are missing, wrong or not fit to eat, tell the delivery staff immediately, or contact {seller.email}
+        If items are missing, wrong or not fit to eat, tell the server immediately, or contact {seller.email}
         {" "}(or {seller.phone}) within 24 hours with your order number; photos help. Depending on the issue, the item
         may be replaced or refunded in full or in part.
       </P>
