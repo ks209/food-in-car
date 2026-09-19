@@ -52,6 +52,18 @@ model Restaurant {
   phonepeSaltKey    String?
   phonepeSaltIndex  String?     @default("1")
   phonepeSandbox    Boolean     @default(true)
+  // Which PhonePe API this restaurant's credentials are for. "v1" = legacy
+  // PG (Merchant ID + Salt Key, X-VERIFY). "v2" = Standard Checkout (Client
+  // ID + Client Secret, OAuth) — what PhonePe issues to newly onboarded
+  // merchants. Secret/password fields are write-only, like phonepeSaltKey.
+  phonepeApiVersion      String  @default("v1")
+  phonepeClientId        String?
+  phonepeClientSecret    String?
+  phonepeClientVersion   String? @default("1")
+  // Optional: the username/password set on the webhook in PhonePe's dashboard.
+  // PhonePe sends Authorization: SHA256("username:password").
+  phonepeWebhookUsername String?
+  phonepeWebhookPassword String?
   pickupEnabled  Boolean     @default(false)
   deliveryEnabled Boolean    @default(true)
   isOpen         Boolean     @default(true)

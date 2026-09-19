@@ -1,12 +1,11 @@
 import express from 'express';
-import axios from 'axios';
 import crypto from 'crypto';
 import prisma from '../../config/prisma.js';
 import { genDeliveryCode } from '../../utils/deliveryCode.js';
 import { resolveCustomerByPhone } from '../../utils/customer.js';
 import { nextDailyOrderNumber } from '../../utils/dailyOrderNumber.js';
 import { validateAndPriceCart } from '../../utils/validateCart.js';
-import { isDevMode, baseUrl, xVerifyForPay, reconcileTransaction } from '../../utils/phonepe.js';
+import { isDevMode, gatewayVersion, initiatePayment, reconcileTransaction, verifyV2WebhookAuth } from '../../utils/phonepe.js';
 import { resolveOrderParkingSpot } from '../parking/parking.js';
 import { customerOpenState } from '../../utils/businessHours.js';
 import { orderGst } from '../../utils/gst.js';
@@ -129,20 +128,6 @@ paymentRouter.post('/initiate', async (req, res) => {
     const merchantTransactionId = `MT${Date.now()}O${order.id}`;
     const amountPaise = Math.round(tax.totalAmount * 100);
 
-    const payload = {
-      merchantId: restaurant.phonepeMerchantId,
-      merchantTransactionId,
-      merchantUserId: `MUID${order.id}`,
-      amount: amountPaise,
-      redirectUrl: `${BACKEND_URL}/api/payment/redirect?orderId=${order.id}&restaurantId=${restaurantId}`,
-      redirectMode: 'REDIRECT',
-      callbackUrl: `${BACKEND_URL}/api/payment/callback`,
-      ...(mobileNumber ? { mobileNumber: String(mobileNumber) } : {}),
-      paymentInstrument: { type: 'PAY_PAGE' },
-    };
-
-    const base64Payload = Buffer.from(JSON.stringify(payload)).toString('base64');
-
     // Recorded BEFORE the gateway call, not after it. verifyPendingOrders finds
     // stuck orders by walking MerchantTransaction rows, so an order without one
     // is invisible to it — and if the call below throws (PhonePe unreachable,
@@ -154,26 +139,36 @@ paymentRouter.post('/initiate', async (req, res) => {
       data: { orderId: order.id, txnId: merchantTransactionId, status: 'PENDING' },
     });
 
-    const phonePeRes = await axios.post(
-      `${baseUrl(restaurant)}/pg/v1/pay`,
-      { request: base64Payload },
-      { headers: { 'Content-Type': 'application/json', 'X-VERIFY': xVerifyForPay(restaurant, base64Payload), accept: 'application/json' } }
-    );
-
-    const redirectUrl = phonePeRes.data?.data?.instrumentResponse?.redirectInfo?.url;
+    // v1 or v2 depending on the restaurant's credentials — see utils/phonepe.js.
+    // callbackUrl is v1-only; v2's webhook URL is set in PhonePe's dashboard.
+    const { redirectUrl, raw } = await initiatePayment(restaurant, {
+      merchantOrderId: merchantTransactionId,
+      amountPaise,
+      redirectUrl: `${BACKEND_URL}/api/payment/redirect?orderId=${order.id}&restaurantId=${restaurantId}`,
+      callbackUrl: `${BACKEND_URL}/api/payment/callback`,
+      mobileNumber,
+      merchantUserId: `MUID${order.id}`,
+    });
     // PhonePe can answer "success" with a pay-page URL whose token is literally
     // "undefined" (e.g. …/transact/undefined) — typically live credentials sent
     // to the sandbox host or vice versa. Sending the customer there just shows
     // PhonePe's "Something went wrong", so fail loudly here instead.
     if (!redirectUrl || /\/undefined\/?$/.test(redirectUrl)) {
-      console.error(`[payment] restaurant ${restaurant.id} (sandbox=${restaurant.phonepeSandbox}) got unusable pay URL:`, JSON.stringify(phonePeRes.data));
+      console.error(`[payment] restaurant ${restaurant.id} (${gatewayVersion(restaurant)}, sandbox=${restaurant.phonepeSandbox}) got unusable pay URL:`, JSON.stringify(raw));
       throw new Error('PhonePe did not return a valid payment URL — check the restaurant\'s PhonePe credentials and Sandbox/Production setting');
     }
 
     res.json({ orderId: order.id, redirectUrl });
   } catch (err) {
-    console.error('PhonePe initiate error:', err?.response?.data || err.message);
-    res.status(500).json({ error: 'Payment initiation failed', details: err?.response?.data?.message || err.message });
+    // Surface PhonePe's own code (e.g. KEY_NOT_CONFIGURED) — axios's generic
+    // "Request failed with status code 404" says nothing about the cause.
+    const pp = err?.response;
+    console.error('PhonePe initiate error:', pp ? `HTTP ${pp.status} ${pp.config?.url} ${JSON.stringify(pp.data)}` : err.message);
+    res.status(500).json({
+      error: 'Payment initiation failed',
+      details: pp?.data?.message || err.message,
+      ...(pp && { gatewayStatus: pp.status, gatewayCode: pp.data?.code }),
+    });
   }
 });
 
@@ -199,6 +194,9 @@ paymentRouter.post('/callback', async (req, res) => {
     });
     if (!txn) return res.status(404).send('Unknown transaction');
     const restaurant = txn.order.restaurant;
+    // v1 only. Without a salt key the hash below would be sha256(body + "null"),
+    // which anyone can compute — v2 restaurants use /webhook instead.
+    if (gatewayVersion(restaurant) !== 'v1') return res.status(401).send('Unauthorized');
 
     const [receivedHash] = xVerify.split('###');
     const computedHash = crypto.createHash('sha256').update(responseBody + restaurant.phonepeSaltKey).digest('hex');
@@ -216,6 +214,40 @@ paymentRouter.post('/callback', async (req, res) => {
     res.status(200).send('OK');
   } catch (err) {
     console.error('PhonePe callback error:', err.message);
+    res.status(500).send('Error');
+  }
+});
+
+// ── POST /api/payment/webhook ─────────────────────────────────────────────────
+// PhonePe v2 (Standard Checkout) webhook. Set in PhonePe's dashboard per
+// merchant as <BACKEND_URL>/api/payment/webhook with a username/password,
+// which the restaurant also enters in Settings → Payments.
+//
+// The payload is never trusted for the payment result: it only tells us WHICH
+// transaction changed, and reconcileTransaction then asks PhonePe's status API
+// (authenticated with the restaurant's own OAuth token). So even a forged
+// webhook can't mark an order paid — the auth check just stops strangers from
+// making us hammer the status API.
+paymentRouter.post('/webhook', async (req, res) => {
+  try {
+    const merchantOrderId = req.body?.payload?.merchantOrderId;
+    if (!merchantOrderId) return res.status(400).send('Bad request');
+
+    const txn = await prisma.merchantTransaction.findFirst({
+      where: { txnId: String(merchantOrderId) },
+      include: { order: { include: { restaurant: true } } },
+    });
+    if (!txn) return res.status(404).send('Unknown transaction');
+    const restaurant = txn.order.restaurant;
+
+    if (gatewayVersion(restaurant) !== 'v2' || !verifyV2WebhookAuth(restaurant, req.headers.authorization)) {
+      return res.status(401).send('Unauthorized');
+    }
+
+    await reconcileTransaction(restaurant, txn);
+    res.status(200).send('OK');
+  } catch (err) {
+    console.error('PhonePe webhook error:', err?.response?.data || err.message);
     res.status(500).send('Error');
   }
 });

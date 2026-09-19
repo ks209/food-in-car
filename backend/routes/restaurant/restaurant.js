@@ -10,6 +10,7 @@ import { validateHours, customerOpenState } from '../../utils/businessHours.js';
 import { menuWaitEstimate } from '../../utils/waitEstimate.js';
 import { validateTaxSettings } from '../../utils/gst.js';
 import { createLoginLimiter } from '../../middlewares/loginLimiter.js';
+import { withoutPhonepeSecrets } from '../../utils/phonepe.js';
 
 const restaurantLoginLimiter = createLoginLimiter({ limit: 10 });
 
@@ -20,18 +21,20 @@ restaurantRouter.use(cookieParser());
 // (used elsewhere for waiter /scan links). Same env var as payment.js's redirect
 // target, so the QR always points at the same app customers actually order from.
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5174';
+// Shown in Settings → Payments so a v2 merchant can paste it into PhonePe's webhook config
+const PHONEPE_WEBHOOK_URL = `${(process.env.BACKEND_URL || 'http://localhost:5000').trim().replace(/\/+$/, '')}/api/payment/webhook`;
 
 restaurantRouter.get('/me', restaurantAuth, async (req, res) => {
     try {
         const restaurant = await prisma.restaurant.findUnique({
             where: { id: req.restaurantId },
-            select: { id: true, name: true, slug: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true, openingTime: true, closingTime: true, gstin: true, gstRate: true, fssaiLicense: true, legalName: true, supportEmail: true, supportPhone: true, latitude: true, longitude: true, cityId: true, phonepeMerchantId: true, phonepeSaltIndex: true, phonepeSandbox: true, phonepeSaltKey: true },
+            select: { id: true, name: true, slug: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true, openingTime: true, closingTime: true, gstin: true, gstRate: true, fssaiLicense: true, legalName: true, supportEmail: true, supportPhone: true, latitude: true, longitude: true, cityId: true, phonepeMerchantId: true, phonepeSaltIndex: true, phonepeSandbox: true, phonepeSaltKey: true, phonepeApiVersion: true, phonepeClientId: true, phonepeClientVersion: true, phonepeClientSecret: true, phonepeWebhookUsername: true, phonepeWebhookPassword: true },
         });
         if (!restaurant) return res.status(404).json({ message: 'Restaurant not found' });
-        // phonepeSaltKey is fetched only to derive this flag — it must never
-        // leave the server in a response body.
-        const { phonepeSaltKey, ...safe } = restaurant;
-        res.json({ ...safe, phonepeConfigured: !!(restaurant.phonepeMerchantId && phonepeSaltKey), orderingUrl: orderingUrlFor(restaurant, FRONTEND_URL) });
+        // PhonePe secrets are fetched only to derive the "configured" flags —
+        // they must never leave the server in a response body.
+        const safe = withoutPhonepeSecrets(restaurant);
+        res.json({ ...safe, phonepeWebhookUrl: PHONEPE_WEBHOOK_URL, orderingUrl: orderingUrlFor(restaurant, FRONTEND_URL) });
     } catch (err) {
         res.status(500).json({ message: 'Error fetching restaurant', error: err });
     }
@@ -42,7 +45,7 @@ const FONT_KEYS = ['manrope', 'inter', 'poppins', 'playfair', 'spacegrotesk', 'f
 const CARD_STYLES = ['rounded', 'sharp'];
 
 restaurantRouter.put('/me', restaurantAuth, async (req, res) => {
-    const { name, slug, phone, address, themeColor, secondaryColor, accentColor, fontFamily, cardStyle, logoUrl, coverUrl, pickupEnabled, deliveryEnabled, isOpen, slaWarnMinutes, slaCritMinutes, openingTime, closingTime, gstin, gstRate, fssaiLicense, legalName, supportEmail, supportPhone, latitude, longitude, cityId, phonepeMerchantId, phonepeSaltKey, phonepeSaltIndex, phonepeSandbox } = req.body;
+    const { name, slug, phone, address, themeColor, secondaryColor, accentColor, fontFamily, cardStyle, logoUrl, coverUrl, pickupEnabled, deliveryEnabled, isOpen, slaWarnMinutes, slaCritMinutes, openingTime, closingTime, gstin, gstRate, fssaiLicense, legalName, supportEmail, supportPhone, latitude, longitude, cityId, phonepeMerchantId, phonepeSaltKey, phonepeSaltIndex, phonepeSandbox, phonepeApiVersion, phonepeClientId, phonepeClientSecret, phonepeClientVersion, phonepeWebhookUsername, phonepeWebhookPassword } = req.body;
     try {
         const data = {};
         if (name !== undefined) data.name = name || null;
@@ -165,14 +168,25 @@ restaurantRouter.put('/me', restaurantAuth, async (req, res) => {
         if (phonepeSaltKey !== undefined && phonepeSaltKey.trim()) data.phonepeSaltKey = phonepeSaltKey.trim();
         if (phonepeSaltIndex !== undefined) data.phonepeSaltIndex = phonepeSaltIndex.trim() || '1';
         if (phonepeSandbox !== undefined) data.phonepeSandbox = !!phonepeSandbox;
+        // v2 (Standard Checkout). Client Secret and webhook password are
+        // write-only, same "blank keeps the saved one" rule as the salt key.
+        if (phonepeApiVersion !== undefined) {
+            if (!['v1', 'v2'].includes(phonepeApiVersion)) return res.status(400).json({ message: 'phonepeApiVersion must be v1 or v2' });
+            data.phonepeApiVersion = phonepeApiVersion;
+        }
+        if (phonepeClientId !== undefined) data.phonepeClientId = phonepeClientId.trim() || null;
+        if (phonepeClientSecret !== undefined && phonepeClientSecret.trim()) data.phonepeClientSecret = phonepeClientSecret.trim();
+        if (phonepeClientVersion !== undefined) data.phonepeClientVersion = String(phonepeClientVersion).trim() || '1';
+        if (phonepeWebhookUsername !== undefined) data.phonepeWebhookUsername = phonepeWebhookUsername.trim() || null;
+        if (phonepeWebhookPassword !== undefined && phonepeWebhookPassword.trim()) data.phonepeWebhookPassword = phonepeWebhookPassword.trim();
 
         const updated = await prisma.restaurant.update({
             where: { id: req.restaurantId },
             data,
-            select: { id: true, name: true, slug: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true, openingTime: true, closingTime: true, gstin: true, gstRate: true, fssaiLicense: true, legalName: true, supportEmail: true, supportPhone: true, latitude: true, longitude: true, cityId: true, phonepeMerchantId: true, phonepeSaltIndex: true, phonepeSandbox: true, phonepeSaltKey: true },
+            select: { id: true, name: true, slug: true, username: true, domain: true, address: true, phone: true, themeColor: true, secondaryColor: true, accentColor: true, fontFamily: true, cardStyle: true, logoUrl: true, coverUrl: true, pickupEnabled: true, deliveryEnabled: true, isOpen: true, slaWarnMinutes: true, slaCritMinutes: true, openingTime: true, closingTime: true, gstin: true, gstRate: true, fssaiLicense: true, legalName: true, supportEmail: true, supportPhone: true, latitude: true, longitude: true, cityId: true, phonepeMerchantId: true, phonepeSaltIndex: true, phonepeSandbox: true, phonepeSaltKey: true, phonepeApiVersion: true, phonepeClientId: true, phonepeClientVersion: true, phonepeClientSecret: true, phonepeWebhookUsername: true, phonepeWebhookPassword: true },
         });
-        const { phonepeSaltKey: _saltKey, ...safeUpdated } = updated;
-        res.json({ ...safeUpdated, phonepeConfigured: !!(updated.phonepeMerchantId && _saltKey), orderingUrl: orderingUrlFor(updated, FRONTEND_URL) });
+        const safeUpdated = withoutPhonepeSecrets(updated);
+        res.json({ ...safeUpdated, phonepeWebhookUrl: PHONEPE_WEBHOOK_URL, orderingUrl: orderingUrlFor(updated, FRONTEND_URL) });
     } catch (err) {
         res.status(500).json({ message: 'Error updating restaurant', error: err });
     }
@@ -333,7 +347,7 @@ restaurantRouter.get('/:idOrSlug', async (req, res) => {
         const restaurant = await prisma.restaurant.findUnique({
             where: { id },
             // Public endpoint — credentials must never be part of the response.
-            omit: { password: true, refreshToken: true, phonepeSaltKey: true, phonepeMerchantId: true, phonepeSaltIndex: true },
+            omit: { password: true, refreshToken: true, phonepeSaltKey: true, phonepeMerchantId: true, phonepeSaltIndex: true, phonepeClientId: true, phonepeClientSecret: true, phonepeClientVersion: true, phonepeWebhookUsername: true, phonepeWebhookPassword: true },
             include: {
                 menu: true,
                 category: true,
@@ -535,6 +549,8 @@ restaurantRouter.put('/activate/:id', supportAuth, async (req, res) => {
         const updated = await prisma.restaurant.update({
             where: { id },
             data: { isActive: true },
+            // Not the full row — that carries the password hash and PhonePe secrets
+            select: { id: true, name: true, slug: true, isActive: true },
         });
         res.json(updated);
     } catch (err) {

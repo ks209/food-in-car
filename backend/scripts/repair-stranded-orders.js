@@ -24,7 +24,7 @@ const apply = process.argv.includes('--apply');
 const pending = await prisma.order.findMany({
   where: { status: 'PENDING' },
   include: {
-    restaurant: { select: { id: true, name: true, phonepeMerchantId: true, phonepeSaltKey: true } },
+    restaurant: { select: { id: true, name: true, phonepeMerchantId: true, phonepeSaltKey: true, phonepeApiVersion: true, phonepeClientId: true, phonepeClientSecret: true } },
   },
   orderBy: { id: 'asc' },
 });

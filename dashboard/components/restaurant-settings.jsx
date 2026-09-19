@@ -17,6 +17,13 @@ import { QrDownloadCard } from "@/components/qr-download"
 import { ParkingSpotsCard } from "@/components/parking-spots-card"
 import { useRefreshRestaurant } from "@/lib/restaurant-context"
 
+const pickPhonepeStatus = (d) => ({
+  saltKeySet: d.phonepeSaltKeySet,
+  clientSecretSet: d.phonepeClientSecretSet,
+  webhookConfigured: d.phonepeWebhookConfigured,
+  webhookUrl: d.phonepeWebhookUrl,
+})
+
 export function RestaurantSettings() {
   const refreshRestaurant = useRefreshRestaurant()
   const [form, setForm] = useState(null)
@@ -25,6 +32,8 @@ export function RestaurantSettings() {
   const [savingKey, setSavingKey] = useState(null)
   const [cities, setCities] = useState([])
   const [phonepeConfigured, setPhonepeConfigured] = useState(false)
+  // Which write-only secrets are saved (drives "leave blank to keep"), plus the webhook URL to show
+  const [phonepeStatus, setPhonepeStatus] = useState({})
   // Origin of the customer-facing ordering app, taken from the server-built
   // orderingUrl rather than guessed — the dashboard and the ordering app are
   // deployed on different hosts.
@@ -60,12 +69,21 @@ export function RestaurantSettings() {
           phonepeSaltKey: "", // write-only — server never sends the real value back
           phonepeSaltIndex: r.data.phonepeSaltIndex || "1",
           phonepeSandbox: r.data.phonepeSandbox ?? true,
+          // Nothing configured yet → default to v2, the only kind PhonePe
+          // issues to newly onboarded merchants.
+          phonepeApiVersion: r.data.phonepeMerchantId || r.data.phonepeClientId ? r.data.phonepeApiVersion : "v2",
+          phonepeClientId: r.data.phonepeClientId || "",
+          phonepeClientSecret: "", // write-only
+          phonepeClientVersion: r.data.phonepeClientVersion || "1",
+          phonepeWebhookUsername: r.data.phonepeWebhookUsername || "",
+          phonepeWebhookPassword: "", // write-only
           username: r.data.username,
           domain: r.data.domain,
         }
         setForm(data)
         setOriginal(data)
         setPhonepeConfigured(r.data.phonepeConfigured)
+        setPhonepeStatus(pickPhonepeStatus(r.data))
         try { setPublicOrigin(new URL(r.data.orderingUrl).origin) } catch { /* keep the placeholder */ }
       })
       .catch(() => toast.error("Failed to load settings"))
@@ -143,6 +161,12 @@ export function RestaurantSettings() {
         // Omit entirely when blank — the backend treats "not present" as
         // "leave the saved key alone", vs. an empty string which it'd reject.
         ...(form.phonepeSaltKey ? { phonepeSaltKey: form.phonepeSaltKey } : {}),
+        phonepeApiVersion: form.phonepeApiVersion,
+        phonepeClientId: form.phonepeClientId,
+        phonepeClientVersion: form.phonepeClientVersion,
+        phonepeWebhookUsername: form.phonepeWebhookUsername,
+        ...(form.phonepeClientSecret ? { phonepeClientSecret: form.phonepeClientSecret } : {}),
+        ...(form.phonepeWebhookPassword ? { phonepeWebhookPassword: form.phonepeWebhookPassword } : {}),
       }
       const res = await axios.put(`${API}/api/restaurant/me`, payload, { withCredentials: true })
       // Sync to `form` itself, not the numeric-coerced `payload` — the inputs
@@ -151,9 +175,11 @@ export function RestaurantSettings() {
       // comparison see a permanent string-vs-number mismatch, so the "unsaved
       // changes" bar never cleared after saving. The salt key field always
       // clears back to blank afterward — it's write-only, like a password field.
-      setOriginal({ ...form, phonepeSaltKey: "" })
-      setField("phonepeSaltKey", "")
+      const clearedSecrets = { phonepeSaltKey: "", phonepeClientSecret: "", phonepeWebhookPassword: "" }
+      setOriginal({ ...form, ...clearedSecrets })
+      setForm((p) => ({ ...p, ...clearedSecrets }))
       setPhonepeConfigured(res.data.phonepeConfigured)
+      setPhonepeStatus(pickPhonepeStatus(res.data))
       // The ordering QR code below renders from the shared context's
       // orderingUrl — re-read it so a changed web address shows up immediately
       // instead of on the next page load.
@@ -549,19 +575,58 @@ export function RestaurantSettings() {
                   Without these, checkout still works for testing — orders place successfully but no real charge happens.
                 </p>
               )}
+              {/* Which PhonePe API — depends on the credentials PhonePe gave you */}
+              <div className="space-y-1.5">
+                <Label className="text-sm">Credential type</Label>
+                <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50">
+                  {[
+                    { v: "v2", label: "Client ID & Secret" },
+                    { v: "v1", label: "Salt Key (legacy)" },
+                  ].map((o) => (
+                    <button key={o.v} type="button" onClick={() => setField("phonepeApiVersion", o.v)}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                        form.phonepeApiVersion === o.v ? "bg-white shadow-sm text-slate-900" : "text-slate-500 hover:text-slate-700"
+                      }`}>
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Match what your PhonePe Business dashboard shows under Developer Settings. New merchant accounts get a Client ID & Secret.
+                </p>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label className="text-sm">Merchant ID</Label>
-                  <Input value={form.phonepeMerchantId} onChange={(e) => setField("phonepeMerchantId", e.target.value)} placeholder="PGTESTPAYUAT" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-sm">Salt Key {phonepeConfigured ? "(leave blank to keep)" : ""}</Label>
-                  <Input type="password" value={form.phonepeSaltKey} onChange={(e) => setField("phonepeSaltKey", e.target.value)} placeholder={phonepeConfigured ? "••••••••" : "Salt key"} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-sm">Salt Index</Label>
-                  <Input value={form.phonepeSaltIndex} onChange={(e) => setField("phonepeSaltIndex", e.target.value)} placeholder="1" />
-                </div>
+                {form.phonepeApiVersion === "v2" ? (
+                  <>
+                    <div className="space-y-1.5">
+                      <Label className="text-sm">Client ID</Label>
+                      <Input value={form.phonepeClientId} onChange={(e) => setField("phonepeClientId", e.target.value)} placeholder="Client ID" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-sm">Client Secret {phonepeStatus.clientSecretSet ? "(leave blank to keep)" : ""}</Label>
+                      <Input type="password" value={form.phonepeClientSecret} onChange={(e) => setField("phonepeClientSecret", e.target.value)} placeholder={phonepeStatus.clientSecretSet ? "••••••••" : "Client secret"} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-sm">Client Version</Label>
+                      <Input value={form.phonepeClientVersion} onChange={(e) => setField("phonepeClientVersion", e.target.value)} placeholder="1" />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="space-y-1.5">
+                      <Label className="text-sm">Merchant ID</Label>
+                      <Input value={form.phonepeMerchantId} onChange={(e) => setField("phonepeMerchantId", e.target.value)} placeholder="PGTESTPAYUAT" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-sm">Salt Key {phonepeStatus.saltKeySet ? "(leave blank to keep)" : ""}</Label>
+                      <Input type="password" value={form.phonepeSaltKey} onChange={(e) => setField("phonepeSaltKey", e.target.value)} placeholder={phonepeStatus.saltKeySet ? "••••••••" : "Salt key"} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-sm">Salt Index</Label>
+                      <Input value={form.phonepeSaltIndex} onChange={(e) => setField("phonepeSaltIndex", e.target.value)} placeholder="1" />
+                    </div>
+                  </>
+                )}
                 <div className="space-y-1.5">
                   <Label className="text-sm">Environment</Label>
                   <div className="flex items-center gap-2 h-9">
@@ -570,6 +635,40 @@ export function RestaurantSettings() {
                   </div>
                 </div>
               </div>
+              {form.phonepeApiVersion === "v2" && (
+                <div className="space-y-3 rounded-lg border border-slate-200 p-3">
+                  <div>
+                    <p className="text-sm font-medium">Webhook <span className="font-normal text-muted-foreground">(recommended)</span></p>
+                    <p className="text-xs text-muted-foreground">
+                      Confirms payments instantly even if the customer closes the page before returning. In PhonePe&apos;s
+                      dashboard, add a webhook with this URL, choose a username and password, and enter the same ones here.
+                      Without it, payments are still confirmed within a few minutes.
+                    </p>
+                  </div>
+                  {phonepeStatus.webhookUrl && (
+                    <div className="space-y-1.5">
+                      <Label className="text-sm">Webhook URL</Label>
+                      <div className="flex gap-2">
+                        <Input readOnly value={phonepeStatus.webhookUrl} className="font-mono text-xs" onFocus={(e) => e.target.select()} />
+                        <Button type="button" variant="outline" className="h-9 text-xs flex-shrink-0"
+                          onClick={() => navigator.clipboard?.writeText(phonepeStatus.webhookUrl).then(() => toast.success("Copied"))}>
+                          Copy
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label className="text-sm">Webhook Username</Label>
+                      <Input value={form.phonepeWebhookUsername} onChange={(e) => setField("phonepeWebhookUsername", e.target.value)} placeholder="Username" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-sm">Webhook Password {phonepeStatus.webhookConfigured ? "(leave blank to keep)" : ""}</Label>
+                      <Input type="password" value={form.phonepeWebhookPassword} onChange={(e) => setField("phonepeWebhookPassword", e.target.value)} placeholder={phonepeStatus.webhookConfigured ? "••••••••" : "Password"} />
+                    </div>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
