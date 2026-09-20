@@ -4,7 +4,7 @@ import { Package } from "lucide-react"
 import { orderApi } from "../api"
 import { getActiveOrder, clearActiveOrder } from "../lib/activeOrder"
 
-const DONE_STATUSES = ["COMPLETED", "CANCELLED", "NOT_FULFILLED"]
+const DONE_STATUSES = ["COMPLETED", "CANCELLED", "NOT_FULFILLED", "PAYMENT_FAILED"]
 
 // Floating reminder, opposite AccountMenu (top-left vs top-right) — if this
 // device placed an order that isn't finished yet, it's easy to lose track of

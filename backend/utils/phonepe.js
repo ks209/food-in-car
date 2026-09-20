@@ -156,6 +156,63 @@ async function fetchStateV2(restaurant, txnId) {
   return { state, paid: state === 'COMPLETED', amountPaise: res.data?.amount };
 }
 
+// ── Refunds ───────────────────────────────────────────────────────────────────
+// Normalised to PENDING | COMPLETED | FAILED (v2 also reports CONFIRMED —
+// accepted by PhonePe, money not yet moved — which is still PENDING for us).
+const refundState = (s) => (s === 'COMPLETED' ? 'COMPLETED' : s === 'FAILED' ? 'FAILED' : 'PENDING');
+
+async function refundV1(restaurant, { originalTxnId, refundTxnId, amountPaise, merchantUserId, callbackUrl }) {
+  const payload = {
+    merchantId: restaurant.phonepeMerchantId,
+    merchantUserId,
+    originalTransactionId: originalTxnId,
+    merchantTransactionId: refundTxnId,
+    amount: amountPaise,
+    callbackUrl,
+  };
+  const base64Payload = Buffer.from(JSON.stringify(payload)).toString('base64');
+  const xVerify = crypto.createHash('sha256').update(base64Payload + '/pg/v1/refund' + restaurant.phonepeSaltKey).digest('hex')
+    + '###' + (restaurant.phonepeSaltIndex || '1');
+  const res = await axios.post(
+    `${baseUrl(restaurant)}/pg/v1/refund`,
+    { request: base64Payload },
+    { headers: { 'Content-Type': 'application/json', 'X-VERIFY': xVerify, accept: 'application/json' } }
+  );
+  if (!res.data?.success) throw new Error(res.data?.message || res.data?.code || 'Refund rejected by PhonePe');
+  return refundState(res.data?.data?.state);
+}
+
+async function refundV2(restaurant, { originalTxnId, refundTxnId, amountPaise }) {
+  const res = await v2Request(restaurant, {
+    method: 'post',
+    url: `${v2Urls(restaurant).pg}/payments/v2/refund`,
+    data: { merchantRefundId: refundTxnId, originalMerchantOrderId: originalTxnId, amount: amountPaise },
+  });
+  return refundState(res.data?.state);
+}
+
+// Asks PhonePe to refund `amountPaise` of the payment `originalTxnId`
+// (our MerchantTransaction.txnId). Returns the normalised refund state.
+export async function initiateRefund(restaurant, params) {
+  const version = gatewayVersion(restaurant);
+  if (!version) throw new Error('PhonePe is not configured for this restaurant');
+  return version === 'v2' ? refundV2(restaurant, params) : refundV1(restaurant, params);
+}
+
+export async function fetchRefundState(restaurant, refundTxnId) {
+  const version = gatewayVersion(restaurant);
+  if (!version) throw new Error('PhonePe is not configured for this restaurant');
+  if (version === 'v2') {
+    const res = await v2Request(restaurant, {
+      method: 'get',
+      url: `${v2Urls(restaurant).pg}/payments/v2/refund/${encodeURIComponent(refundTxnId)}/status`,
+    });
+    return refundState(res.data?.state);
+  }
+  // v1 uses the same status endpoint as payments, keyed by the refund's own id
+  return refundState((await fetchStateV1(restaurant, refundTxnId)).state);
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 // Starts a payment and returns the PhonePe pay-page URL to send the customer to.
@@ -193,15 +250,42 @@ export async function reconcileTransaction(restaurant, txn) {
 
   if (paid && txn.status !== 'COMPLETED') {
     await prisma.merchantTransaction.updateMany({ where: { txnId: txn.txnId }, data: { status: 'COMPLETED' } });
-    await prisma.order.update({
-      where: { id: txn.orderId },
-      data: { status: 'PAID', orderStatusHistory: { create: { status: 'PAID', updatedBy: 'phonepe' } } },
-    });
+    await markOrderPaid(txn.orderId, 'phonepe');
   } else if (failed && txn.status !== 'FAILED') {
     await prisma.merchantTransaction.updateMany({ where: { txnId: txn.txnId }, data: { status: 'FAILED' } });
+    await markPaymentFailed(txn.orderId, 'phonepe');
   }
 
   return { state: state || 'UNKNOWN', paid, failed };
+}
+
+// PhonePe confirmed payment → the order becomes real (PAID). Only from
+// PENDING / PAYMENT_FAILED: PhonePe re-sends callbacks and several paths
+// (callback, webhook, redirect, cron) can confirm the same payment, and an
+// unconditional update would yank an order the kitchen already moved to
+// PREPARING/READY back to PAID.
+export async function markOrderPaid(orderId, updatedBy) {
+  const { count } = await prisma.order.updateMany({
+    where: { id: orderId, status: { in: ['PENDING', 'PAYMENT_FAILED'] } },
+    data: { status: 'PAID' },
+  });
+  if (count) {
+    await prisma.orderStatusHistory.create({ data: { orderId, status: 'PAID', updatedBy } });
+  }
+}
+
+// PhonePe says the payment failed → the order was never real. Only moves an
+// order that's still PENDING, so it can't clobber one that was paid meanwhile.
+// The customer's status page shows it as a failed payment; the dashboard never
+// sees it (see utils/orderStatus.js).
+export async function markPaymentFailed(orderId, updatedBy) {
+  const { count } = await prisma.order.updateMany({
+    where: { id: orderId, status: 'PENDING' },
+    data: { status: 'PAYMENT_FAILED' },
+  });
+  if (count) {
+    await prisma.orderStatusHistory.create({ data: { orderId, status: 'PAYMENT_FAILED', updatedBy } });
+  }
 }
 
 // v2 webhook auth: PhonePe sends Authorization: SHA256("username:password")

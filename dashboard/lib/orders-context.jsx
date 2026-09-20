@@ -9,6 +9,8 @@ import { todayStr, localDateRange } from "@/lib/format"
 
 const OrdersContext = createContext(null)
 
+const ALERT_STATUSES = new Set(["PAID", "PREPARING", "READY"])
+
 // Plays a short sequence of notes through the shared (already-unlocked) AudioContext.
 function playTone(ctx, notes, { type = "sine", noteDur = 0.16, gap = 0.06, volume = 0.4 } = {}) {
   if (!ctx || ctx.state !== "running") return
@@ -103,7 +105,10 @@ export function OrdersProvider({ children }) {
       if (knownIdsRef.current === null || dayChanged) {
         knownIdsRef.current = new Set(incomingIds) // first load, or a fresh day — seed, don't alert
       } else {
-        const newOrders = data.filter((o) => !knownIdsRef.current.has(o.id))
+        // Only orders the kitchen has to act on. An id can also first appear
+        // already Cancelled/Completed (e.g. a status the server changed out of
+        // PENDING) — those aren't arrivals and must not chime.
+        const newOrders = data.filter((o) => !knownIdsRef.current.has(o.id) && ALERT_STATUSES.has(o.status))
         if (newOrders.length > 0) {
           const title = newOrders.length === 1
             ? `New order #${newOrders[0].dailyOrderNumber ?? newOrders[0].id}`

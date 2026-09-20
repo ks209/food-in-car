@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react"
-import { useParams, useSearchParams, Link } from "react-router-dom"
+import { useParams, useSearchParams, Link, useNavigate } from "react-router-dom"
 import { QRCodeSVG } from "qrcode.react"
-import { Clock, CreditCard, ChefHat, Package, PartyPopper, XCircle, Bike, StickyNote, Phone, Frown } from "lucide-react"
+import { Clock, CreditCard, ChefHat, Package, PartyPopper, XCircle, Bike, StickyNote, Phone, Frown, RotateCcw } from "lucide-react"
 import { orderApi } from "../api"
 import { useRestaurantTheme } from "../lib/theme"
 import { useRestaurantBase } from "../lib/restaurantPath"
 import { useAuth } from "../context/AuthContext"
+import { useCart } from "../context/CartContext"
+import { takeCheckoutSnapshot, dropCheckoutSnapshot } from "../lib/checkoutSnapshot"
+import { getActiveOrder, clearActiveOrder } from "../lib/activeOrder"
 
 // Short ascending 3-note chime — same melody the restaurant dashboard uses for
 // its "new order" alert, so the sound reads as one system across the app.
@@ -52,7 +55,7 @@ function stepIndex(status) {
 }
 
 const STATUS_LABELS = {
-  PENDING: "Order Placed",
+  PENDING: "Awaiting Payment",
   PAID: "Payment Confirmed",
   PROCESSING: "Being Prepared",
   PREPARING: "Being Prepared",
@@ -61,9 +64,11 @@ const STATUS_LABELS = {
   COMPLETED: "Completed!",
   CANCELLED: "Cancelled",
   NOT_FULFILLED: "Not Fulfilled",
+  PAYMENT_FAILED: "Payment Failed",
+  NOT_COMPLETED: "Payment Not Completed",
 }
 const STATUS_DESC = {
-  PENDING: "We've received your order and it's in the queue.",
+  PENDING: "Waiting for PhonePe to confirm your payment. This page updates by itself.",
   PAID: "Payment confirmed! We're about to start preparing.",
   PROCESSING: "The kitchen is working on your order.",
   PREPARING: "The kitchen is working on your order.",
@@ -72,6 +77,10 @@ const STATUS_DESC = {
   COMPLETED: "Served & completed. Enjoy your meal!",
   CANCELLED: "This order was cancelled.",
   NOT_FULFILLED: "This order could not be fulfilled.",
+  PAYMENT_FAILED: "Your payment didn't go through, so this order wasn't placed. If any amount was deducted, it's usually refunded automatically within a few days. You can order again from the menu.",
+  // Not a server status: back from PhonePe with the order still PENDING —
+  // the customer cancelled or backed out. See `notCompleted` below.
+  NOT_COMPLETED: "You didn't finish paying, so this order hasn't been placed. If you did complete the payment, this page will update on its own.",
 }
 // One line of live ETA for the hero, from the server's estimate (order.eta —
 // see backend/utils/waitEstimate.js). Recomputed from the timestamps on each
@@ -94,18 +103,23 @@ function etaText(order) {
 const STATUS_ICON = {
   PENDING: Clock, PAID: CreditCard, PROCESSING: ChefHat, PREPARING: ChefHat,
   READY: Package, DELIVERED: PartyPopper, COMPLETED: PartyPopper, CANCELLED: XCircle,
-  NOT_FULFILLED: XCircle,
+  NOT_FULFILLED: XCircle, PAYMENT_FAILED: XCircle, NOT_COMPLETED: XCircle,
 }
+
+const FINAL_STATUSES = ["COMPLETED", "DELIVERED", "CANCELLED", "NOT_FULFILLED", "PAYMENT_FAILED"]
 
 export default function OrderStatusPage() {
   const { orderId, restaurantId } = useParams()
   const base = useRestaurantBase()
   const [searchParams] = useSearchParams()
   const { user } = useAuth()
+  const { restoreCart } = useCart()
+  const navigate = useNavigate()
   useRestaurantTheme(restaurantId)
   const [order, setOrder] = useState(null)
   const [loading, setLoading] = useState(true)
   const [pulse, setPulse] = useState(false)
+  const [checkingPayment, setCheckingPayment] = useState(false)
   const prevStatusRef = useRef(null)
   const audioCtxRef = useRef(null)
 
@@ -159,10 +173,30 @@ export default function OrderStatusPage() {
   }
 
   useEffect(() => {
+    const code = searchParams.get("code")
+    let tick = 0
     fetchOrder()
-    const interval = setInterval(fetchOrder, 2000)
+    const interval = setInterval(() => {
+      const status = prevStatusRef.current
+      // Nothing more can happen to a finished order — stop instead of polling
+      // for as long as the tab stays open.
+      if (FINAL_STATUSES.includes(status)) { clearInterval(interval); return }
+      // While payment is unconfirmed, ask PhonePe directly every ~6s for the
+      // first 5 min (the order row otherwise only changes on the webhook or the
+      // 5-min cron). The regular fetch below then picks up the new status.
+      tick++
+      if (status === "PENDING" && code && tick % 3 === 0 && tick <= 150) {
+        orderApi.paymentStatus(orderId, code).catch(() => {})
+      }
+      fetchOrder()
+    }, 2000)
     return () => clearInterval(interval)
   }, [orderId])
+
+  // Paid → the saved checkout cart (for "Try again") is no longer needed.
+  useEffect(() => {
+    if (order && ["PAID", "PREPARING", "READY", "COMPLETED", "DELIVERED"].includes(order.status)) dropCheckoutSnapshot(order.id)
+  }, [order?.id, order?.status])
 
   if (loading) return (
     <div style={{ display:"flex", alignItems:"center", justifyContent:"center", minHeight:"100dvh", flexDirection:"column", gap:"1rem" }}>
@@ -179,7 +213,37 @@ export default function OrderStatusPage() {
     </div>
   )
 
-  const isCancelled = order.status === "CANCELLED" || order.status === "NOT_FULFILLED"
+  // Back from PhonePe (the backend adds returned=1) but still unpaid — the
+  // customer cancelled on PhonePe's page or backed out of it. Shown like a
+  // failed payment; polling carries on, so a payment that does complete late
+  // still turns this into the normal tracker.
+  const notCompleted = order.status === "PENDING" && searchParams.get("returned") === "1"
+  const paymentFailed = order.status === "PAYMENT_FAILED" || notCompleted
+  const statusKey = notCompleted ? "NOT_COMPLETED" : order.status
+  const isCancelled = order.status === "CANCELLED" || order.status === "NOT_FULFILLED" || paymentFailed
+
+  // Puts the cart they were paying for back and reopens checkout.
+  const tryAgain = async () => {
+    // A UPI payment approved in the UPI app can still be landing. Ask PhonePe
+    // about THIS attempt first — if it went through, show that order instead
+    // of starting a second payment and charging the customer twice.
+    const code = searchParams.get("code")
+    if (order.status === "PENDING" && code) {
+      setCheckingPayment(true)
+      try {
+        await orderApi.paymentStatus(order.id, code)
+        const r = await orderApi.get(order.id, code)
+        prevStatusRef.current = r.data.status
+        setOrder(r.data)
+        if (!["PENDING", "PAYMENT_FAILED"].includes(r.data.status)) return // paid after all → tracker shows
+      } catch { /* couldn't check — fall through and let them retry */ }
+      finally { setCheckingPayment(false) }
+    }
+    const snap = takeCheckoutSnapshot(order.id)
+    if (snap?.items?.length) restoreCart(snap.restaurantId, snap.items)
+    if (String(getActiveOrder()?.orderId) === String(order.id)) clearActiveOrder()
+    navigate(snap?.items?.length ? `${base}?cart=open` : base)
+  }
   const isReady = order.status === "READY"
   const isDone = order.status === "COMPLETED" || order.status === "DELIVERED"
   const currentStepIdx = stepIndex(order.status)
@@ -216,13 +280,13 @@ export default function OrderStatusPage() {
           <div style={{ width:72, height:72, borderRadius:"50%", margin:"0 auto 0.85rem",
             background:"rgba(255,255,255,0.14)", border:"1px solid rgba(255,255,255,0.18)",
             display:"flex", alignItems:"center", justifyContent:"center", backdropFilter:"blur(4px)" }}>
-            {(() => { const Icon = STATUS_ICON[order.status] || Clock; return <Icon size={34} strokeWidth={1.75} color="white" /> })()}
+            {(() => { const Icon = STATUS_ICON[statusKey] || Clock; return <Icon size={34} strokeWidth={1.75} color="white" /> })()}
           </div>
           <h1 style={{ color:"white", fontSize:"1.75rem", fontWeight:800, marginBottom:"0.3rem" }}>
-            {STATUS_LABELS[order.status]}
+            {STATUS_LABELS[statusKey]}
           </h1>
           <p style={{ color:"rgba(255,255,255,0.85)", fontSize:"0.9rem", maxWidth:320, margin:"0 auto" }}>
-            {STATUS_DESC[order.status]}
+            {STATUS_DESC[statusKey]}
           </p>
           {etaText(order) && (
             <p style={{ marginTop:"0.7rem", color:"white", fontSize:"1rem", fontWeight:700,
@@ -238,6 +302,22 @@ export default function OrderStatusPage() {
       </div>
 
       <div style={{ padding:"1rem", display:"flex", flexDirection:"column", gap:"0.875rem", marginTop:"-1rem" }}>
+
+        {/* Payment cancelled / failed — back into checkout with the same cart */}
+        {paymentFailed && (
+          <div className="card" style={{ padding:"1.1rem 1.25rem", display:"flex", flexDirection:"column", gap:"0.6rem" }}>
+            <button className="btn btn-primary" onClick={tryAgain} disabled={checkingPayment}
+              style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", gap:"0.45rem" }}>
+              <RotateCcw size={16} strokeWidth={2.25} /> {checkingPayment ? "Checking your payment…" : "Try Again"}
+            </button>
+            {notCompleted && (
+              <p style={{ fontSize:"0.78rem", color:"var(--muted)", textAlign:"center" }}>
+                Approved it in your UPI app? Give it a moment — this page updates once PhonePe confirms.
+              </p>
+            )}
+            <Link to={base} className="btn btn-outline" style={{ textAlign:"center" }}>Back to Menu</Link>
+          </div>
+        )}
 
         {/* Progress tracker */}
         {!isCancelled && (
@@ -296,6 +376,27 @@ export default function OrderStatusPage() {
             <p style={{ fontWeight:800, fontSize:"1.35rem", letterSpacing:"0.25em", color:"var(--text)", marginTop:"0.1rem" }}>
               {order.deliveryCode}
             </p>
+          </div>
+        )}
+
+        {/* Refund for a paid order the restaurant cancelled / couldn't fulfil.
+            A FAILED attempt is the restaurant's to retry, so the customer sees
+            it as still in progress rather than an alarming "failed". */}
+        {order.refunds?.[0] && (
+          <div className="card" style={{ padding:"1rem 1.25rem", display:"flex", gap:"0.75rem", alignItems:"flex-start" }}>
+            <RotateCcw size={20} strokeWidth={2} color={order.refunds[0].status === "COMPLETED" ? "var(--success)" : "var(--primary)"} style={{ flexShrink:0, marginTop:2 }} />
+            <div>
+              <p style={{ fontWeight:700, fontSize:"0.95rem" }}>
+                {order.refunds[0].status === "COMPLETED"
+                  ? `₹${order.refunds[0].amount.toFixed(0)} refunded`
+                  : `Refund of ₹${order.refunds[0].amount.toFixed(0)} in progress`}
+              </p>
+              <p style={{ fontSize:"0.82rem", color:"var(--text-secondary)", marginTop:"0.15rem" }}>
+                {order.refunds[0].status === "COMPLETED"
+                  ? "Sent back to your original payment method. It can take 3–5 working days to show in your account."
+                  : "It'll go back to your original payment method. If you don't see it within 5 working days, contact the restaurant."}
+              </p>
+            </div>
           </div>
         )}
 

@@ -6,6 +6,7 @@ export const ORDER_STATUS_COLORS = {
   COMPLETED: "#64748b",
   CANCELLED: "#ef4444",
   NOT_FULFILLED: "#a855f7",
+  PAYMENT_FAILED: "#94a3b8",
 }
 
 export const ORDER_STATUS_LABELS = {
@@ -16,4 +17,5 @@ export const ORDER_STATUS_LABELS = {
   COMPLETED: "Completed",
   CANCELLED: "Cancelled",
   NOT_FULFILLED: "Not Fulfilled",
+  PAYMENT_FAILED: "Payment Failed",
 }

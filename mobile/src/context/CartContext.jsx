@@ -26,6 +26,8 @@ function cartReducer(state, action) {
     }
     case "CLEAR":
       return []
+    case "SET":
+      return action.items
     default:
       return state
   }
@@ -62,6 +64,12 @@ export function CartProvider({ children }) {
   const removeItem = (cartKey) => dispatch({ type: "REMOVE", cartKey })
   const decrementItem = (cartKey) => dispatch({ type: "DECREMENT", cartKey })
   const clearCart = () => dispatch({ type: "CLEAR" })
+  // Puts back a cart saved at checkout (see lib/checkoutSnapshot.js).
+  // restaurantId must be the numeric id, same as MenuPage's setActiveRestaurant.
+  const restoreCart = (id, items) => {
+    setRestaurantIdState(id)
+    dispatch({ type: "SET", items })
+  }
 
   // MenuPage calls this on mount with the restaurant it's showing. The cart
   // provider is a single global instance (mounted above the router), so
@@ -80,7 +88,7 @@ export function CartProvider({ children }) {
   const itemCount = cart.reduce((sum, i) => sum + i.quantity, 0)
 
   return (
-    <CartContext.Provider value={{ cart, addItem, removeItem, decrementItem, clearCart, total, itemCount, setActiveRestaurant }}>
+    <CartContext.Provider value={{ cart, addItem, removeItem, decrementItem, clearCart, restoreCart, total, itemCount, setActiveRestaurant }}>
       {children}
     </CartContext.Provider>
   )

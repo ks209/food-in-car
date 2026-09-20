@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import prisma from '../config/prisma.js';
 import { isDevMode, reconcileTransaction } from '../utils/phonepe.js';
+import { verifyPendingRefunds } from '../utils/refunds.js';
 
 const CHECK_AFTER_MIN = 5;    // give the customer time to finish paying before the first check
 const ABANDON_AFTER_MIN = 45; // still pending after this long — treat as abandoned, auto-cancel
@@ -52,17 +53,19 @@ async function verifyPendingOrders() {
     }
 
     // Still unpaid after the abandon window — the customer never completed
-    // payment, so stop showing it as a live order in the restaurant's queue.
+    // payment. PAYMENT_FAILED, not CANCELLED: it was never a real order, so it
+    // stays hidden from the dashboard and the customer's history instead of
+    // appearing as a "new" cancelled order (which also fired the new-order alert).
     // (Edge case: if PhonePe's webhook arrives after this point claiming the
-    // payment DID go through, /callback will still flip it back to PAID —
+    // payment DID go through, the callback/webhook still flips it to PAID —
     // not fully closed off, just rare enough not to block on here.)
     if (txn.order.createdAt <= abandonCutoff) {
       try {
         await prisma.order.update({
           where: { id: txn.orderId },
           data: {
-            status: 'CANCELLED',
-            orderStatusHistory: { create: { status: 'CANCELLED', updatedBy: `cron:payment-timeout (${state})` } },
+            status: 'PAYMENT_FAILED',
+            orderStatusHistory: { create: { status: 'PAYMENT_FAILED', updatedBy: `cron:payment-timeout (${state})` } },
           },
         });
         cancelled++;
@@ -75,11 +78,15 @@ async function verifyPendingOrders() {
     }
   }
 
-  console.log(`[verify-pending-orders] checked ${stuckTxns.length} — paid ${paid}, cancelled ${cancelled}, still pending ${stillPending}, status-check errors ${errored}, skipped (no gateway) ${skipped}`);
+  console.log(`[verify-pending-orders] checked ${stuckTxns.length} — paid ${paid}, payment-failed ${cancelled}, still pending ${stillPending}, status-check errors ${errored}, skipped (no gateway) ${skipped}`);
 }
 
 export function startPendingOrderVerification() {
-  cron.schedule('*/5 * * * *', verifyPendingOrders);
+  cron.schedule('*/5 * * * *', async () => {
+    await verifyPendingOrders().catch((err) => console.error('[verify-pending-orders]', err.message));
+    // Refunds PhonePe is still processing — same cadence, same job.
+    await verifyPendingRefunds().catch((err) => console.error('[verify-pending-refunds]', err.message));
+  });
   console.log('[verify-pending-orders] scheduled every 5 minutes');
 }
 

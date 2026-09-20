@@ -5,6 +5,20 @@ import axios from "axios"
 import { API } from "@/lib/api"
 import { setBusinessHours } from "@/lib/business-day"
 
+// Near-black or white, whichever reads better on `hex` — WCAG relative
+// luminance, the same rule the mobile app's theme uses.
+function contrastOn(hex) {
+  const h = String(hex).trim().replace("#", "")
+  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h
+  if (!/^[0-9a-f]{6}$/i.test(full)) return "#0f172a" // unparseable — match the CSS default
+  const channel = (v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
+  const [r, g, b] = [0, 2, 4].map((i) => channel(parseInt(full.slice(i, i + 2), 16) / 255))
+  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
+  // Contrast ratio against white vs. against #0f172a (luminance ≈ 0.0097);
+  // pick whichever is higher.
+  return (1.05 / (luminance + 0.05)) >= ((luminance + 0.05) / 0.0597) ? "#ffffff" : "#0f172a"
+}
+
 const RestaurantContext = createContext(null)
 
 const RestaurantRefreshContext = createContext(() => {})
@@ -22,7 +36,13 @@ export function RestaurantProvider({ children }) {
         setBusinessHours(data?.openingTime, data?.closingTime)
         setRestaurant(data)
         const root = document.documentElement.style
-        if (data?.themeColor) root.setProperty("--brand", data.themeColor)
+        if (data?.themeColor) {
+          root.setProperty("--brand", data.themeColor)
+          // Text that stays readable ON the brand colour. White is unreadable
+          // on a light brand (yellow, amber, mint), which is what made the
+          // selected filter chips wash out — so pick per brightness.
+          root.setProperty("--brand-contrast", contrastOn(data.themeColor))
+        }
         if (data?.secondaryColor) root.setProperty("--brand-secondary", data.secondaryColor)
         if (data?.accentColor) root.setProperty("--brand-accent", data.accentColor)
       })

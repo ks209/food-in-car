@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from "react"
-import { useParams, Navigate } from "react-router-dom"
+import { useParams, Navigate, useSearchParams } from "react-router-dom"
 import { Search, Mic, Star, MapPin, UtensilsCrossed, ShoppingBag, X, ArrowUpDown, Timer, List } from "lucide-react"
 import { restaurantApi, categoryApi } from "../api"
 import { useCart } from "../context/CartContext"
@@ -68,6 +68,15 @@ export default function MenuPage() {
   const [categories, setCategories] = useState([])
   const [activeCategory, setActiveCategory] = useState(null)
   const [cartOpen, setCartOpen] = useState(false)
+  // ?cart=open — "Try again" after a cancelled payment lands here with the
+  // cart restored, straight into checkout. The param is dropped afterwards so
+  // a refresh doesn't pop the drawer again.
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    if (searchParams.get("cart") !== "open") return
+    setCartOpen(true)
+    setSearchParams((p) => { p.delete("cart"); return p }, { replace: true })
+  }, [searchParams, setSearchParams])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [search, setSearch] = useState("")

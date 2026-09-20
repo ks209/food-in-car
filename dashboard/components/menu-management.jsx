@@ -292,11 +292,7 @@ export function MenuManagement() {
           <button
             key={g.key}
             onClick={() => setCategoryFilter(g.key)}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-              categoryFilter === g.key
-                ? "brand-bg text-white"
-                : "bg-white border border-slate-200 text-slate-600 hover:border-slate-400"
-            }`}
+            className={`filter-chip ${categoryFilter === g.key ? "filter-chip-active" : ""}`}
           >
             {g.name}{g.items ? ` · ${g.items.length}` : ""}
           </button>

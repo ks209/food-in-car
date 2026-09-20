@@ -63,6 +63,18 @@ export function localDateRange(fromDateStr, toDateStr) {
   }
 }
 
+// When an order was placed: just the time for today's business day, date +
+// time for anything earlier — so lists that mix days (a date range, recent
+// orders, a late scan) never show two different days as the same "2:15 PM".
+export function orderTimeLabel(iso) {
+  const d = new Date(iso)
+  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+  if (businessDateStr(d) === todayStr()) return time
+  const sameYear = d.getFullYear() === new Date().getFullYear()
+  const date = d.toLocaleDateString([], { day: "numeric", month: "short", ...(sameYear ? {} : { year: "numeric" }) })
+  return `${date}, ${time}`
+}
+
 export function daysAgoStr(n) {
   const d = new Date(`${todayStr()}T12:00:00`)
   d.setDate(d.getDate() - n)

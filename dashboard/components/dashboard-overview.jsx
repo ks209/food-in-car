@@ -10,7 +10,7 @@ import axios from "axios"
 import Link from "next/link"
 
 import { API } from "@/lib/api"
-import { CHART_TOOLTIP_STYLE, CHART_TOOLTIP_WRAPPER_STYLE, CHART_TOOLTIP_ITEM_STYLE, CHART_TOOLTIP_LABEL_STYLE, formatCurrency, todayStr, daysAgoStr, localDateRange, businessDateStr } from "@/lib/format"
+import { CHART_TOOLTIP_STYLE, CHART_TOOLTIP_WRAPPER_STYLE, CHART_TOOLTIP_ITEM_STYLE, CHART_TOOLTIP_LABEL_STYLE, formatCurrency, todayStr, daysAgoStr, localDateRange, businessDateStr, orderTimeLabel } from "@/lib/format"
 import { ORDER_STATUS_COLORS, ORDER_STATUS_LABELS } from "@/lib/status"
 import { SLA_WARN_MIN, SLA_CRIT_MIN, totalMinutes, historyTime } from "@/lib/sla"
 import { sameWeekdayLastWeek, weekdayLabel } from "@/lib/compare"
@@ -291,7 +291,7 @@ export function DashboardOverview() {
                   <div className="flex items-center justify-between gap-2 mb-1">
                     <span className="text-xs font-mono text-slate-400 flex-shrink-0">#{order.dailyOrderNumber ?? order.id}</span>
                     <span className="text-xs text-slate-400 flex-shrink-0">
-                      {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      {orderTimeLabel(order.createdAt)}
                     </span>
                   </div>
                   <p className="text-sm font-medium text-slate-800 truncate">

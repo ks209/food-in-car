@@ -1,12 +1,12 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Search, RefreshCw, Eye, ScanLine, Calendar } from "lucide-react"
+import { Search, RefreshCw, Eye, ScanLine, Calendar, Undo2, AlertTriangle } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { toast } from "sonner"
 import axios from "axios"
@@ -15,39 +15,86 @@ import { API } from "@/lib/api"
 import { OrderInvoice } from "@/components/order-invoice"
 import { ORDER_STATUS_COLORS, ORDER_STATUS_LABELS } from "@/lib/status"
 import { StatusDot } from "@/components/ui/status-dot"
-import { todayStr, daysAgoStr, localDateRange, PAYMENT_METHOD_LABELS } from "@/lib/format"
+import { todayStr, daysAgoStr, localDateRange, orderTimeLabel, PAYMENT_METHOD_LABELS } from "@/lib/format"
 
-const STATUS_KEYS = ["all", "PENDING", "PAID", "PREPARING", "READY", "COMPLETED", "CANCELLED", "NOT_FULFILLED"]
+// No PENDING: GET /api/order never returns unpaid orders, so that chip was always 0.
+const STATUS_KEYS = ["all", "PAID", "PREPARING", "READY", "COMPLETED", "CANCELLED", "NOT_FULFILLED"]
+
+// Latest refund on a cancelled / not-fulfilled PhonePe order (see backend
+// utils/refunds.js). A failed one gets a retry — it usually means PhonePe was
+// unreachable or the merchant account lacked balance at the time.
+function RefundStatus({ order, onRetry }) {
+  const refund = order.refunds?.[0]
+  if (!refund) return null
+  const amount = `₹${refund.amount.toFixed(0)}`
+  if (refund.status === "COMPLETED") {
+    return <p className="text-xs text-emerald-600 mt-1 inline-flex items-center gap-1"><Undo2 className="h-3 w-3" /> Refunded {amount}</p>
+  }
+  if (refund.status === "PENDING") {
+    return <p className="text-xs text-amber-600 mt-1 inline-flex items-center gap-1"><Undo2 className="h-3 w-3" /> Refund of {amount} processing</p>
+  }
+  return (
+    <p className="text-xs text-red-600 mt-1 inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+      <span className="inline-flex items-center gap-1" title={refund.error || undefined}>
+        <AlertTriangle className="h-3 w-3" /> Refund of {amount} failed
+      </span>
+      <button type="button" onClick={onRetry} className="underline font-medium hover:text-red-700">Retry refund</button>
+    </p>
+  )
+}
 
 export function OrderManagement() {
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [fromDate, setFromDate] = useState(todayStr)
   const [toDate, setToDate] = useState(todayStr)
+  // Whether the range is "today" as picked by the user — if so it rolls over
+  // to the new day on its own when the dashboard is left open past day end.
+  const [followToday, setFollowToday] = useState(true)
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(false)
+  // Range of the latest request — a slow response for a range the user has
+  // already moved away from must not overwrite the new range's orders.
+  const currentRange = useRef("")
+  currentRange.current = `${fromDate}|${toDate}`
+
+  const setRange = (from, to) => {
+    if (!from || !to) return // a cleared date input would otherwise fetch every order ever
+    if (from > to) to = from
+    setFromDate(from)
+    setToDate(to)
+    setFollowToday(from === todayStr() && to === todayStr())
+  }
 
   // Server-side date filtering — the backend only returns orders in [fromDate, toDate],
   // so this stays cheap even as order history grows (no more fetching everything client-side).
-  const fetchOrders = async () => {
-    setLoading(true)
+  // `manual` = a user action (range change, Refresh): only those show the
+  // spinner and error toast, not the silent 2s poll.
+  const fetchOrders = async ({ manual = false } = {}) => {
+    const range = `${fromDate}|${toDate}`
+    if (manual) setLoading(true)
     try {
-      const params = (fromDate && toDate) ? localDateRange(fromDate, toDate) : {}
-      const res = await axios.get(`${API}/api/order`, { params, withCredentials: true })
-      setOrders(res.data)
+      const res = await axios.get(`${API}/api/order`, { params: localDateRange(fromDate, toDate), withCredentials: true })
+      if (currentRange.current === range) setOrders(res.data)
     } catch {
-      toast.error("Failed to fetch orders")
+      if (manual) toast.error("Failed to fetch orders")
     } finally {
-      setLoading(false)
+      if (manual) setLoading(false)
     }
   }
 
   useEffect(() => {
-    fetchOrders()
-    const t = setInterval(fetchOrders, 2000)
+    fetchOrders({ manual: true })
+    const t = setInterval(() => {
+      if (followToday && fromDate !== todayStr()) {
+        setFromDate(todayStr()); setToDate(todayStr()) // new business day — re-runs this effect
+        return
+      }
+      fetchOrders()
+    }, 2000)
     return () => clearInterval(t)
-  }, [fromDate, toDate])
+  }, [fromDate, toDate, followToday])
 
   // Lets other screens deep-link into a pre-filtered view (?status=READY from
   // the Overview live strip). Read off window rather than useSearchParams so
@@ -58,17 +105,40 @@ export function OrderManagement() {
   }, [])
 
   const updateOrderStatus = async (orderId, status) => {
+    // Cancelling / not fulfilling a paid PhonePe order refunds the customer —
+    // say so and confirm, since it can't be undone.
+    if (status === "CANCELLED" || status === "NOT_FULFILLED") {
+      const order = orders.find((o) => o.id === orderId)
+      const label = status === "CANCELLED" ? "Cancel" : "Mark as not fulfilled"
+      const refundNote = order?.paymentMethod === "PHONEPE"
+        ? `\n\n₹${order.totalAmount.toFixed(0)} will be refunded to the customer through PhonePe.`
+        : ""
+      if (!window.confirm(`${label} order #${order?.dailyOrderNumber ?? orderId}?${refundNote}`)) return
+    }
     // Optimistic — flip the status locally right away so the badge/buttons don't
     // sit on the old status for the round trip; fetchOrders() reconciles after.
     const previous = orders
     setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status } : o)))
     try {
-      await axios.put(`${API}/api/order/${orderId}/status`, { status }, { withCredentials: true })
-      toast.success(`Order marked ${status.toLowerCase()}`)
+      const res = await axios.put(`${API}/api/order/${orderId}/status`, { status }, { withCredentials: true })
+      const refund = res.data?.refunds?.[0]
+      if (refund?.status === "FAILED") toast.error("Order updated, but the refund failed — use Retry refund on the order")
+      else toast.success(refund ? `Order ${status === "CANCELLED" ? "cancelled" : "marked not fulfilled"} · refund of ₹${refund.amount.toFixed(0)} started` : `Order marked ${status.toLowerCase()}`)
       fetchOrders()
-    } catch {
+    } catch (err) {
       setOrders(previous)
-      toast.error("Failed to update status")
+      toast.error(err.response?.data?.error || "Failed to update status")
+    }
+  }
+
+  const retryRefund = async (orderId) => {
+    try {
+      const res = await axios.post(`${API}/api/order/${orderId}/refund`, {}, { withCredentials: true })
+      if (res.data?.refunds?.[0]?.status === "FAILED") toast.error("Refund failed again — check your PhonePe account, or refund manually")
+      else toast.success("Refund started")
+      fetchOrders()
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Couldn't retry the refund")
     }
   }
 
@@ -90,6 +160,10 @@ export function OrderManagement() {
     .filter((o) => o.status === "COMPLETED")
     .reduce((sum, o) => sum + o.totalAmount, 0)
 
+  // The details dialog reads the live copy from the poll, not the snapshot
+  // taken when it was opened — otherwise it keeps showing the old status.
+  const shownOrder = orders.find((o) => o.id === selectedOrder?.id) || selectedOrder
+
   const isToday = fromDate === todayStr() && toDate === todayStr()
   const fmtDay = (s) => new Date(s + "T00:00:00").toLocaleDateString([], { day: "numeric", month: "short" })
 
@@ -101,11 +175,7 @@ export function OrderManagement() {
           <button
             key={status}
             onClick={() => setStatusFilter(status)}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-              statusFilter === status
-                ? "brand-bg text-white"
-                : "bg-white border border-slate-200 text-slate-600 hover:border-slate-400"
-            }`}
+            className={`filter-chip ${statusFilter === status ? "filter-chip-active" : ""}`}
           >
             {status === "all" ? "All" : ORDER_STATUS_LABELS[status] || status} · {count}
           </button>
@@ -113,7 +183,7 @@ export function OrderManagement() {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => fetchOrders()}
+          onClick={() => fetchOrders({ manual: true })}
           disabled={loading}
           className="ml-auto h-8 text-slate-500 hover:text-slate-800"
         >
@@ -130,7 +200,7 @@ export function OrderManagement() {
             type="date"
             value={fromDate}
             max={toDate}
-            onChange={(e) => setFromDate(e.target.value)}
+            onChange={(e) => setRange(e.target.value, toDate)}
             className="bg-white w-[132px] sm:w-[150px]"
           />
           <span className="text-slate-400 text-sm">–</span>
@@ -138,21 +208,21 @@ export function OrderManagement() {
             type="date"
             value={toDate}
             min={fromDate}
-            onChange={(e) => setToDate(e.target.value)}
+            onChange={(e) => setRange(fromDate, e.target.value)}
             className="bg-white w-[132px] sm:w-[150px]"
           />
         </div>
         <div className="flex items-center gap-1.5">
           <Button variant={isToday ? "secondary" : "outline"} size="sm" className="text-xs"
-            onClick={() => { setFromDate(todayStr()); setToDate(todayStr()) }}>
+            onClick={() => setRange(todayStr(), todayStr())}>
             Today
           </Button>
           <Button variant="outline" size="sm" className="text-xs"
-            onClick={() => { setFromDate(daysAgoStr(6)); setToDate(todayStr()) }}>
+            onClick={() => setRange(daysAgoStr(6), todayStr())}>
             Last 7 days
           </Button>
           <Button variant="outline" size="sm" className="text-xs"
-            onClick={() => { setFromDate(daysAgoStr(29)); setToDate(todayStr()) }}>
+            onClick={() => setRange(daysAgoStr(29), todayStr())}>
             Last 30 days
           </Button>
         </div>
@@ -208,6 +278,7 @@ export function OrderManagement() {
                             <ScanLine className="h-3 w-3" /> Served by {order.waiter.name}
                           </p>
                         )}
+                        <RefundStatus order={order} onRetry={() => retryRefund(order.id)} />
                       </div>
                     </div>
 
@@ -215,7 +286,7 @@ export function OrderManagement() {
                       <span className="text-sm font-bold text-slate-900">₹{order.totalAmount.toFixed(0)}</span>
                       <StatusDot color={ORDER_STATUS_COLORS[order.status] || "#94a3b8"} className="w-24">{ORDER_STATUS_LABELS[order.status] || order.status}</StatusDot>
                       <span className="text-xs text-slate-400">
-                        {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        {orderTimeLabel(order.createdAt)}
                       </span>
                     </div>
                   </div>
@@ -228,33 +299,40 @@ export function OrderManagement() {
                         </Button>
                       </DialogTrigger>
                       <DialogContent className="max-w-md">
-                        <DialogHeader><DialogTitle>Order #{selectedOrder?.dailyOrderNumber ?? selectedOrder?.id}</DialogTitle></DialogHeader>
-                        {selectedOrder && (
+                        <DialogHeader><DialogTitle>Order #{shownOrder?.dailyOrderNumber ?? shownOrder?.id}</DialogTitle></DialogHeader>
+                        {shownOrder && (
                           <div className="space-y-4 pt-1">
+                            <div className="flex items-center justify-between gap-3 text-sm">
+                              <span className="text-slate-500">
+                                {new Date(shownOrder.createdAt).toLocaleString([], { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                              </span>
+                              <StatusDot color={ORDER_STATUS_COLORS[shownOrder.status] || "#94a3b8"}>{ORDER_STATUS_LABELS[shownOrder.status] || shownOrder.status}</StatusDot>
+                            </div>
                             <div>
                               <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Customer</p>
-                              <p className="text-sm font-medium">{selectedOrder.guestName || selectedOrder.user?.customerName}</p>
-                              {selectedOrder.user?.phoneNumber && <p className="text-sm text-slate-500">{selectedOrder.user.phoneNumber}</p>}
+                              <p className="text-sm font-medium">{shownOrder.guestName || shownOrder.user?.customerName}</p>
+                              {shownOrder.user?.phoneNumber && <p className="text-sm text-slate-500">{shownOrder.user.phoneNumber}</p>}
                               <p className="text-sm text-slate-500">
-                                {selectedOrder.guestVehicle ? `Vehicle: ${selectedOrder.guestVehicle}` : "Pickup order"}
+                                {shownOrder.guestVehicle ? `Vehicle: ${shownOrder.guestVehicle}` : "Pickup order"}
                               </p>
-                              {selectedOrder.parkingSpot && (
-                                <p className="text-sm text-slate-500">Parked at: {selectedOrder.parkingSpot}</p>
+                              {shownOrder.parkingSpot && (
+                                <p className="text-sm text-slate-500">Parked at: {shownOrder.parkingSpot}</p>
                               )}
                               <p className="text-sm text-slate-500">
-                                Payment: {PAYMENT_METHOD_LABELS[selectedOrder.paymentMethod] || "Cash on Delivery"}
+                                Payment: {PAYMENT_METHOD_LABELS[shownOrder.paymentMethod] || "Cash on Delivery"}
                               </p>
+                              <RefundStatus order={shownOrder} onRetry={() => retryRefund(shownOrder.id)} />
                             </div>
-                            {selectedOrder.waiter?.name && (
+                            {shownOrder.waiter?.name && (
                               <div>
                                 <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Served by</p>
-                                <p className="text-sm font-medium text-emerald-600">{selectedOrder.waiter.name}</p>
+                                <p className="text-sm font-medium text-emerald-600">{shownOrder.waiter.name}</p>
                               </div>
                             )}
                             <div>
                               <p className="text-xs text-slate-500 uppercase tracking-wide mb-2">Items</p>
                               <div className="space-y-1.5">
-                                {selectedOrder.orderItems?.map((item) => (
+                                {shownOrder.orderItems?.map((item) => (
                                   <div key={item.id} className="flex justify-between text-sm">
                                     <div>
                                       <span>{item.quantity}× {item.name}</span>
@@ -267,14 +345,14 @@ export function OrderManagement() {
                                 ))}
                                 <div className="border-t pt-2 flex justify-between font-semibold text-sm">
                                   <span>Total</span>
-                                  <span>₹{selectedOrder.totalAmount.toFixed(0)}</span>
+                                  <span>₹{shownOrder.totalAmount.toFixed(0)}</span>
                                 </div>
                               </div>
                             </div>
-                            {selectedOrder.deliveryInstructions && (
+                            {shownOrder.deliveryInstructions && (
                               <div>
                                 <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Instructions</p>
-                                <p className="text-sm text-slate-700">{selectedOrder.deliveryInstructions}</p>
+                                <p className="text-sm text-slate-700">{shownOrder.deliveryInstructions}</p>
                               </div>
                             )}
                           </div>

@@ -1,4 +1,5 @@
 import express from 'express';
+import { NOT_REAL_ORDER_STATES } from '../../utils/orderStatus.js';
 import prisma from '../../config/prisma.js';
 import restaurantAuth from '../../middlewares/restaurant.auth.js';
 import { dayStartMinutes } from '../../utils/businessHours.js';
@@ -146,7 +147,7 @@ analyticsRouter.get('/summary', restaurantAuth, async (req, res) => {
     const rows = await prisma.order.findMany({
       where: {
         restaurantId: req.restaurantId,
-        status: { not: 'PENDING' },
+        status: { notIn: NOT_REAL_ORDER_STATES },
         createdAt: { gte: startOfLocalDay(prevFrom, dayOffsetMin), lte: endOfLocalDay(to, dayOffsetMin) },
       },
       select: {

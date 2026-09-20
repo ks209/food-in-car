@@ -9,6 +9,8 @@ import { resolveCustomerByPhone } from '../../utils/customer.js';
 import { nextDailyOrderNumber } from '../../utils/dailyOrderNumber.js';
 import { orderEta } from '../../utils/waitEstimate.js';
 import { orderGst } from '../../utils/gst.js';
+import { NOT_REAL_ORDER_STATES } from '../../utils/orderStatus.js';
+import { refundOrder } from '../../utils/refunds.js';
 
 const orderRouter = express.Router();
 
@@ -19,6 +21,19 @@ const ORDER_INCLUDE = {
   restaurant: { select: { id: true, name: true, phone: true, address: true, fssaiLicense: true } },
   orderItems: { include: { options: true }, orderBy: { id: 'asc' } },
   orderStatusHistory: { orderBy: { updatedAt: 'desc' } },
+  // Newest first — refunds[0] is the one to show
+  refunds: { select: { id: true, amount: true, status: true, error: true, createdAt: true }, orderBy: { id: 'desc' } },
+};
+
+// Which statuses the dashboard may move an order to (PUT /:id/status), from
+// each status. Forward only. COMPLETED isn't here: that's the waiter's QR scan
+// (PUT /scan) or end-of-day close, which have their own routes. PENDING /
+// PAYMENT_FAILED aren't real orders and PAID is only set by payment
+// confirmation, so none of them are reachable from here either.
+const STATUS_TRANSITIONS = {
+  PAID: ['PREPARING', 'CANCELLED', 'NOT_FULFILLED'],
+  PREPARING: ['READY', 'CANCELLED', 'NOT_FULFILLED'],
+  READY: ['CANCELLED', 'NOT_FULFILLED'],
 };
 
 // Orders the kitchen still has to finish. These never drop off the Kitchen
@@ -44,7 +59,7 @@ orderRouter.get('/', restaurantAuth, async (req, res) => {
     // a COD order not yet accepted). Never a real, actionable order — excluded
     // everywhere the dashboard reads orders from (this is the one shared source
     // for Orders, Kitchen Display, Overview, Analytics, and the new-order toast).
-    const where = { restaurantId: req.restaurantId, status: { not: 'PENDING' } };
+    const where = { restaurantId: req.restaurantId, status: { notIn: NOT_REAL_ORDER_STATES } };
     if (from || to) {
       where.createdAt = {};
       if (from) {
@@ -76,7 +91,9 @@ orderRouter.get('/', restaurantAuth, async (req, res) => {
 orderRouter.get('/mine', userAuth, async (req, res) => {
   try {
     const orders = await prisma.order.findMany({
-      where: { userId: req.userId },
+      // Failed payment attempts aren't orders. PENDING stays — that's a
+      // payment the customer may still be completing.
+      where: { userId: req.userId, status: { not: 'PAYMENT_FAILED' } },
       include: {
         orderItems: { include: { options: true } },
         orderStatusHistory: { orderBy: { updatedAt: 'desc' } },
@@ -165,7 +182,7 @@ orderRouter.get('/customers', restaurantAuth, async (req, res) => {
         MAX(o."createdAt") AS "lastOrderAt",
         COUNT(*) OVER()::int AS "totalCount"
       FROM "User" u
-      JOIN "Order" o ON o."userId" = u.id AND o."restaurantId" = $1
+      JOIN "Order" o ON o."userId" = u.id AND o."restaurantId" = $1 AND o.status::text NOT IN ('PENDING', 'PAYMENT_FAILED')
       WHERE ($2 = '' OR u."phoneNumber" ILIKE '%' || $2 || '%' OR u."customerName" ILIKE '%' || $2 || '%')
       GROUP BY u.id, u."customerName", u."phoneNumber"
       ORDER BY ${sortColumn} ${sortDir} NULLS LAST
@@ -201,7 +218,7 @@ orderRouter.get('/customers/:phone', restaurantAuth, async (req, res) => {
   try {
     const restaurantId = req.restaurantId;
     const orders = await prisma.order.findMany({
-      where: { restaurantId, user: { phoneNumber: req.params.phone } },
+      where: { restaurantId, user: { phoneNumber: req.params.phone }, status: { notIn: NOT_REAL_ORDER_STATES } },
       include: ORDER_INCLUDE,
       orderBy: { createdAt: 'desc' },
     });
@@ -390,18 +407,46 @@ orderRouter.put('/:id/status', restaurantAuth, async (req, res) => {
     });
     if (!existing) return res.status(403).json({ error: 'Not authorized' });
 
-    const updated = await prisma.order.update({
-      where: { id: orderId },
-      data: {
-        status,
-        orderStatusHistory: { create: { status, updatedBy: 'restaurant' } },
-      },
-      include: ORDER_INCLUDE,
-    });
+    if (!(STATUS_TRANSITIONS[existing.status] || []).includes(status)) {
+      return res.status(409).json({ error: `Can't change an order from ${existing.status} to ${status}` });
+    }
 
-    res.json(updated);
+    // Conditional on the status we just checked: if something else moved the
+    // order in between (another tab, the waiter scan), this changes nothing
+    // instead of overwriting it.
+    const { count } = await prisma.order.updateMany({
+      where: { id: orderId, status: existing.status },
+      data: { status },
+    });
+    if (!count) return res.status(409).json({ error: 'This order was just updated — refresh and try again' });
+    await prisma.orderStatusHistory.create({ data: { orderId, status, updatedBy: 'restaurant' } });
+
+    // Paid online and now won't be served → give the customer their money back.
+    // A refund problem never blocks the cancellation itself; it shows on the
+    // order as "Refund failed" with a retry.
+    if (status === 'CANCELLED' || status === 'NOT_FULFILLED') {
+      await refundOrder(orderId).catch((err) => console.error(`[refund] order ${orderId}:`, err.message));
+    }
+
+    res.json(await prisma.order.findUnique({ where: { id: orderId }, include: ORDER_INCLUDE }));
   } catch (error) {
     res.status(500).json({ error: 'Failed to update order status', details: error.message });
+  }
+});
+
+// Retry a refund that failed (e.g. PhonePe was down, or the merchant account
+// lacked balance). No-op if one is already pending or done — see refundOrder.
+orderRouter.post('/:id/refund', restaurantAuth, async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.id);
+    const existing = await prisma.order.findFirst({ where: { id: orderId, restaurantId: req.restaurantId } });
+    if (!existing) return res.status(403).json({ error: 'Not authorized' });
+
+    const result = await refundOrder(orderId);
+    if (result.skipped) return res.status(400).json({ error: result.skipped });
+    res.json(await prisma.order.findUnique({ where: { id: orderId }, include: ORDER_INCLUDE }));
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to refund order', details: error.message });
   }
 });
 

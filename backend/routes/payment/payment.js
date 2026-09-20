@@ -5,8 +5,9 @@ import { genDeliveryCode } from '../../utils/deliveryCode.js';
 import { resolveCustomerByPhone } from '../../utils/customer.js';
 import { nextDailyOrderNumber } from '../../utils/dailyOrderNumber.js';
 import { validateAndPriceCart } from '../../utils/validateCart.js';
-import { isDevMode, gatewayVersion, initiatePayment, reconcileTransaction, verifyV2WebhookAuth } from '../../utils/phonepe.js';
+import { isDevMode, gatewayVersion, initiatePayment, reconcileTransaction, verifyV2WebhookAuth, markPaymentFailed, markOrderPaid } from '../../utils/phonepe.js';
 import { resolveOrderParkingSpot } from '../parking/parking.js';
+import { reconcileRefund } from '../../utils/refunds.js';
 import { customerOpenState } from '../../utils/businessHours.js';
 import { orderGst } from '../../utils/gst.js';
 
@@ -79,6 +80,7 @@ paymentRouter.post('/initiate', async (req, res) => {
     return res.status(400).json({ error: 'Missing required fields (name, phone, items)' });
   }
 
+  let createdOrderId = null;
   try {
     const restaurant = await prisma.restaurant.findUnique({ where: { id: parseInt(restaurantId) } });
     if (!restaurant || !restaurant.isActive) return res.status(404).json({ error: 'Restaurant not found' });
@@ -119,6 +121,8 @@ paymentRouter.post('/initiate', async (req, res) => {
       deliveryInstructions, guestName, vehicle, parkingSpot: parking.name, mobileNumber, deviceKey,
       status: devMode ? 'PAID' : 'PENDING',
     });
+
+    createdOrderId = order.id;
 
     if (devMode) {
       console.log(`[payment] restaurant ${restaurant.id} has no PhonePe credentials — order ${order.id} placed as PAID, no charge`);
@@ -163,6 +167,9 @@ paymentRouter.post('/initiate', async (req, res) => {
     // Surface PhonePe's own code (e.g. KEY_NOT_CONFIGURED) — axios's generic
     // "Request failed with status code 404" says nothing about the cause.
     const pp = err?.response;
+    // The customer is shown an error and never reached PhonePe, so this order
+    // is dead now — no need to leave it PENDING for the 45-minute sweep.
+    if (createdOrderId) await markPaymentFailed(createdOrderId, 'initiate-failed').catch(() => {});
     console.error('PhonePe initiate error:', pp ? `HTTP ${pp.status} ${pp.config?.url} ${JSON.stringify(pp.data)}` : err.message);
     res.status(500).json({
       error: 'Payment initiation failed',
@@ -200,16 +207,20 @@ paymentRouter.post('/callback', async (req, res) => {
 
     const [receivedHash] = xVerify.split('###');
     const computedHash = crypto.createHash('sha256').update(responseBody + restaurant.phonepeSaltKey).digest('hex');
-    if (computedHash !== receivedHash) return res.status(401).send('Unauthorized');
+    const hashOk = typeof receivedHash === 'string' && receivedHash.length === computedHash.length
+      && crypto.timingSafeEqual(Buffer.from(receivedHash), Buffer.from(computedHash));
+    if (!hashOk) return res.status(401).send('Unauthorized');
 
-    const paid = decoded?.success && decoded?.data?.state === 'COMPLETED';
-    const newStatus = paid ? 'COMPLETED' : 'FAILED';
-    await prisma.merchantTransaction.updateMany({ where: { txnId }, data: { status: newStatus } });
+    const state = decoded?.data?.state;
+    const paid = decoded?.success && state === 'COMPLETED';
     if (paid) {
-      await prisma.order.update({
-        where: { id: txn.orderId },
-        data: { status: 'PAID', orderStatusHistory: { create: { status: 'PAID', updatedBy: 'phonepe' } } },
-      });
+      await prisma.merchantTransaction.updateMany({ where: { txnId }, data: { status: 'COMPLETED' } });
+      await markOrderPaid(txn.orderId, 'phonepe');
+    } else if (state === 'FAILED') {
+      // Only a definite FAILED — a PENDING callback leaves both rows alone so
+      // the cron can still pick the payment up if it completes.
+      await prisma.merchantTransaction.updateMany({ where: { txnId }, data: { status: 'FAILED' } });
+      await markPaymentFailed(txn.orderId, 'phonepe');
     }
     res.status(200).send('OK');
   } catch (err) {
@@ -230,6 +241,23 @@ paymentRouter.post('/callback', async (req, res) => {
 // making us hammer the status API.
 paymentRouter.post('/webhook', async (req, res) => {
   try {
+    // Refund events (pg.refund.*) carry merchantRefundId — settle the refund
+    // the same way: identify it, authenticate, ask PhonePe.
+    const merchantRefundId = req.body?.payload?.merchantRefundId;
+    if (merchantRefundId) {
+      const refund = await prisma.refund.findUnique({
+        where: { refundTxnId: String(merchantRefundId) },
+        include: { order: { include: { restaurant: true } } },
+      });
+      if (!refund) return res.status(404).send('Unknown refund');
+      const restaurant = refund.order.restaurant;
+      if (gatewayVersion(restaurant) !== 'v2' || !verifyV2WebhookAuth(restaurant, req.headers.authorization)) {
+        return res.status(401).send('Unauthorized');
+      }
+      if (refund.status === 'PENDING') await reconcileRefund(refund);
+      return res.status(200).send('OK');
+    }
+
     const merchantOrderId = req.body?.payload?.merchantOrderId;
     if (!merchantOrderId) return res.status(400).send('Bad request');
 
@@ -248,6 +276,28 @@ paymentRouter.post('/webhook', async (req, res) => {
     res.status(200).send('OK');
   } catch (err) {
     console.error('PhonePe webhook error:', err?.response?.data || err.message);
+    res.status(500).send('Error');
+  }
+});
+
+// ── POST /api/payment/refund-callback ─────────────────────────────────────────
+// PhonePe v1 posts here when a refund settles (callbackUrl in utils/refunds.js).
+// The body only tells us WHICH refund; its outcome comes from PhonePe's status
+// API, so a forged callback can't mark anything refunded.
+paymentRouter.post('/refund-callback', async (req, res) => {
+  try {
+    const responseBody = req.body?.response;
+    if (!responseBody) return res.status(400).send('Bad request');
+    const decoded = JSON.parse(Buffer.from(responseBody, 'base64').toString('utf8'));
+    const refundTxnId = decoded?.data?.merchantTransactionId;
+    if (!refundTxnId) return res.status(400).send('Bad request');
+
+    const refund = await prisma.refund.findUnique({ where: { refundTxnId: String(refundTxnId) } });
+    if (!refund) return res.status(404).send('Unknown refund');
+    if (refund.status === 'PENDING') await reconcileRefund(refund);
+    res.status(200).send('OK');
+  } catch (err) {
+    console.error('PhonePe refund callback error:', err?.response?.data || err.message);
     res.status(500).send('Error');
   }
 });
@@ -276,7 +326,10 @@ paymentRouter.get('/redirect', async (req, res) => {
     code = o?.deliveryCode || '';
   } catch { /* fall through without a code — status page will 403 and show "not found" */ }
 
-  res.redirect(`${FRONTEND_URL}/restaurant/${restaurantId}/order/${orderId}?code=${code}`);
+  // returned=1 tells the status page the customer just came back from PhonePe:
+  // an order still PENDING at that point means they backed out / cancelled,
+  // so it shows "Payment not completed" rather than a normal waiting screen.
+  res.redirect(`${FRONTEND_URL}/restaurant/${restaurantId}/order/${orderId}?code=${code}&returned=1`);
 });
 
 // ── GET /api/payment/status/:orderId ─────────────────────────────────────────
@@ -285,13 +338,19 @@ paymentRouter.get('/status/:orderId', async (req, res) => {
   try {
     const orderId = parseInt(req.params.orderId);
     const order = await prisma.order.findUnique({ where: { id: orderId }, include: { restaurant: true } });
-    if (!order) return res.status(404).json({ error: 'Order not found' });
+    // Same proof of ownership as the order status page (the delivery code) —
+    // otherwise anyone could walk order ids making us hit PhonePe's API.
+    if (!order || !order.deliveryCode || req.query.code !== order.deliveryCode) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
 
     const txn = await prisma.merchantTransaction.findFirst({
       where: { orderId },
       orderBy: { id: 'desc' },
     });
     if (!txn) return res.json({ status: 'NO_TRANSACTION' });
+    // Nothing left to ask PhonePe once it has settled either way.
+    if (txn.status !== 'PENDING') return res.json({ txnId: txn.txnId, state: txn.status, localStatus: txn.status, paid: txn.status === 'COMPLETED' });
 
     const { state, paid } = await reconcileTransaction(order.restaurant, txn);
     res.json({ txnId: txn.txnId, state, localStatus: paid ? 'COMPLETED' : txn.status, paid });

@@ -12,7 +12,7 @@ import { API } from "@/lib/api"
 import { useRestaurant } from "@/lib/restaurant-context"
 import { useBilling } from "@/lib/billing-context"
 import { cacheMenu, getCachedMenu } from "@/lib/billing-db"
-import { formatCurrency } from "@/lib/format"
+import { formatCurrency, orderTimeLabel } from "@/lib/format"
 import { orderGst } from "@/lib/gst"
 
 const STATUS_META = {
@@ -127,9 +127,7 @@ export function BillingPos() {
         <div className="flex flex-wrap gap-2">
           {categories.map((c) => (
             <button key={c} onClick={() => setActiveCategory(c)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                activeCategory === c ? "brand-bg text-white" : "bg-white border border-slate-200 text-slate-600 hover:border-slate-400"
-              }`}>
+              className={`filter-chip ${activeCategory === c ? "filter-chip-active" : ""}`}>
               {c}
             </button>
           ))}
@@ -265,7 +263,7 @@ function RecentBills() {
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-slate-800 truncate">{label}</p>
                   <p className="text-xs text-slate-400">
-                    {formatCurrency(b.payload.totalAmount)} · {new Date(b.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    {formatCurrency(b.payload.totalAmount)} · {orderTimeLabel(b.createdAt)}
                   </p>
                   {b.status === "failed" && b.error && <p className="text-xs text-red-500 mt-0.5 truncate">{b.error}</p>}
                 </div>

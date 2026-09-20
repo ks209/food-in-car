@@ -6,8 +6,10 @@ const api = axios.create({
 })
 
 export const userApi = {
-  register: (data) => api.post("/api/user/register", data),
-  login: (data) => api.post("/api/user/login", data),
+  // Password register/login are disabled on the backend (routes/user/user.js)
+  // — sign-in is phone OTP only, via firebaseLogin.
+  // register: (data) => api.post("/api/user/register", data),
+  // login: (data) => api.post("/api/user/login", data),
   firebaseLogin: (data) => api.post("/api/user/firebase-login", data),
   logout: () => api.post("/api/user/logout"),
   me: () => api.get("/api/user/me"),
@@ -48,6 +50,8 @@ export const orderApi = {
   mine: () => api.get("/api/order/mine"),
   // code proves ownership for guest (unauthenticated) access — see order.js GET /:id
   get: (id, code) => api.get(`/api/order/${id}`, code ? { params: { code } } : undefined),
+  // Asks PhonePe live (the order row itself only changes on webhook/cron)
+  paymentStatus: (id, code) => api.get(`/api/payment/status/${id}`, { params: { code } }),
 }
 
 export default api

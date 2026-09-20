@@ -16,11 +16,13 @@ export function AuthProvider({ children }) {
       .finally(() => setLoading(false))
   }, [])
 
-  const login = async (phoneNumber, password) => {
-    const res = await userApi.login({ phoneNumber, password })
-    setUser(res.data.user)
-    return res.data.user
-  }
+  // Password login/register — disabled along with their backend routes
+  // (routes/user/user.js); phoneLogin below is the only sign-in path.
+  // const login = async (phoneNumber, password) => {
+  //   const res = await userApi.login({ phoneNumber, password })
+  //   setUser(res.data.user)
+  //   return res.data.user
+  // }
 
   // Exchange a Firebase phone-auth ID token for our session. Returns
   // { needsProfile: true } for a first-time number until a name is supplied.
@@ -36,10 +38,10 @@ export function AuthProvider({ children }) {
     return res.data
   }
 
-  const register = async (data) => {
-    const res = await userApi.register(data)
-    return res.data
-  }
+  // const register = async (data) => {
+  //   const res = await userApi.register(data)
+  //   return res.data
+  // }
 
   const logout = async () => {
     await userApi.logout().catch(() => {})
@@ -48,7 +50,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, phoneLogin, updateProfile, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, phoneLogin, updateProfile, logout }}>
       {children}
     </AuthContext.Provider>
   )

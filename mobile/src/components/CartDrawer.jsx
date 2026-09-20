@@ -5,6 +5,7 @@ import { useCart } from "../context/CartContext"
 import { useAuth } from "../context/AuthContext"
 import { getDeviceKey } from "../lib/device"
 import { saveActiveOrder } from "../lib/activeOrder"
+import { saveCheckoutSnapshot } from "../lib/checkoutSnapshot"
 import { useRestaurantBase } from "../lib/restaurantPath"
 import api from "../api"
 import { orderGst, rupees } from "../lib/gst"
@@ -83,6 +84,8 @@ export default function CartDrawer({ open, onClose, restaurant, restaurantId }) 
     try {
       const res = await api.post("/api/payment/initiate", orderPayload())
       saveActiveOrder({ restaurantId, orderId: res.data.orderId, code: res.data.deliveryCode })
+      // So "Try again" can put this cart back if they cancel on PhonePe
+      if (res.data.redirectUrl && restaurant?.id) saveCheckoutSnapshot(res.data.orderId, restaurant.id, cart)
       clearCart(); onClose()
       if (res.data.redirectUrl) {
         // Real PhonePe: leave the React app and go to PhonePe payment page

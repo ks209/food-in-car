@@ -8,6 +8,7 @@
 // land on different calendar days in the two reports.
 
 import prisma from '../../config/prisma.js';
+import { NOT_REAL_ORDER_STATES } from '../../utils/orderStatus.js';
 import {
     REVENUE_STATES, NON_SALE_STATES, RESOLVED_STATES,
     DAYPARTS, daypartFor,
@@ -105,6 +106,7 @@ async function loadOrders(restaurantIds, range) {
         where: {
             restaurantId: { in: restaurantIds },
             createdAt: { gte: windowStart, lte: windowEnd },
+            status: { notIn: NOT_REAL_ORDER_STATES },
         },
         select: {
             id: true, restaurantId: true, userId: true, guestName: true,

@@ -211,6 +211,7 @@ model Order {
   orderItems           OrderItem[]
   orderStatusHistory   OrderStatusHistory[]
   merchantTransaction  MerchantTransaction[]
+  refunds              Refund[]
   createdAt            DateTime             @default(now())
   updatedAt            DateTime             @updatedAt
 }
@@ -267,6 +268,10 @@ enum OrderStatus {
   COMPLETED
   CANCELLED
   NOT_FULFILLED
+  // Customer never completed payment (PhonePe FAILED, or abandoned past the
+  // timeout). Not a real order: hidden from the dashboard and the customer's
+  // order history, like PENDING. Flips to PAID if PhonePe later confirms.
+  PAYMENT_FAILED
 }
 
 // Per-restaurant, per-calendar-day counter backing Order.dailyOrderNumber.
@@ -284,6 +289,24 @@ model DailyCounter {
 enum PaymentMethod {
   COD
   PHONEPE
+}
+
+// A PhonePe refund for a paid order the restaurant cancelled / couldn't
+// fulfil (see utils/refunds.js). One row per attempt: a FAILED attempt stays
+// for the record and a retry adds a new row with a fresh refundTxnId.
+model Refund {
+  id          Int      @id @default(autoincrement())
+  orderId     Int
+  order       Order    @relation(fields: [orderId], references: [id])
+  // Our id for the refund at PhonePe (v1 merchantTransactionId / v2 merchantRefundId)
+  refundTxnId String   @unique
+  amount      Float
+  status      String   // PENDING | COMPLETED | FAILED
+  error       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([orderId])
 }
 
 model MerchantTransaction {

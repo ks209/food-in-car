@@ -27,7 +27,7 @@ import { ChangeBadge } from "@/components/ui/change-badge"
 import { Button } from "@/components/ui/button"
 import { downloadCsv } from "@/lib/export"
 
-const STATUS_FILTER_OPTIONS = ["PENDING", "PAID", "PREPARING", "READY", "COMPLETED", "CANCELLED", "NOT_FULFILLED"]
+const STATUS_FILTER_OPTIONS = ["PAID", "PREPARING", "READY", "COMPLETED", "CANCELLED", "NOT_FULFILLED"]
 
 // Menu-engineering quadrants (Kasavana-Smith). The label is the decision, not
 // the jargon — an owner should be able to act on the card without a glossary.
