@@ -35,21 +35,37 @@ const app =express();
 // the login rate limiters count per customer, not per proxy.
 app.set('trust proxy', 1);
 
+// Browsers may call the API from these origins. Cookies are involved
+// (credentials: true), so this is an exact-match allowlist — no wildcards.
+// CORS_ORIGINS adds more at deploy time (comma-separated, full origins
+// including the scheme) so a new environment doesn't need a code change.
 const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:3001",
   "http://localhost:5173",
   "http://localhost:5174",
   "http://127.0.0.1:5174",
+  // Production
   "https://app.carkhanaa.in",
   "https://dash.carkhanaa.in",
   "https://admin.carkhanaa.in",
-  "https://food-in-car-three.vercel.app"
+  // Staging (API at stag.carkhanaa.in)
+  "https://stag-app.carkhanaa.in",
+  "https://stag-dash.carkhanaa.in",
+  "https://stag-admin.carkhanaa.in",
+  "https://food-in-car-three.vercel.app",
+  ...(process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map((o) => o.trim().replace(/\/+$/, ''))
+    .filter(Boolean),
 ];
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) callback(null, true);
-    else callback(new Error("Not allowed by CORS"));
+    // No Origin header = same-origin, curl, or a server-to-server call
+    // (PhonePe's webhook) — those aren't browser cross-origin requests.
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    console.warn(`[cors] blocked origin: ${origin}`);
+    callback(new Error("Not allowed by CORS"));
   },
   credentials: true
 }));

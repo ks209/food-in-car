@@ -79,7 +79,7 @@ export function MenuManagement() {
 
   const fetchCategories = async () => {
     try {
-      const res = await axios.get(`${API}/api/category/`, { withCredentials: true })
+      const res = await axios.get(`${API}/api/category/?includeDeleted=true`, { withCredentials: true })
       setCategories(res.data)
     } catch { toast.error("Failed to fetch categories") }
   }
@@ -170,11 +170,31 @@ export function MenuManagement() {
     } catch { toast.error("Failed to update category") }
   }
 
-  const handleDeleteCategory = async (id) => {
+  const handleDeleteCategory = async (id, name) => {
+    // Items aren't deleted, but they're hidden along with the category until
+    // they're moved to another one. Say so rather than letting the owner guess
+    // whether their dishes are about to disappear for good.
+    const itemCount = menuItems.filter((i) => i.categoryId === id).length
+    const note = itemCount
+      ? `\n\n${itemCount} item${itemCount === 1 ? "" : "s"} will be hidden with it. They aren't deleted — they come back if the category is restored.`
+      : ""
+    if (!window.confirm(`Remove the category "${name}"?${note}`)) return
     try {
       await axios.delete(`${API}/api/category/${id}`, { withCredentials: true })
-      toast.success("Category removed"); fetchCategories()
-    } catch { toast.error("Failed to remove category") }
+      toast.success("Category removed")
+      // Items too: their categoryId just changed.
+      fetchCategories(); fetchMenu()
+    } catch (err) { toast.error(err.response?.data?.error || "Failed to remove category") }
+  }
+
+  // Brings back a removed category and, with it, the items still attached to
+  // it — the only way those items become visible again short of editing them.
+  const handleRestoreCategory = async (category) => {
+    try {
+      await axios.put(`${API}/api/category/${category.id}`, { name: category.name, isActive: true }, { withCredentials: true })
+      toast.success(`"${category.name}" restored`)
+      fetchCategories(); fetchMenu()
+    } catch (err) { toast.error(err.response?.data?.error || "Failed to restore category") }
   }
 
   const handleBulkAvailability = async (categoryId, available) => {
@@ -189,9 +209,11 @@ export function MenuManagement() {
   // Done in a dialog rather than by dragging the section headers in place: a
   // category with 80 items is taller than the viewport, so dragging one past
   // another on the page would be unusable. The dialog shows just the names.
+  // `ordered` is the live categories only; removed ones are kept in state (for
+  // the Restore strip) and simply tacked on the end, out of the way.
   const reorderCategories = async (ordered) => {
     const previous = categories
-    setCategories(ordered) // optimistic — the drag should feel instant
+    setCategories([...ordered, ...previous.filter((c) => !c.isActive)]) // optimistic — the drag should feel instant
     try {
       await axios.patch(`${API}/api/category/reorder`, {
         categories: ordered.map((c, idx) => ({ id: c.id, position: idx })),
@@ -205,10 +227,11 @@ export function MenuManagement() {
   const handleCategoryDragEnd = (event) => {
     const { active, over } = event
     if (!over || active.id === over.id) return
-    const oldIndex = categories.findIndex((c) => c.id === active.id)
-    const newIndex = categories.findIndex((c) => c.id === over.id)
+    const live = categories.filter((c) => c.isActive)
+    const oldIndex = live.findIndex((c) => c.id === active.id)
+    const newIndex = live.findIndex((c) => c.id === over.id)
     if (oldIndex === -1 || newIndex === -1) return
-    reorderCategories(arrayMove(categories, oldIndex, newIndex))
+    reorderCategories(arrayMove(live, oldIndex, newIndex))
   }
 
   // ── Reordering within a category group ────────────────────────────────────────
@@ -244,8 +267,13 @@ export function MenuManagement() {
     item.name.toLowerCase().includes(term) ||
     (item.description || "").toLowerCase().includes(term)
 
+  // Removed categories come back from the API (?includeDeleted=true) only so
+  // they can be restored — they're never part of the menu itself.
+  const activeCategories = categories.filter((c) => c.isActive)
+  const deletedCategories = categories.filter((c) => !c.isActive)
+
   const allGroups = [
-    ...categories.map((c) => ({
+    ...activeCategories.map((c) => ({
       key: String(c.id), id: c.id, name: c.name, isActive: c.isActive,
       items: menuItems.filter((i) => i.categoryId === c.id && matches(i)),
     })),
@@ -264,9 +292,12 @@ export function MenuManagement() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-slate-500 text-sm">{menuItems.length} items · {categories.length} categories</p>
+        <p className="text-slate-500 text-sm">
+          {menuItems.length} items · {activeCategories.length} categories
+          {deletedCategories.length > 0 && <> · {deletedCategories.length} removed</>}
+        </p>
         <div className="flex flex-wrap gap-2">
-          {categories.length > 1 && (
+          {activeCategories.length > 1 && (
             <Button variant="outline" className="h-9 text-sm" onClick={() => setIsReorderCategoriesOpen(true)}>
               <ArrowUpDown className="h-4 w-4 mr-1.5" />Reorder Categories
             </Button>
@@ -285,6 +316,26 @@ export function MenuManagement() {
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 h-4 w-4" />
         <Input placeholder="Search items…" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9 bg-white" />
       </div>
+
+      {/* Removed categories — their items are hidden with them until restored */}
+      {deletedCategories.length > 0 && (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+          <p className="text-xs text-slate-500 mb-2">
+            Removed categories. Their items are hidden from the menu and still attached — restore a category to bring them back.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {deletedCategories.map((c) => (
+              <span key={c.id} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs">
+                <span className="font-medium text-slate-600">{c.name}</span>
+                <button type="button" onClick={() => handleRestoreCategory(c)}
+                  className="font-medium text-slate-500 underline hover:text-slate-800">
+                  Restore
+                </button>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Category filter */}
       <div className="flex flex-wrap gap-2">
@@ -332,7 +383,7 @@ export function MenuManagement() {
                       <Edit className="h-3.5 w-3.5" />
                     </Button>
                     <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-400 hover:text-red-600"
-                      onClick={() => handleDeleteCategory(group.id)}>
+                      onClick={() => handleDeleteCategory(group.id, group.name)}>
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </>
@@ -403,7 +454,7 @@ export function MenuManagement() {
               <Label className="text-sm">Category</Label>
               <Select value={newItem.categoryId} onValueChange={(v) => setNewItem({ ...newItem, categoryId: v })}>
                 <SelectTrigger className="mt-1"><SelectValue placeholder="Uncategorized" /></SelectTrigger>
-                <SelectContent>{categories.map((c) => <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>)}</SelectContent>
+                <SelectContent>{activeCategories.map((c) => <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div className="flex items-center gap-2">
@@ -492,9 +543,9 @@ export function MenuManagement() {
             Drag to set the order customers see on the menu. Saved as you drop.
           </p>
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleCategoryDragEnd}>
-            <SortableContext items={categories.map((c) => c.id)} strategy={verticalListSortingStrategy}>
+            <SortableContext items={activeCategories.map((c) => c.id)} strategy={verticalListSortingStrategy}>
               <div className="space-y-2 pt-1 max-h-[60vh] overflow-y-auto">
-                {categories.map((category, idx) => (
+                {activeCategories.map((category, idx) => (
                   <SortableCategoryRow key={category.id} category={category} index={idx} />
                 ))}
               </div>

@@ -81,7 +81,14 @@ menuRouter.get('/', restaurantAuth, async (req, res) => {
     // deleted items (see /bulk-availability), but a still-listed "Off" row that
     // "All on" doesn't touch just reads as the button not working.
     const menuItems = await prisma.menuItem.findMany({
-      where: { restaurantId, isActive: true },
+      // Items in a deleted category are hidden with it (they keep pointing at
+      // it — see DELETE /api/category/:id) and come back once they're moved to
+      // a live category. Items with no category at all still show.
+      where: {
+        restaurantId,
+        isActive: true,
+        OR: [{ categoryId: null }, { category: { isActive: true } }],
+      },
       include: {
         category: true,
         optionGroups: {

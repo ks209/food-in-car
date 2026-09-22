@@ -96,15 +96,18 @@ categoryRouter.get('/all', restaurantAuth, async (req, res) => {
   }
 });
 
-categoryRouter.get('/:id', async (req, res) => {
+// Restaurant-scoped: this used to be public, so any id returned another
+// tenant's category and its whole item list. The customer app doesn't use it —
+// it reads GET /restaurant/:idOrSlug below.
+categoryRouter.get('/:id', restaurantAuth, async (req, res) => {
   try {
-    const categoryId = parseInt(req.params.id);     
-    const category = await prisma.category.findUnique({
-      where: { id: categoryId },
+    const categoryId = parseInt(req.params.id);
+    const category = await prisma.category.findFirst({
+      where: { id: categoryId, restaurantId: req.restaurantId },
       include: {
         menuItems: true
       }
-    }); 
+    });
     if (!category) {
       return res.status(404).json({ error: "Category not found" });
     }
@@ -116,8 +119,13 @@ categoryRouter.get('/:id', async (req, res) => {
 
 categoryRouter.get('/', restaurantAuth, async (req, res) => {
   try {
+    // isActive only: a deleted category must not come back on the next load —
+    // that's what made "delete" look like it did nothing in the dashboard.
+    // ?includeDeleted=true also returns removed ones (each carries isActive),
+    // so the dashboard can offer to restore them — with their items.
+    const includeDeleted = req.query.includeDeleted === 'true';
     const categories = await prisma.category.findMany({
-      where: { restaurantId: req.restaurantId },
+      where: { restaurantId: req.restaurantId, ...(includeDeleted ? {} : { isActive: true }) },
       include: { menuItems: { where: { isActive: true } } },
       orderBy: CATEGORY_ORDER
     });
@@ -132,6 +140,15 @@ categoryRouter.get('/', restaurantAuth, async (req, res) => {
 categoryRouter.put('/:id', restaurantAuth, async (req, res) => {
   try {
     const categoryId = parseInt(req.params.id);
+    if (!Number.isInteger(categoryId)) return res.status(400).json({ error: 'Invalid category id' });
+
+    // Same tenant check as DELETE below.
+    const existing = await prisma.category.findFirst({
+      where: { id: categoryId, restaurantId: req.restaurantId },
+      select: { id: true },
+    });
+    if (!existing) return res.status(404).json({ error: 'Category not found' });
+
     const updatedCategory = await prisma.category.update({
       where: { id: categoryId },
       data: {
@@ -148,12 +165,30 @@ categoryRouter.put('/:id', restaurantAuth, async (req, res) => {
     }
 });
 
+// Soft delete: the category is hidden everywhere (GET / and the customer menu
+// both filter on isActive), but its row stays so old orders keep resolving.
+//
+// Its items KEEP pointing at it and are hidden along with it — they reappear
+// once they're moved to a live category. They are deliberately not moved to
+// some "Uncategorized" bucket: that isn't a real category in this product.
 categoryRouter.delete('/:id', restaurantAuth, async (req, res) => {
-    try {   
+    try {
         const categoryId = parseInt(req.params.id);
-        const deletedCategory = await prisma.category.update({
-            where: { id: categoryId },data:{isActive: false, updatedAt: new Date()}
+        if (!Number.isInteger(categoryId)) return res.status(400).json({ error: 'Invalid category id' });
+
+        // Scoped to the caller's restaurant — without this, any signed-in
+        // restaurant could delete another tenant's category by guessing an id.
+        const existing = await prisma.category.findFirst({
+            where: { id: categoryId, restaurantId: req.restaurantId },
+            select: { id: true },
         });
+        if (!existing) return res.status(404).json({ error: 'Category not found' });
+
+        const deletedCategory = await prisma.category.update({
+            where: { id: categoryId },
+            data: { isActive: false, updatedAt: new Date() },
+        });
+
         res.status(200).json({ message: "Category deleted successfully", category: deletedCategory });
     } catch (error) {
         res.status(500).json({ error: "Failed to delete category", details: error.message });
