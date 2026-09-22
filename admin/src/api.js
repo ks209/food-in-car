@@ -17,6 +17,9 @@ export const restaurantApi = {
   update: (id, data) => api.put(`/api/restaurant/update/${id}`, data),
   deactivate: (id) => api.delete(`/api/restaurant/delete/${id}`),
   activate: (id) => api.put(`/api/restaurant/activate/${id}`),
+  // Transfer between deployments — see backend utils/restaurantTransfer.js
+  export: (idOrSlug) => api.get(`/api/restaurant/export/${idOrSlug}`),
+  import: (payload) => api.post('/api/restaurant/import', payload),
 }
 
 export const venueApi = {

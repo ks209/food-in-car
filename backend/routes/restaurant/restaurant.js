@@ -11,6 +11,7 @@ import { menuWaitEstimate } from '../../utils/waitEstimate.js';
 import { validateTaxSettings } from '../../utils/gst.js';
 import { createLoginLimiter } from '../../middlewares/loginLimiter.js';
 import { withoutPhonepeSecrets } from '../../utils/phonepe.js';
+import { buildRestaurantExport, importRestaurant } from '../../utils/restaurantTransfer.js';
 
 const restaurantLoginLimiter = createLoginLimiter({ limit: 10 });
 
@@ -223,6 +224,34 @@ const NEARBY_RADIUS_KM = Number(process.env.NEARBY_RADIUS_KM) || 3;
 // GET /:id (Express matches routes in order; /:id would otherwise swallow
 // this path). Distance-sorted when ?lat=&lng= are given and valid (GPS
 // takes priority over ?cityId= if both are somehow sent). Browsing (no
+// ── Transfer a restaurant between deployments (admin portal → Transfer tab) ──
+// Registered above GET /:idOrSlug, which would otherwise swallow these paths
+// ("export" and "import" are reserved slugs too — see utils/slug.js).
+
+// Everything needed to recreate this restaurant elsewhere: profile, menu,
+// options, parking. No orders, customers, waiters or PhonePe credentials.
+restaurantRouter.get('/export/:idOrSlug', supportAuth, async (req, res) => {
+    try {
+        const payload = await buildRestaurantExport(req.params.idOrSlug);
+        if (!payload) return res.status(404).json({ message: 'Restaurant not found' });
+        res.json(payload);
+    } catch (err) {
+        res.status(500).json({ message: 'Error exporting restaurant', error: err.message });
+    }
+});
+
+// Creates a restaurant here from a file exported above. Refuses if the web
+// address or username is already taken, and writes nothing on failure.
+restaurantRouter.post('/import', supportAuth, async (req, res) => {
+    try {
+        const result = await importRestaurant(req.body);
+        if (result.error) return res.status(409).json({ message: result.error });
+        res.status(201).json(result);
+    } catch (err) {
+        res.status(500).json({ message: 'Error importing restaurant', error: err.message });
+    }
+});
+
 // ?search=) is capped at NEARBY_RADIUS_KM and only lists restaurants with
 // saved coordinates. A search is NOT capped: it matches name or cuisines
 // across every active restaurant, still closest first, with ones that have

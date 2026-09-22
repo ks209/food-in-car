@@ -10,7 +10,7 @@ import { nextDailyOrderNumber } from '../../utils/dailyOrderNumber.js';
 import { orderEta } from '../../utils/waitEstimate.js';
 import { orderGst } from '../../utils/gst.js';
 import { NOT_REAL_ORDER_STATES } from '../../utils/orderStatus.js';
-import { refundOrder } from '../../utils/refunds.js';
+import { refundOrder, markRefundDone } from '../../utils/refunds.js';
 
 const orderRouter = express.Router();
 
@@ -421,9 +421,9 @@ orderRouter.put('/:id/status', restaurantAuth, async (req, res) => {
     if (!count) return res.status(409).json({ error: 'This order was just updated — refresh and try again' });
     await prisma.orderStatusHistory.create({ data: { orderId, status, updatedBy: 'restaurant' } });
 
-    // Paid online and now won't be served → give the customer their money back.
-    // A refund problem never blocks the cancellation itself; it shows on the
-    // order as "Refund failed" with a retry.
+    // Paid online and now won't be served → record that a refund is owed.
+    // Automatic refunds are off (see utils/refunds.js): the dashboard shows
+    // "Refund due" until the restaurant refunds in PhonePe and marks it done.
     if (status === 'CANCELLED' || status === 'NOT_FULFILLED') {
       await refundOrder(orderId).catch((err) => console.error(`[refund] order ${orderId}:`, err.message));
     }
@@ -434,19 +434,19 @@ orderRouter.put('/:id/status', restaurantAuth, async (req, res) => {
   }
 });
 
-// Retry a refund that failed (e.g. PhonePe was down, or the merchant account
-// lacked balance). No-op if one is already pending or done — see refundOrder.
-orderRouter.post('/:id/refund', restaurantAuth, async (req, res) => {
+// The restaurant refunded the customer from their PhonePe dashboard and is
+// recording it here (automatic refunds are off — see utils/refunds.js).
+orderRouter.post('/:id/refund-done', restaurantAuth, async (req, res) => {
   try {
     const orderId = parseInt(req.params.id);
     const existing = await prisma.order.findFirst({ where: { id: orderId, restaurantId: req.restaurantId } });
     if (!existing) return res.status(403).json({ error: 'Not authorized' });
 
-    const result = await refundOrder(orderId);
+    const result = await markRefundDone(orderId);
     if (result.skipped) return res.status(400).json({ error: result.skipped });
     res.json(await prisma.order.findUnique({ where: { id: orderId }, include: ORDER_INCLUDE }));
   } catch (error) {
-    res.status(500).json({ error: 'Failed to refund order', details: error.message });
+    res.status(500).json({ error: 'Failed to record the refund', details: error.message });
   }
 });
 

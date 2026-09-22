@@ -3,6 +3,7 @@ import './index.css'
 import Shell from './components/Shell.jsx'
 import Admin from './Pages/Admin.jsx'
 import Venues from './Pages/Venues.jsx'
+import Transfer from './Pages/Transfer.jsx'
 import VenueAnalytics from './Pages/VenueAnalytics.jsx'
 import Login from './Pages/Login.jsx'
 import { support } from './api'
@@ -50,7 +51,9 @@ function App() {
         ? (analyticsVenueId
           ? <VenueAnalytics venueId={analyticsVenueId} onBack={() => setAnalyticsVenueId(null)} />
           : <Venues onOpenAnalytics={setAnalyticsVenueId} />)
-        : <Admin />}
+        : page === 'transfer'
+          ? <Transfer />
+          : <Admin />}
     </Shell>
   )
 }

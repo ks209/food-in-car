@@ -160,14 +160,18 @@ html {
 .dark .filter-chip { background-color: transparent; border-color: #334155; color: #cbd5e1; }
 .dark .filter-chip:hover { border-color: #64748b; }
 
+/* Selected: a deliberately dark, saturated pill — light brand colours (yellow,
+   mint) can't carry a "selected" look on a white page, so the brand colour is
+   darkened until white text sits on it cleanly (lib/restaurant-context.jsx). */
 .filter-chip-active,
 .dark .filter-chip-active {
-  background-color: var(--brand);
-  color: var(--brand-contrast);
-  border-color: color-mix(in srgb, var(--brand) 72%, #000);
+  background-color: var(--brand-chip-bg, #0f172a);
+  color: var(--brand-chip-fg, #ffffff);
+  border-color: var(--brand-chip-bg, #0f172a);
   font-weight: 600;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12), 0 0 0 3px color-mix(in srgb, var(--brand) 24%, transparent);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.2), 0 0 0 3px color-mix(in srgb, var(--brand) 30%, transparent);
 }
+.filter-chip-active:hover { border-color: var(--brand-chip-bg, #0f172a); }
 .brand-bg:hover { filter: brightness(0.9); }
 .brand-text { color: var(--brand) !important; }
 .brand-border { border-color: var(--brand) !important; }

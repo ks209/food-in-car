@@ -21,5 +21,5 @@ RUN npx prisma generate
 
 EXPOSE 5000
 
-# `start` runs: prisma migrate deploy && seed && node index.js
+# `start` runs: prisma migrate deploy && node index.js (no seeding — run `npm run seed` manually if ever needed)
 CMD ["npm", "start"]

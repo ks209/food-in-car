@@ -20,25 +20,24 @@ import { todayStr, daysAgoStr, localDateRange, orderTimeLabel, PAYMENT_METHOD_LA
 // No PENDING: GET /api/order never returns unpaid orders, so that chip was always 0.
 const STATUS_KEYS = ["all", "PAID", "PREPARING", "READY", "COMPLETED", "CANCELLED", "NOT_FULFILLED"]
 
-// Latest refund on a cancelled / not-fulfilled PhonePe order (see backend
-// utils/refunds.js). A failed one gets a retry — it usually means PhonePe was
-// unreachable or the merchant account lacked balance at the time.
-function RefundStatus({ order, onRetry }) {
+// Refund owed on a cancelled / not-fulfilled PhonePe order (see backend
+// utils/refunds.js). Automatic refunds are off: the restaurant refunds in
+// PhonePe and records it here.
+function RefundStatus({ order, onMarkDone }) {
   const refund = order.refunds?.[0]
   if (!refund) return null
   const amount = `₹${refund.amount.toFixed(0)}`
   if (refund.status === "COMPLETED") {
     return <p className="text-xs text-emerald-600 mt-1 inline-flex items-center gap-1"><Undo2 className="h-3 w-3" /> Refunded {amount}</p>
   }
-  if (refund.status === "PENDING") {
-    return <p className="text-xs text-amber-600 mt-1 inline-flex items-center gap-1"><Undo2 className="h-3 w-3" /> Refund of {amount} processing</p>
-  }
+  // DUE (and legacy PENDING/FAILED rows): the restaurant refunds in PhonePe,
+  // then records it here — the app doesn't move the money itself.
   return (
-    <p className="text-xs text-red-600 mt-1 inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+    <p className="text-xs text-amber-600 mt-1 inline-flex flex-wrap items-center gap-x-2 gap-y-1">
       <span className="inline-flex items-center gap-1" title={refund.error || undefined}>
-        <AlertTriangle className="h-3 w-3" /> Refund of {amount} failed
+        <AlertTriangle className="h-3 w-3" /> Refund {amount} due — refund in PhonePe
       </span>
-      <button type="button" onClick={onRetry} className="underline font-medium hover:text-red-700">Retry refund</button>
+      <button type="button" onClick={onMarkDone} className="underline font-medium hover:text-amber-700">Mark refunded</button>
     </p>
   )
 }
@@ -105,13 +104,13 @@ export function OrderManagement() {
   }, [])
 
   const updateOrderStatus = async (orderId, status) => {
-    // Cancelling / not fulfilling a paid PhonePe order refunds the customer —
-    // say so and confirm, since it can't be undone.
+    // Cancelling / not fulfilling a paid order leaves money owed back, which
+    // the restaurant refunds in PhonePe — say so and confirm.
     if (status === "CANCELLED" || status === "NOT_FULFILLED") {
       const order = orders.find((o) => o.id === orderId)
       const label = status === "CANCELLED" ? "Cancel" : "Mark as not fulfilled"
       const refundNote = order?.paymentMethod === "PHONEPE"
-        ? `\n\n₹${order.totalAmount.toFixed(0)} will be refunded to the customer through PhonePe.`
+        ? `\n\n₹${order.totalAmount.toFixed(0)} will be flagged as a refund due — refund the customer in PhonePe, then mark it refunded here.`
         : ""
       if (!window.confirm(`${label} order #${order?.dailyOrderNumber ?? orderId}?${refundNote}`)) return
     }
@@ -122,8 +121,9 @@ export function OrderManagement() {
     try {
       const res = await axios.put(`${API}/api/order/${orderId}/status`, { status }, { withCredentials: true })
       const refund = res.data?.refunds?.[0]
-      if (refund?.status === "FAILED") toast.error("Order updated, but the refund failed — use Retry refund on the order")
-      else toast.success(refund ? `Order ${status === "CANCELLED" ? "cancelled" : "marked not fulfilled"} · refund of ₹${refund.amount.toFixed(0)} started` : `Order marked ${status.toLowerCase()}`)
+      toast.success(refund && refund.status !== "COMPLETED"
+        ? `Order ${status === "CANCELLED" ? "cancelled" : "marked not fulfilled"} · ₹${refund.amount.toFixed(0)} to refund in PhonePe`
+        : `Order marked ${status.toLowerCase()}`)
       fetchOrders()
     } catch (err) {
       setOrders(previous)
@@ -131,14 +131,16 @@ export function OrderManagement() {
     }
   }
 
-  const retryRefund = async (orderId) => {
+  // Records a refund the restaurant made in PhonePe themselves — the app
+  // doesn't move money (see backend utils/refunds.js).
+  const markRefunded = async (orderId, amount) => {
+    if (!window.confirm(`Mark ₹${amount.toFixed(0)} as refunded? Do this only after refunding the customer in PhonePe.`)) return
     try {
-      const res = await axios.post(`${API}/api/order/${orderId}/refund`, {}, { withCredentials: true })
-      if (res.data?.refunds?.[0]?.status === "FAILED") toast.error("Refund failed again — check your PhonePe account, or refund manually")
-      else toast.success("Refund started")
+      await axios.post(`${API}/api/order/${orderId}/refund-done`, {}, { withCredentials: true })
+      toast.success("Marked as refunded")
       fetchOrders()
     } catch (err) {
-      toast.error(err.response?.data?.error || "Couldn't retry the refund")
+      toast.error(err.response?.data?.error || "Couldn't record the refund")
     }
   }
 
@@ -278,7 +280,7 @@ export function OrderManagement() {
                             <ScanLine className="h-3 w-3" /> Served by {order.waiter.name}
                           </p>
                         )}
-                        <RefundStatus order={order} onRetry={() => retryRefund(order.id)} />
+                        <RefundStatus order={order} onMarkDone={() => markRefunded(order.id, order.refunds[0].amount)} />
                       </div>
                     </div>
 
@@ -321,7 +323,7 @@ export function OrderManagement() {
                               <p className="text-sm text-slate-500">
                                 Payment: {PAYMENT_METHOD_LABELS[shownOrder.paymentMethod] || "Cash on Delivery"}
                               </p>
-                              <RefundStatus order={shownOrder} onRetry={() => retryRefund(shownOrder.id)} />
+                              <RefundStatus order={shownOrder} onMarkDone={() => markRefunded(shownOrder.id, shownOrder.refunds[0].amount)} />
                             </div>
                             {shownOrder.waiter?.name && (
                               <div>

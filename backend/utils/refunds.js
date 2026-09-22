@@ -1,20 +1,21 @@
 import prisma from '../config/prisma.js';
-import { isDevMode, initiateRefund, fetchRefundState } from './phonepe.js';
+import { isDevMode, fetchRefundState } from './phonepe.js';
 
-// Refunds a paid PhonePe order the restaurant cancelled or couldn't fulfil.
-// Always the full amount — partial refunds aren't a dashboard action (yet).
+// Tracks money owed back on a paid PhonePe order the restaurant cancelled or
+// couldn't fulfil. Always the full amount.
 //
-// Triggered by PUT /api/order/:id/status (→ CANCELLED / NOT_FULFILLED) and
-// retried from the dashboard via POST /api/order/:id/refund. Settled by the
-// v1 refund callback / v2 webhook and the 5-min cron (verifyPendingRefunds).
+// AUTOMATIC REFUNDS ARE OFF. Calling PhonePe's refund API didn't work against
+// the live account, so cancelling now only RECORDS a refund as DUE: the
+// restaurant refunds from their PhonePe dashboard and marks it done here
+// (POST /api/order/:id/refund-done). The gateway calls themselves are still in
+// utils/phonepe.js (initiateRefund / fetchRefundState) — re-enable by calling
+// initiateRefund below and creating the row as PENDING instead of DUE.
+//
+// Statuses: DUE (owed, restaurant to refund) · COMPLETED (done) ·
+// PENDING/FAILED (only from the automatic attempts made before this was off).
 
-// PhonePe's v1 refund callback. Not trusted either — it only triggers a
-// status check (see POST /api/payment/refund-callback).
-const REFUND_CALLBACK_URL = `${(process.env.BACKEND_URL || 'http://localhost:5000').trim().replace(/\/+$/, '')}/api/payment/refund-callback`;
-
-// Returns { refund } when one exists or was started, or { skipped: reason }.
-// Safe to call repeatedly: an order with a PENDING or COMPLETED refund is left
-// alone, so a double-click or a retried request can never refund twice.
+// Returns { refund } when one exists or was recorded, or { skipped: reason }.
+// Safe to call repeatedly: an order that already has a refund is left alone.
 export async function refundOrder(orderId) {
   const order = await prisma.order.findUnique({
     where: { id: orderId },
@@ -32,37 +33,29 @@ export async function refundOrder(orderId) {
   if (!payment || isDevMode(order.restaurant)) return { skipped: 'No online payment to refund' };
 
   // Check-and-create under a row lock on the order: two concurrent calls (a
-  // double-clicked Cancel) would otherwise both see "no refund yet" and both
-  // refund the customer. The second waits here, then finds the first's row.
-  // Row first, like payments: a crash mid-call still leaves something the
-  // cron can reconcile instead of a refund nobody knows was requested.
+  // double-clicked Cancel) would otherwise both record a refund. The second
+  // waits here, then finds the first's row.
   const { active, refund } = await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`;
-    const existing = await tx.refund.findFirst({ where: { orderId, status: { in: ['PENDING', 'COMPLETED'] } } });
+    const existing = await tx.refund.findFirst({ where: { orderId, status: { in: ['DUE', 'PENDING', 'COMPLETED'] } } });
     if (existing) return { active: existing };
     return {
       refund: await tx.refund.create({
-        data: { orderId, refundTxnId: `RF${Date.now()}O${orderId}`, amount: order.totalAmount, status: 'PENDING' },
+        data: { orderId, refundTxnId: `RF${Date.now()}O${orderId}`, amount: order.totalAmount, status: 'DUE' },
       }),
     };
   });
-  if (active) return { refund: active };
+  return { refund: active || refund };
+}
 
-  try {
-    const state = await initiateRefund(order.restaurant, {
-      originalTxnId: payment.txnId,
-      refundTxnId: refund.refundTxnId,
-      amountPaise: Math.round(order.totalAmount * 100),
-      merchantUserId: `MUID${order.id}`,
-      callbackUrl: REFUND_CALLBACK_URL,
-    });
-    return { refund: await prisma.refund.update({ where: { id: refund.id }, data: { status: state } }) };
-  } catch (err) {
-    const pp = err?.response;
-    const error = pp?.data?.message || pp?.data?.code || err.message;
-    console.error(`[refund] order ${orderId} refund ${refund.refundTxnId} failed:`, pp ? `HTTP ${pp.status} ${JSON.stringify(pp.data)}` : err.message);
-    return { refund: await prisma.refund.update({ where: { id: refund.id }, data: { status: 'FAILED', error: String(error).slice(0, 300) } }) };
-  }
+// The restaurant refunded this order themselves in PhonePe and is recording it.
+export async function markRefundDone(orderId) {
+  const refund = await prisma.refund.findFirst({
+    where: { orderId, status: { in: ['DUE', 'PENDING', 'FAILED'] } },
+    orderBy: { id: 'desc' },
+  });
+  if (!refund) return { skipped: 'No refund is outstanding on this order' };
+  return { refund: await prisma.refund.update({ where: { id: refund.id }, data: { status: 'COMPLETED', error: null } }) };
 }
 
 // Re-checks one PENDING refund with PhonePe and records the outcome.

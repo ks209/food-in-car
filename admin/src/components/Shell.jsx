@@ -8,6 +8,7 @@
 const NAV = [
     { key: 'restaurants', label: 'Restaurants' },
     { key: 'places', label: 'Places' },
+    { key: 'transfer', label: 'Transfer' },
 ];
 
 export default function Shell({ page, onNavigate, onLogout, children }) {

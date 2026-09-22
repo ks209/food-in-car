@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Search, Plus, Minus, Trash2, Receipt, WifiOff, CheckCircle2, Clock, RotateCcw, AlertCircle } from "lucide-react"
 import { toast } from "sonner"
 import { API } from "@/lib/api"
@@ -27,12 +28,13 @@ export function BillingPos() {
   const billing = useBilling()
   const [menu, setMenu] = useState([])
   const [search, setSearch] = useState("")
-  const [cart, setCart] = useState([]) // [{ id, name, price, quantity }]
+  const [cart, setCart] = useState([]) // [{ cartKey, id, name, optionLabel, selectedOptions, price, quantity }]
   const [guestName, setGuestName] = useState("")
   const [guestVehicle, setGuestVehicle] = useState("")
   const [mobileNumber, setMobileNumber] = useState("")
   const [paymentMethod, setPaymentMethod] = useState("COD")
   const [creating, setCreating] = useState(false)
+  const [optionsFor, setOptionsFor] = useState(null) // menu item awaiting its option choices
 
   // Menu: try the network first (and refresh the offline cache), fall back to
   // whatever was last cached if the request fails — the whole point of the POS
@@ -65,17 +67,38 @@ export function BillingPos() {
     })
   }, [menu, activeCategory, search])
 
-  const addToCart = (item) => {
+  // One cart line per item + choice of options: a Regular Coke and a Large Coke
+  // are different lines, and "+1" on one must not bump the other.
+  const addToCart = (item, options = []) => {
+    const cartKey = `${item.id}|${options.map((o) => o.id).sort().join(",")}`
+    const price = item.price + options.reduce((s, o) => s + (o.priceDelta || 0), 0)
     setCart((prev) => {
-      const existing = prev.find((c) => c.id === item.id)
-      if (existing) return prev.map((c) => (c.id === item.id ? { ...c, quantity: c.quantity + 1 } : c))
-      return [...prev, { id: item.id, name: item.name, price: item.price, quantity: 1 }]
+      const existing = prev.find((c) => c.cartKey === cartKey)
+      if (existing) return prev.map((c) => (c.cartKey === cartKey ? { ...c, quantity: c.quantity + 1 } : c))
+      return [...prev, {
+        cartKey,
+        id: item.id,
+        name: item.name,
+        optionLabel: options.map((o) => o.name).join(", "),
+        selectedOptions: options.map((o) => ({ name: o.name, priceDelta: o.priceDelta || 0 })),
+        price,
+        quantity: 1,
+      }]
     })
   }
-  const decrement = (id) => {
-    setCart((prev) => prev.flatMap((c) => (c.id === id ? (c.quantity > 1 ? [{ ...c, quantity: c.quantity - 1 }] : []) : [c])))
+
+  // Items with option groups need a choice first (size, add-ons); the rest go
+  // straight into the bill on tap.
+  const pickItem = (item) => {
+    if (item.optionGroups?.length) setOptionsFor(item)
+    else addToCart(item)
   }
-  const removeItem = (id) => setCart((prev) => prev.filter((c) => c.id !== id))
+
+  const decrement = (cartKey) => {
+    setCart((prev) => prev.flatMap((c) => (c.cartKey === cartKey ? (c.quantity > 1 ? [{ ...c, quantity: c.quantity - 1 }] : []) : [c])))
+  }
+  const increment = (line) => setCart((prev) => prev.map((c) => (c.cartKey === line.cartKey ? { ...c, quantity: c.quantity + 1 } : c)))
+  const removeItem = (cartKey) => setCart((prev) => prev.filter((c) => c.cartKey !== cartKey))
 
   const subtotal = cart.reduce((s, c) => s + c.price * c.quantity, 0)
   // GST per the restaurant's Settings (the server recomputes the same when the bill syncs).
@@ -92,7 +115,9 @@ export function BillingPos() {
     setCreating(true)
     try {
       await billing.createBill({
-        items: cart.map((c) => ({ id: c.id, name: c.name, price: c.price, quantity: c.quantity })),
+        // price is per unit INCLUDING the chosen options; the server stores
+        // selectedOptions on the order item (see routes/order POST /pos).
+        items: cart.map((c) => ({ id: c.id, name: c.name, price: c.price, quantity: c.quantity, selectedOptions: c.selectedOptions || [] })),
         totalAmount: total,
         guestName: guestName.trim(),
         guestVehicle: guestVehicle.trim(),
@@ -109,7 +134,7 @@ export function BillingPos() {
   }
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
       {/* Item picker */}
       <div className="xl:col-span-2 space-y-4">
         {!billing?.online && (
@@ -140,10 +165,13 @@ export function BillingPos() {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {visibleItems.map((item) => (
-              <button key={item.id} onClick={() => addToCart(item)}
+              <button key={item.id} onClick={() => pickItem(item)}
                 className="text-left rounded-xl border border-slate-200 bg-white p-3 hover:border-slate-400 hover:shadow-sm transition-all">
                 <p className="text-sm font-medium text-slate-800 truncate">{item.name}</p>
                 <p className="text-sm font-bold text-slate-900 mt-1">{formatCurrency(item.price)}</p>
+                {item.optionGroups?.length > 0 && (
+                  <p className="text-[11px] text-slate-400 mt-0.5">Choose options</p>
+                )}
               </button>
             ))}
           </div>
@@ -152,7 +180,9 @@ export function BillingPos() {
 
       {/* Cart + bill list */}
       <div className="space-y-4">
-        <Card className="border-0 shadow-sm sticky top-24">
+        {/* Sticky only in the two-column layout: stacked on smaller screens it
+            would sit on top of the menu cards as they scroll past. */}
+        <Card className="border-0 shadow-sm bg-white xl:sticky xl:top-24 xl:z-10 xl:max-h-[calc(100vh-7rem)] xl:overflow-y-auto">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-2">
               <Receipt className="h-4 w-4" /> New Bill
@@ -164,20 +194,21 @@ export function BillingPos() {
             ) : (
               <div className="space-y-2">
                 {cart.map((c) => (
-                  <div key={c.id} className="flex items-center gap-2">
+                  <div key={c.cartKey} className="flex items-center gap-2">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-slate-800 truncate">{c.name}</p>
+                      {c.optionLabel && <p className="text-xs text-slate-500 truncate">{c.optionLabel}</p>}
                       <p className="text-xs text-slate-400">{formatCurrency(c.price)} each</p>
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <button onClick={() => decrement(c.id)} className="h-6 w-6 rounded-md border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-50">
+                      <button onClick={() => decrement(c.cartKey)} className="h-6 w-6 rounded-md border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-50">
                         <Minus className="h-3 w-3" />
                       </button>
                       <span className="text-sm font-semibold w-5 text-center">{c.quantity}</span>
-                      <button onClick={() => addToCart(c)} className="h-6 w-6 rounded-md border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-50">
+                      <button onClick={() => increment(c)} className="h-6 w-6 rounded-md border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-50">
                         <Plus className="h-3 w-3" />
                       </button>
-                      <button onClick={() => removeItem(c.id)} className="h-6 w-6 rounded-md flex items-center justify-center text-red-400 hover:bg-red-50">
+                      <button onClick={() => removeItem(c.cartKey)} className="h-6 w-6 rounded-md flex items-center justify-center text-red-400 hover:bg-red-50">
                         <Trash2 className="h-3 w-3" />
                       </button>
                     </div>
@@ -236,7 +267,84 @@ export function BillingPos() {
 
         <RecentBills />
       </div>
+
+      <ItemOptionsDialog
+        item={optionsFor}
+        onClose={() => setOptionsFor(null)}
+        onAdd={(item, options) => { addToCart(item, options); setOptionsFor(null) }}
+      />
     </div>
+  )
+}
+
+// Same choices the customer app offers (size, add-ons): one pick per group when
+// `multiple` is off, any number when it's on, and `required` groups must have one.
+function ItemOptionsDialog({ item, onClose, onAdd }) {
+  const [picked, setPicked] = useState({}) // groupId -> option id[]
+
+  // Reset whenever a different item is opened, and preselect the first option
+  // of each required single-choice group so the common case is one tap.
+  useEffect(() => {
+    if (!item) return
+    const initial = {}
+    for (const g of item.optionGroups || []) {
+      if (g.required && !g.multiple && g.options?.[0]) initial[g.id] = [g.options[0].id]
+    }
+    setPicked(initial)
+  }, [item?.id])
+
+  if (!item) return null
+
+  const groups = item.optionGroups || []
+  const toggle = (group, option) => {
+    setPicked((prev) => {
+      const current = prev[group.id] || []
+      if (group.multiple) {
+        return { ...prev, [group.id]: current.includes(option.id) ? current.filter((id) => id !== option.id) : [...current, option.id] }
+      }
+      return { ...prev, [group.id]: current.includes(option.id) && !group.required ? [] : [option.id] }
+    })
+  }
+
+  const chosen = groups.flatMap((g) => (g.options || []).filter((o) => (picked[g.id] || []).includes(o.id)))
+  const missing = groups.filter((g) => g.required && !(picked[g.id] || []).length).map((g) => g.title)
+  const total = item.price + chosen.reduce((s, o) => s + (o.priceDelta || 0), 0)
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader><DialogTitle>{item.name}</DialogTitle></DialogHeader>
+        <div className="space-y-4 pt-1 max-h-[60vh] overflow-y-auto">
+          {groups.map((group) => (
+            <div key={group.id}>
+              <p className="text-xs uppercase tracking-wide text-slate-500 mb-1.5">
+                {group.title}
+                <span className="ml-1 normal-case tracking-normal text-slate-400">
+                  {group.required ? "(required)" : "(optional)"}{group.multiple ? " · choose any" : ""}
+                </span>
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {(group.options || []).map((option) => {
+                  const active = (picked[group.id] || []).includes(option.id)
+                  return (
+                    <button key={option.id} type="button" onClick={() => toggle(group, option)}
+                      className={`filter-chip ${active ? "filter-chip-active" : ""}`}>
+                      {option.name}{option.priceDelta ? ` +${formatCurrency(option.priceDelta)}` : ""}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+        {missing.length > 0 && (
+          <p className="text-xs text-amber-600">Pick an option for {missing.join(", ")}</p>
+        )}
+        <Button className="w-full brand-bg text-white" disabled={missing.length > 0} onClick={() => onAdd(item, chosen)}>
+          Add · {formatCurrency(total)}
+        </Button>
+      </DialogContent>
+    </Dialog>
   )
 }
 
