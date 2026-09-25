@@ -168,7 +168,7 @@ paymentRouter.post('/initiate', async (req, res) => {
     // "Request failed with status code 404" says nothing about the cause.
     const pp = err?.response;
     // The customer is shown an error and never reached PhonePe, so this order
-    // is dead now — no need to leave it PENDING for the 45-minute sweep.
+    // is dead now — no need to leave it PENDING until the abandon sweep.
     if (createdOrderId) await markPaymentFailed(createdOrderId, 'initiate-failed').catch(() => {});
     console.error('PhonePe initiate error:', pp ? `HTTP ${pp.status} ${pp.config?.url} ${JSON.stringify(pp.data)}` : err.message);
     res.status(500).json({

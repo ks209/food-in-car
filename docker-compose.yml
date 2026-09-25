@@ -28,8 +28,17 @@ services:
       - /app/node_modules
     environment:
       DATABASE_URL: postgres://postgres:postgres@db:5432/foodincar
-      JWT_SECRET: supersecretjwtkey
+      # Never hard-code this: the backend refuses to start in production with a
+      # known/example value. Put a long random string in .env (see config/secrets.js).
+      JWT_SECRET: ${JWT_SECRET}
       FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID}
+    # Cap container log size so it cannot fill the disk (see backend/config/logger.js
+    # for optional rotating files on disk via LOG_DIR).
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
     depends_on:
       - db
       - redis

@@ -1,4 +1,6 @@
 import express from 'express';
+import { sessionCookie, clearCookieOptions, SESSION_MAX_AGE } from '../../config/cookies.js';
+import { JWT_SECRET } from '../../config/secrets.js';
 import jwt from 'jsonwebtoken';
 import supportAuth from '../../middlewares/support.auth.js';
 import { createLoginLimiter } from '../../middlewares/loginLimiter.js';
@@ -17,13 +19,8 @@ supportRouter.post('/login', adminLoginLimiter, (req, res) => {
   if (!username || !password) return res.status(400).json({ code: 400, message: 'Missing fields' });
 
   if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
-    const token = jwt.sign({ role: 'admin', username }, process.env.JWT_SECRET || 's3cret', { expiresIn: '24h' });
-    res.cookie('adminToken', token, {
-      httpOnly: true,
-      secure: false,
-      sameSite: 'lax',
-      maxAge: 24 * 60 * 60 * 1000,
-    });
+    const token = jwt.sign({ role: 'admin', username }, JWT_SECRET, { expiresIn: '24h' });
+    res.cookie('adminToken', token, sessionCookie({ maxAge: SESSION_MAX_AGE.day }));
     return res.json({ code: 200, message: 'loggedIn' });
   }
   return res.status(401).json({ code: 401, message: 'Invalid credentials' });
@@ -34,7 +31,7 @@ supportRouter.get('/me', supportAuth, (req, res) => {
 });
 
 supportRouter.post('/logout', (req, res) => {
-  res.clearCookie('adminToken');
+  res.clearCookie('adminToken', clearCookieOptions);
   res.json({ message: 'Logged out' });
 });
 

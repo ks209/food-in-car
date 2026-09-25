@@ -20,6 +20,10 @@ import { todayStr, daysAgoStr, localDateRange, orderTimeLabel, PAYMENT_METHOD_LA
 // No PENDING: GET /api/order never returns unpaid orders, so that chip was always 0.
 const STATUS_KEYS = ["all", "PAID", "PREPARING", "READY", "COMPLETED", "CANCELLED", "NOT_FULFILLED"]
 
+// Grouped in the day-end report, so these are a fixed list rather than free
+// text — "out of stock" three times a week is a purchasing problem.
+const END_REASONS = ["Out of stock", "Customer cancelled", "Kitchen error", "Wrong order", "Too busy", "Other"]
+
 // Refund owed on a cancelled / not-fulfilled PhonePe order (see backend
 // utils/refunds.js). Automatic refunds are off: the restaurant refunds in
 // PhonePe and records it here.
@@ -51,6 +55,10 @@ export function OrderManagement() {
   // to the new day on its own when the dashboard is left open past day end.
   const [followToday, setFollowToday] = useState(true)
   const [selectedOrder, setSelectedOrder] = useState(null)
+  // Order being cancelled / marked not fulfilled, and why
+  const [endTarget, setEndTarget] = useState(null)
+  const [endReason, setEndReason] = useState("")
+  const [endNote, setEndNote] = useState("")
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(false)
   // Range of the latest request — a slow response for a range the user has
@@ -104,15 +112,12 @@ export function OrderManagement() {
   }, [])
 
   const updateOrderStatus = async (orderId, status) => {
-    // Cancelling / not fulfilling a paid order leaves money owed back, which
-    // the restaurant refunds in PhonePe — say so and confirm.
+    // Ending an order needs a reason (the server requires one) — collected in
+    // a dialog, which also warns about the refund. See endOrder() below.
     if (status === "CANCELLED" || status === "NOT_FULFILLED") {
-      const order = orders.find((o) => o.id === orderId)
-      const label = status === "CANCELLED" ? "Cancel" : "Mark as not fulfilled"
-      const refundNote = order?.paymentMethod === "PHONEPE"
-        ? `\n\n₹${order.totalAmount.toFixed(0)} will be flagged as a refund due — refund the customer in PhonePe, then mark it refunded here.`
-        : ""
-      if (!window.confirm(`${label} order #${order?.dailyOrderNumber ?? orderId}?${refundNote}`)) return
+      setEndTarget({ order: orders.find((o) => o.id === orderId), status })
+      setEndReason(""); setEndNote("")
+      return
     }
     // Optimistic — flip the status locally right away so the badge/buttons don't
     // sit on the old status for the round trip; fetchOrders() reconciles after.
@@ -124,6 +129,27 @@ export function OrderManagement() {
       toast.success(refund && refund.status !== "COMPLETED"
         ? `Order ${status === "CANCELLED" ? "cancelled" : "marked not fulfilled"} · ₹${refund.amount.toFixed(0)} to refund in PhonePe`
         : `Order marked ${status.toLowerCase()}`)
+      fetchOrders()
+    } catch (err) {
+      setOrders(previous)
+      toast.error(err.response?.data?.error || "Failed to update status")
+    }
+  }
+
+  // Cancel / not-fulfilled, with the reason the day-end report groups by.
+  const endOrder = async () => {
+    if (!endTarget || !endReason) return
+    const { order, status } = endTarget
+    const reason = endNote.trim() ? `${endReason}: ${endNote.trim()}` : endReason
+    setEndTarget(null)
+    const previous = orders
+    setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, status } : o)))
+    try {
+      const res = await axios.put(`${API}/api/order/${order.id}/status`, { status, reason }, { withCredentials: true })
+      const refund = res.data?.refunds?.[0]
+      toast.success(refund && refund.status !== "COMPLETED"
+        ? `Order ${status === "CANCELLED" ? "cancelled" : "marked not fulfilled"} · ₹${refund.amount.toFixed(0)} to refund in PhonePe`
+        : `Order ${status === "CANCELLED" ? "cancelled" : "marked not fulfilled"}`)
       fetchOrders()
     } catch (err) {
       setOrders(previous)
@@ -245,6 +271,40 @@ export function OrderManagement() {
         {" · "}{orders.length} order{orders.length === 1 ? "" : "s"}
         {" · "}₹{rangeRevenue.toLocaleString("en-IN")} revenue
       </p>
+
+      {/* Ending an order — the reason is required, and feeds the day-end report */}
+      <Dialog open={!!endTarget} onOpenChange={(open) => { if (!open) setEndTarget(null) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              {endTarget?.status === "CANCELLED" ? "Cancel" : "Mark not fulfilled"} order #{endTarget?.order?.dailyOrderNumber ?? endTarget?.order?.id}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 pt-1">
+            <div className="flex flex-wrap gap-2">
+              {END_REASONS.map((reason) => (
+                <button key={reason} type="button" onClick={() => setEndReason(reason)}
+                  className={`filter-chip ${endReason === reason ? "filter-chip-active" : ""}`}>
+                  {reason}
+                </button>
+              ))}
+            </div>
+            <Input placeholder="Note (optional)" value={endNote} onChange={(e) => setEndNote(e.target.value)} />
+            {endTarget?.order?.paymentMethod === "PHONEPE" && (
+              <p className="text-xs text-amber-600">
+                ₹{endTarget.order.totalAmount.toFixed(0)} will be flagged as a refund due — refund the customer in PhonePe,
+                then mark it refunded here.
+              </p>
+            )}
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setEndTarget(null)}>Keep order</Button>
+              <Button className="flex-1 bg-red-600 hover:bg-red-700 text-white" disabled={!endReason} onClick={endOrder}>
+                {endTarget?.status === "CANCELLED" ? "Cancel order" : "Not fulfilled"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Orders */}
       <Card className="border-0 shadow-sm">

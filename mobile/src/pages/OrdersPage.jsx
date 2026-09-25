@@ -93,11 +93,20 @@ export default function OrdersPage() {
                 overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
                 {o.orderItems?.map(i => `${i.quantity}× ${i.name}`).join(", ") || "—"}
               </p>
+              {o.status === "PAYMENT_FAILED" && (
+                <p style={{ fontSize:"0.75rem", color:"var(--error)", marginBottom:"0.5rem" }}>
+                  Payment didn't go through — you weren't charged.
+                </p>
+              )}
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                 <span style={{ fontSize:"0.75rem", color:"var(--muted)" }}>
                   {new Date(o.createdAt).toLocaleString([], { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit" })}
                 </span>
-                <span style={{ fontWeight:800, color:"var(--success)" }}>₹{o.totalAmount.toFixed(0)}</span>
+                {/* Nothing was taken for a failed attempt — don't show its
+                    total in the same "paid" green as a real order. */}
+                <span style={{ fontWeight:800, color: o.status === "PAYMENT_FAILED" ? "var(--muted)" : "var(--success)" }}>
+                  ₹{o.totalAmount.toFixed(0)}
+                </span>
               </div>
             </Link>
           ))

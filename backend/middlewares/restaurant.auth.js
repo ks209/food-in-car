@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import { JWT_SECRET } from '../config/secrets.js';
 import prisma from '../config/prisma.js';
 
 const restaurantAuth = async (req, res, next) => {
@@ -9,7 +10,7 @@ const restaurantAuth = async (req, res, next) => {
 
   let decoded;
   try {
-    decoded = jwt.verify(token, process.env.JWT_SECRET || "s3cret");
+    decoded = jwt.verify(token, JWT_SECRET);
   } catch (err) {
     return res.status(403).json({ error: "Invalid token" });
   }

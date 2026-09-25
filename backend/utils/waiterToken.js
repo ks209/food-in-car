@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
+import { JWT_SECRET } from '../config/secrets.js';
 
-const SECRET = process.env.JWT_SECRET || 's3cret';
+const SECRET = JWT_SECRET;
 
 // Short-lived (1 day) bearer token a restaurant mints for a waiter so they can scan
 // deliveries from their own phone without a login.

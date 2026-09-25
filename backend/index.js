@@ -1,6 +1,7 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import morgan from 'morgan';
+import { accessLogStream, setupFileLogging } from './config/logger.js';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import orderRouter from './routes/order/order.js';
@@ -17,6 +18,7 @@ import analyticsRouter from './routes/analytics/analytics.js';
 import parkingRouter from './routes/parking/parking.js';
 import waiterAppRouter from './routes/waiterApp/waiterApp.js';
 import venueRouter from './routes/venue/venue.js';
+import reportsRouter from './routes/reports/reports.js';
 import { startPendingOrderVerification } from './jobs/verifyPendingOrders.js';
 
 
@@ -24,6 +26,8 @@ import { startPendingOrderVerification } from './jobs/verifyPendingOrders.js';
 
 
 dotenv.config();
+// Before anything logs: mirrors console output into app.log when LOG_DIR is set.
+setupFileLogging();
 
 if (process.env.NODE_ENV === 'production' && !process.env.DASHBOARD_URL) {
   console.warn('[config] DASHBOARD_URL is not set — waiter scan links will point at the wrong host.');
@@ -71,7 +75,10 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// Requests to stdout (container logs), and to access.log as well when LOG_DIR
+// is set — see config/logger.js.
 app.use(morgan("combined"));
+if (accessLogStream) app.use(morgan("combined", { stream: accessLogStream }));
 
 app.use(cookieParser());
 
@@ -97,6 +104,7 @@ app.use('/api/analytics', analyticsRouter);
 app.use('/api/parking', parkingRouter);
 app.use('/api/waiter-app', waiterAppRouter);
 app.use('/api/venue', venueRouter);
+app.use('/api/reports', reportsRouter);
 
 
 app.get('/', async(req,res)=> res.send("Food Odering App"))

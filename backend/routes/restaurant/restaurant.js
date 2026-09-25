@@ -1,4 +1,6 @@
 import express from 'express';
+import { sessionCookie, clearCookieOptions, SESSION_MAX_AGE } from '../../config/cookies.js';
+import { JWT_SECRET } from '../../config/secrets.js';
 import bcrypt from 'bcryptjs';
 import prisma from '../../config/prisma.js';
 import jwt from 'jsonwebtoken';
@@ -625,20 +627,15 @@ restaurantRouter.post('/login', restaurantLoginLimiter, async(req,res)=>{
         if(!existing.isActive){
             return res.status(403).json({code:403, message:"This restaurant has been deactivated. Contact support."});
         }
-        const accessToken=jwt.sign({ id: existing.id }, process.env.JWT_SECRET || "s3cret", { expiresIn: '24h' });
-        const refreshToken=jwt.sign({ id: existing.id }, process.env.JWT_SECRET || "s3cret", { expiresIn:'7d' });
+        const accessToken=jwt.sign({ id: existing.id }, JWT_SECRET, { expiresIn: '24h' });
+        const refreshToken=jwt.sign({ id: existing.id }, JWT_SECRET, { expiresIn:'7d' });
         await prisma.restaurant.update({
             where: { id: existing.id },
             data: {
                 refreshToken: refreshToken,
             },
         })
-        res.cookie("token", accessToken, {
-        httpOnly: true,
-        secure: false,       // change to true in production with HTTPS
-        sameSite: "lax",     // or "strict" if you want tighter CSRF protection
-        maxAge: 24 * 60 * 60 * 1000 // 1 day
-        });
+        res.cookie("token", accessToken, sessionCookie({ maxAge: SESSION_MAX_AGE.day }));
         res.json({code:200,message:"loggedIn"});
     }else{
         res.status(401).json({code:401, message:"Wrong Credentials"})
@@ -647,7 +644,7 @@ restaurantRouter.post('/login', restaurantLoginLimiter, async(req,res)=>{
 })
 
 restaurantRouter.post("/logout", (req, res) => {
-  res.clearCookie("token");
+  res.clearCookie("token", clearCookieOptions);
   res.json({ message: "Logged out" });
 });
 

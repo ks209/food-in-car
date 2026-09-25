@@ -136,7 +136,7 @@ async function initiateV2(restaurant, { merchantOrderId, amountPaise, redirectUr
     data: {
       merchantOrderId,
       amount: amountPaise,
-      expireAfter: 1200, // 20 min; the abandon cron cancels unpaid orders after 45
+      expireAfter: 900, // 15 min — same window as the abandon cron (jobs/verifyPendingOrders.js)
       paymentFlow: {
         type: 'PG_CHECKOUT',
         merchantUrls: { redirectUrl },

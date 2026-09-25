@@ -177,6 +177,20 @@ export default function MenuPage() {
     [categories]
   )
 
+  // A veg/non-veg filter only means something on a mixed menu — a pure-veg
+  // (or pure non-veg) kitchen just gets two chips that either do nothing or
+  // empty the menu. Items with no veg marking count as neither.
+  const showVegFilters = useMemo(
+    () => allItems.some(i => i.isVeg === true) && allItems.some(i => i.isVeg === false),
+    [allItems]
+  )
+
+  // Menu changed under an active filter (item edited, restaurant switched) —
+  // don't leave the list filtered by a control that's no longer on screen.
+  useEffect(() => {
+    if (!showVegFilters) setVegFilter("all")
+  }, [showVegFilters])
+
   // Veg/sort apply the same way to a search result list and to every section.
   // Price sorting runs inside each category rather than across the whole menu —
   // the sections are the structure, sorting just orders them internally.
@@ -377,14 +391,18 @@ export default function MenuPage() {
       {/* ── Veg / sort filters ── */}
       {!loading && allItems.length > 0 && (
         <div style={{ display: "flex", gap: "0.45rem", flexWrap: "wrap", padding: "0 1rem 0.6rem" }}>
-          <button onClick={() => setVegFilter(v => (v === "veg" ? "all" : "veg"))}
-            className={`cat-chip ${vegFilter === "veg" ? "active" : ""}`}>
-            <span className="veg-dot veg" /> Veg
-          </button>
-          <button onClick={() => setVegFilter(v => (v === "nonveg" ? "all" : "nonveg"))}
-            className={`cat-chip ${vegFilter === "nonveg" ? "active" : ""}`}>
-            <span className="veg-dot nonveg" /> Non-Veg
-          </button>
+          {showVegFilters && (
+            <>
+              <button onClick={() => setVegFilter(v => (v === "veg" ? "all" : "veg"))}
+                className={`cat-chip ${vegFilter === "veg" ? "active" : ""}`}>
+                <span className="veg-dot veg" /> Veg
+              </button>
+              <button onClick={() => setVegFilter(v => (v === "nonveg" ? "all" : "nonveg"))}
+                className={`cat-chip ${vegFilter === "nonveg" ? "active" : ""}`}>
+                <span className="veg-dot nonveg" /> Non-Veg
+              </button>
+            </>
+          )}
           <button onClick={cycleSortBy} className={`cat-chip ${sortBy !== "default" ? "active" : ""}`}>
             <ArrowUpDown size={14} strokeWidth={2.4} /> {sortLabel}
           </button>

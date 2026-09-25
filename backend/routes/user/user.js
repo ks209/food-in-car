@@ -1,4 +1,6 @@
 import express from 'express';
+import { sessionCookie, clearCookieOptions, SESSION_MAX_AGE } from '../../config/cookies.js';
+import { JWT_SECRET } from '../../config/secrets.js';
 // import bcrypt from 'bcryptjs'; // only used by the disabled password routes below
 import jwt from 'jsonwebtoken';
 import prisma from '../../config/prisma.js';
@@ -66,14 +68,9 @@ userRouter.post('/login', async (req, res) => {
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) return res.status(401).json({ message: 'Wrong credentials' });
 
-    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET || 's3cret', { expiresIn: '7d' });
+    const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '7d' });
 
-    res.cookie('userToken', token, {
-      httpOnly: true,
-      secure: false,
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    res.cookie('userToken', token, sessionCookie({ maxAge: SESSION_MAX_AGE.week }));
 
     res.json({
       code: 200,
@@ -133,13 +130,8 @@ userRouter.post('/firebase-login', loginLimiter, async (req, res) => {
       where: { userId: user.id }, orderBy: { lastUsedAt: 'desc' }, select: { vehicleNo: true },
     });
 
-    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET || 's3cret', { expiresIn: '7d' });
-    res.cookie('userToken', token, {
-      httpOnly: true,
-      secure: false,
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '7d' });
+    res.cookie('userToken', token, sessionCookie({ maxAge: SESSION_MAX_AGE.week }));
 
     res.json({
       code: 200,
@@ -157,7 +149,7 @@ userRouter.post('/firebase-login', loginLimiter, async (req, res) => {
 });
 
 userRouter.post('/logout', (req, res) => {
-  res.clearCookie('userToken');
+  res.clearCookie('userToken', clearCookieOptions);
   res.json({ message: 'Logged out' });
 });
 

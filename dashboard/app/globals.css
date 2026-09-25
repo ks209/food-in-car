@@ -361,4 +361,28 @@ button, a { transition: color 0.15s ease, background-color 0.15s ease, border-co
   }
 
   .no-print { display: none !important; }
+
+  /* Thermal rolls (58/80mm). The paper size itself is injected as @page by
+     lib/printing.js — these rules reshape the bill to match: full width, no
+     rounding or shadows (they waste paper and print as grey mush), monospace
+     so columns line up, and tighter type since the roll is 2-3in wide. */
+  html[data-paper="58"] .invoice-print-area,
+  html[data-paper="80"] .invoice-print-area {
+    max-width: none;
+    width: auto;
+    margin: 0;
+    padding: 2mm;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    font-family: "Courier New", ui-monospace, monospace;
+    line-height: 1.35;
+  }
+  html[data-paper="58"] .invoice-print-area { font-size: 9px; }
+  html[data-paper="80"] .invoice-print-area { font-size: 11px; }
+  /* Thermal paper is monochrome — light greys print as unreadable dither. */
+  html[data-paper="58"] .invoice-print-area *,
+  html[data-paper="80"] .invoice-print-area * {
+    color: #000 !important;
+    border-color: #000 !important;
+  }
 }

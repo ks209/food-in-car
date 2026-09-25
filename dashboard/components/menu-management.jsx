@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Search, Plus, Edit, Trash2, X, GripVertical, FolderPlus, ArrowUpDown } from "lucide-react"
+import { Search, Plus, Edit, Trash2, Trash, X, GripVertical, FolderPlus, ArrowUpDown } from "lucide-react"
 import { Switch } from "@/components/ui/switch"
 import { toast } from "sonner"
 import axios from "axios"
@@ -20,6 +20,9 @@ import { CSS } from "@dnd-kit/utilities"
 
 const emptyItem = { name: "", description: "", price: 0, categoryId: "", available: true, isVeg: null, optionGroups: [] }
 const emptyCategory = { name: "", isActive: true }
+
+// Grouped in the Reports waste summary, so a fixed list rather than free text.
+const WASTE_REASONS = ["Spoiled", "Dropped", "Wrong order", "Left over", "Sample", "Other"]
 
 // Mirrors backend/utils/vegIcon.js — used only to pre-fill the Edit dialog
 // (strip a legacy hand-typed icon from the name preview, infer the veg
@@ -65,8 +68,15 @@ export function MenuManagement() {
   const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false)
   const [isEditCategoryOpen, setIsEditCategoryOpen] = useState(false)
   const [isReorderCategoriesOpen, setIsReorderCategoriesOpen] = useState(false)
+  // Category pending deletion (with its item count), and where to move its items
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [moveItemsTo, setMoveItemsTo] = useState("")
+  const [showRemoved, setShowRemoved] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState(null)
   const [newCategory, setNewCategory] = useState(emptyCategory)
+  // Item whose waste is being logged (spoiled, dropped, left over at close)
+  const [wasteItem, setWasteItem] = useState(null)
+  const [waste, setWaste] = useState({ quantity: "1", reason: "", note: "" })
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
@@ -170,21 +180,40 @@ export function MenuManagement() {
     } catch { toast.error("Failed to update category") }
   }
 
-  const handleDeleteCategory = async (id, name) => {
-    // Items aren't deleted, but they're hidden along with the category until
-    // they're moved to another one. Say so rather than letting the owner guess
-    // whether their dishes are about to disappear for good.
-    const itemCount = menuItems.filter((i) => i.categoryId === id).length
-    const note = itemCount
-      ? `\n\n${itemCount} item${itemCount === 1 ? "" : "s"} will be hidden with it. They aren't deleted — they come back if the category is restored.`
-      : ""
-    if (!window.confirm(`Remove the category "${name}"?${note}`)) return
+  // Opens the dialog; the actual delete runs in confirmDeleteCategory below.
+  const askDeleteCategory = (category) => {
+    setDeleteTarget({ ...category, itemCount: menuItems.filter((i) => i.categoryId === category.id).length })
+    setMoveItemsTo("")
+  }
+
+  const confirmDeleteCategory = async () => {
+    if (!deleteTarget) return
     try {
-      await axios.delete(`${API}/api/category/${id}`, { withCredentials: true })
-      toast.success("Category removed")
-      // Items too: their categoryId just changed.
+      const query = moveItemsTo ? `?moveItemsTo=${moveItemsTo}` : ""
+      const res = await axios.delete(`${API}/api/category/${deleteTarget.id}${query}`, { withCredentials: true })
+      toast.success(res.data?.outcome === "hidden"
+        ? `"${deleteTarget.name}" hidden with ${res.data.hiddenItems} item${res.data.hiddenItems === 1 ? "" : "s"}`
+        : `"${deleteTarget.name}" deleted`)
+      setDeleteTarget(null)
       fetchCategories(); fetchMenu()
     } catch (err) { toast.error(err.response?.data?.error || "Failed to remove category") }
+  }
+
+
+  // Logging waste has to be faster than throwing the food away, or nobody
+  // does it — item and cost come from the row, so it's quantity + reason.
+  const logWaste = async () => {
+    if (!wasteItem || !waste.reason) return
+    try {
+      await axios.post(`${API}/api/reports/waste`, {
+        menuItemId: wasteItem.id,
+        quantity: Number(waste.quantity) || 1,
+        reason: waste.reason,
+        note: waste.note,
+      }, { withCredentials: true })
+      toast.success(`Logged ${waste.quantity} × ${wasteItem.name} as waste`)
+      setWasteItem(null)
+    } catch (err) { toast.error(err.response?.data?.error || "Couldn't log waste") }
   }
 
   // Brings back a removed category and, with it, the items still attached to
@@ -294,7 +323,6 @@ export function MenuManagement() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-slate-500 text-sm">
           {menuItems.length} items · {activeCategories.length} categories
-          {deletedCategories.length > 0 && <> · {deletedCategories.length} removed</>}
         </p>
         <div className="flex flex-wrap gap-2">
           {activeCategories.length > 1 && (
@@ -317,23 +345,27 @@ export function MenuManagement() {
         <Input placeholder="Search items…" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9 bg-white" />
       </div>
 
-      {/* Removed categories — their items are hidden with them until restored */}
+      {/* Hidden categories (they still hold items) — one collapsed line, since
+          this is rare: a category with nothing in it is deleted outright. */}
       {deletedCategories.length > 0 && (
-        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
-          <p className="text-xs text-slate-500 mb-2">
-            Removed categories. Their items are hidden from the menu and still attached — restore a category to bring them back.
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {deletedCategories.map((c) => (
-              <span key={c.id} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs">
-                <span className="font-medium text-slate-600">{c.name}</span>
-                <button type="button" onClick={() => handleRestoreCategory(c)}
-                  className="font-medium text-slate-500 underline hover:text-slate-800">
-                  Restore
-                </button>
-              </span>
-            ))}
-          </div>
+        <div className="text-xs">
+          <button type="button" onClick={() => setShowRemoved((s) => !s)}
+            className="text-slate-400 hover:text-slate-600">
+            {deletedCategories.length} hidden categor{deletedCategories.length === 1 ? "y" : "ies"} {showRemoved ? "▴" : "▾"}
+          </button>
+          {showRemoved && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {deletedCategories.map((c) => (
+                <span key={c.id} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                  <span className="font-medium text-slate-600">{c.name}</span>
+                  <button type="button" onClick={() => handleRestoreCategory(c)}
+                    className="font-medium text-slate-500 underline hover:text-slate-800">
+                    Restore
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -383,7 +415,7 @@ export function MenuManagement() {
                       <Edit className="h-3.5 w-3.5" />
                     </Button>
                     <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-400 hover:text-red-600"
-                      onClick={() => handleDeleteCategory(group.id, group.name)}>
+                      onClick={() => askDeleteCategory({ id: group.id, name: group.name })}>
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </>
@@ -418,6 +450,7 @@ export function MenuManagement() {
                           setIsEditItemOpen(true)
                         }}
                         onDelete={() => handleDeleteItem(item.id)}
+                        onLogWaste={() => { setWasteItem(item); setWaste({ quantity: "1", reason: "", note: "" }) }}
                       />
                     ))}
                   </div>
@@ -531,6 +564,76 @@ export function MenuManagement() {
               <Button variant="outline" size="sm" onClick={() => setIsAddCategoryOpen(false)}>Cancel</Button>
               <Button size="sm" onClick={handleAddCategory} className="brand-bg text-white">Add</Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Log waste — totals show up in Reports */}
+      <Dialog open={!!wasteItem} onOpenChange={(open) => { if (!open) setWasteItem(null) }}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader><DialogTitle>Log waste · {wasteItem?.name}</DialogTitle></DialogHeader>
+          <div className="space-y-3 pt-1">
+            <div className="space-y-1.5">
+              <Label className="text-sm">Quantity</Label>
+              <Input type="number" min="0.5" step="0.5" value={waste.quantity} autoFocus
+                onChange={(e) => setWaste({ ...waste, quantity: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm">Reason</Label>
+              <div className="flex flex-wrap gap-2">
+                {WASTE_REASONS.map((reason) => (
+                  <button key={reason} type="button" onClick={() => setWaste({ ...waste, reason })}
+                    className={`filter-chip ${waste.reason === reason ? "filter-chip-active" : ""}`}>
+                    {reason}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <Input placeholder="Note (optional)" value={waste.note}
+              onChange={(e) => setWaste({ ...waste, note: e.target.value })} />
+            <p className="text-xs text-slate-500">
+              Costed at {wasteItem ? `₹${(wasteItem.price * (Number(waste.quantity) || 0)).toFixed(0)}` : "—"} (menu price).
+            </p>
+            <Button className="w-full brand-bg text-white" disabled={!waste.reason} onClick={logWaste}>Log waste</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Category dialog — an empty category just goes; one with items
+          asks where they should go first, so nothing is silently hidden. */}
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Remove "{deleteTarget?.name}"</DialogTitle></DialogHeader>
+          {deleteTarget?.itemCount > 0 ? (
+            <div className="space-y-3 pt-1">
+              <p className="text-sm text-slate-600">
+                It has {deleteTarget.itemCount} item{deleteTarget.itemCount === 1 ? "" : "s"}. What should happen to {deleteTarget.itemCount === 1 ? "it" : "them"}?
+              </p>
+              <div className="space-y-1.5">
+                <Label className="text-sm">Move items to</Label>
+                <Select value={moveItemsTo} onValueChange={setMoveItemsTo}>
+                  <SelectTrigger><SelectValue placeholder="Hide them with the category" /></SelectTrigger>
+                  <SelectContent>
+                    {activeCategories.filter((c) => c.id !== deleteTarget.id).map((c) => (
+                      <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-slate-500">
+                  {moveItemsTo
+                    ? "Items move there and stay on the menu. This category is then deleted."
+                    : "The category and its items are hidden from the menu. You can restore them later."}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-600 pt-1">It has no items, so it will be deleted permanently.</p>
+          )}
+          <div className="flex gap-2 pt-1">
+            <Button variant="outline" className="flex-1" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button className="flex-1 bg-red-600 hover:bg-red-700 text-white" onClick={confirmDeleteCategory}>
+              {deleteTarget?.itemCount > 0 && !moveItemsTo ? "Hide category" : "Delete category"}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -693,7 +796,7 @@ function SortableCategoryRow({ category, index }) {
   )
 }
 
-function SortableMenuItemRow({ item, onToggleAvailability, onEdit, onDelete }) {
+function SortableMenuItemRow({ item, onToggleAvailability, onEdit, onDelete, onLogWaste }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id })
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -729,6 +832,10 @@ function SortableMenuItemRow({ item, onToggleAvailability, onEdit, onDelete }) {
 
         <span className="font-bold text-slate-900 text-sm flex-shrink-0">₹{item.price.toFixed(0)}</span>
         <Switch checked={item.available} onCheckedChange={onToggleAvailability} className="flex-shrink-0" />
+        {/* Spoiled, dropped, or left over at close — logged against this item */}
+        <Button variant="outline" size="sm" className="h-8 w-8 p-0 flex-shrink-0 text-slate-400" onClick={onLogWaste} title="Log waste">
+          <Trash className="h-3.5 w-3.5" />
+        </Button>
         <Button variant="outline" size="sm" className="h-8 w-8 p-0 flex-shrink-0" onClick={onEdit}>
           <Edit className="h-3.5 w-3.5" />
         </Button>

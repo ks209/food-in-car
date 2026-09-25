@@ -1,8 +1,9 @@
 import jwt from 'jsonwebtoken';
+import { JWT_SECRET } from '../config/secrets.js';
 import { verifyWaiterToken } from '../utils/waiterToken.js';
 import { waiterTokenFrom, waiterAccessError } from './waiter.auth.js';
 
-const SECRET = process.env.JWT_SECRET || 's3cret';
+const SECRET = JWT_SECRET;
 
 // Authorizes the order-scan endpoint by EITHER:
 //  - a waiter token (query ?token= or Authorization: Bearer / x-waiter-token header)

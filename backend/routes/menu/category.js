@@ -165,12 +165,18 @@ categoryRouter.put('/:id', restaurantAuth, async (req, res) => {
     }
 });
 
-// Soft delete: the category is hidden everywhere (GET / and the customer menu
-// both filter on isActive), but its row stays so old orders keep resolving.
+// Deleting a category, in order of preference:
 //
-// Its items KEEP pointing at it and are hidden along with it — they reappear
-// once they're moved to a live category. They are deliberately not moved to
-// some "Uncategorized" bucket: that isn't a real category in this product.
+//   1. ?moveItemsTo=<id> — its items are re-filed under another category, then
+//      the category itself is deleted outright. Nothing is hidden.
+//   2. No items on the menu under it — deleted outright.
+//   3. Still has items and no destination — the category AND its items are
+//      hidden together (isActive: false, items keep pointing at it), and the
+//      dashboard offers to restore them. Items are never dumped into an
+//      "Uncategorized" bucket: that isn't a real category in this product.
+//
+// Rows are only kept when they still hold items, so the "removed categories"
+// list stays short instead of collecting every category ever deleted.
 categoryRouter.delete('/:id', restaurantAuth, async (req, res) => {
     try {
         const categoryId = parseInt(req.params.id);
@@ -184,12 +190,44 @@ categoryRouter.delete('/:id', restaurantAuth, async (req, res) => {
         });
         if (!existing) return res.status(404).json({ error: 'Category not found' });
 
+        // ?moveItemsTo=<id> re-files this category's items first, so the
+        // category itself can then be removed outright.
+        const moveItemsTo = req.query.moveItemsTo ? parseInt(req.query.moveItemsTo) : null;
+        if (moveItemsTo !== null) {
+            if (!Number.isInteger(moveItemsTo) || moveItemsTo === categoryId) {
+                return res.status(400).json({ error: 'Invalid destination category' });
+            }
+            const target = await prisma.category.findFirst({
+                where: { id: moveItemsTo, restaurantId: req.restaurantId, isActive: true },
+                select: { id: true },
+            });
+            if (!target) return res.status(400).json({ error: 'Destination category not found' });
+            await prisma.menuItem.updateMany({
+                where: { categoryId, restaurantId: req.restaurantId },
+                data: { categoryId: moveItemsTo },
+            });
+        }
+
+        // Nothing left on the menu under it → delete for real rather than
+        // leaving a hidden row to clutter the "removed" list forever. Only
+        // live items count: already-deleted ones are detached first, since
+        // they're invisible anyway and would otherwise block the delete.
+        const liveItems = await prisma.menuItem.count({ where: { categoryId, isActive: true } });
+        if (liveItems === 0) {
+            await prisma.$transaction([
+                prisma.menuItem.updateMany({ where: { categoryId }, data: { categoryId: null } }),
+                prisma.category.delete({ where: { id: categoryId } }),
+            ]);
+            return res.status(200).json({ message: 'Category deleted', outcome: 'deleted', movedItems: moveItemsTo ? true : false });
+        }
+
+        // Still has items and no destination was given: hide both, restorable.
         const deletedCategory = await prisma.category.update({
             where: { id: categoryId },
             data: { isActive: false, updatedAt: new Date() },
         });
 
-        res.status(200).json({ message: "Category deleted successfully", category: deletedCategory });
+        res.status(200).json({ message: 'Category hidden with its items', outcome: 'hidden', hiddenItems: liveItems, category: deletedCategory });
     } catch (error) {
         res.status(500).json({ error: "Failed to delete category", details: error.message });
     }

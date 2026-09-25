@@ -4,7 +4,7 @@ import { isDevMode, reconcileTransaction } from '../utils/phonepe.js';
 import { verifyPendingRefunds } from '../utils/refunds.js';
 
 const CHECK_AFTER_MIN = 5;    // give the customer time to finish paying before the first check
-const ABANDON_AFTER_MIN = 45; // still pending after this long — treat as abandoned, auto-cancel
+const ABANDON_AFTER_MIN = 15; // still pending after this long — treat as abandoned
 
 // Reconciles orders that started a PhonePe payment but never got a webhook/redirect
 // confirmation — e.g. the customer closed the tab mid-payment, or PhonePe's callback
@@ -24,7 +24,7 @@ async function verifyPendingOrders() {
 
   if (stuckTxns.length === 0) return;
 
-  let paid = 0, cancelled = 0, stillPending = 0, skipped = 0, errored = 0;
+  let paid = 0, failedNow = 0, cancelled = 0, stillPending = 0, skipped = 0, errored = 0;
 
   for (const txn of stuckTxns) {
     // Credentials are per-restaurant — a restaurant with none configured has
@@ -38,6 +38,10 @@ async function verifyPendingOrders() {
     try {
       const result = await reconcileTransaction(txn.order.restaurant, txn);
       if (result.paid) { paid++; continue; }
+      // PhonePe reported it FAILED: reconcileTransaction has already moved the
+      // order to PAYMENT_FAILED, so don't fall through to the abandon branch
+      // and write a second PAYMENT_FAILED history entry for the same order.
+      if (result.failed) { failedNow++; continue; }
       state = result.state;
     } catch (err) {
       // A status lookup throws either because PhonePe has no record of this
@@ -78,7 +82,7 @@ async function verifyPendingOrders() {
     }
   }
 
-  console.log(`[verify-pending-orders] checked ${stuckTxns.length} — paid ${paid}, payment-failed ${cancelled}, still pending ${stillPending}, status-check errors ${errored}, skipped (no gateway) ${skipped}`);
+  console.log(`[verify-pending-orders] checked ${stuckTxns.length} — paid ${paid}, failed at gateway ${failedNow}, abandoned ${cancelled}, still pending ${stillPending}, status-check errors ${errored}, skipped (no gateway) ${skipped}`);
 }
 
 export function startPendingOrderVerification() {

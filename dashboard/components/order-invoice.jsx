@@ -2,6 +2,8 @@
 
 import { Fragment, useState } from "react"
 import { createPortal } from "react-dom"
+import { createRoot } from "react-dom/client"
+import { applyPaperSize, loadPrintSettings, printViaRawBT } from "@/lib/printing"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Printer, Receipt } from "lucide-react"
@@ -138,6 +140,36 @@ function InvoiceBody({ order, className }) {
 // the (still browser-managed) full page-height produced. Portalling a plain,
 // normal-flow copy straight onto <body> and hiding everything else at the
 // body level sidesteps that entirely — the bill just prints once, in place.
+// Prints a bill without any dialog being open — used by the POS's auto-print
+// and by the Print button below. Renders the same invoice into a throwaway
+// node on <body>, since the print stylesheet hides everything except
+// .invoice-print-area.
+export async function printOrderReceipt(order, settings = loadPrintSettings()) {
+  if (!order) return
+  applyPaperSize(settings.paper)
+
+  // Bluetooth thermal printers on Android aren't system printers — hand the
+  // receipt to RawBT as text instead of trying to print the page.
+  if (settings.mode === "rawbt") {
+    printViaRawBT(order, settings.paper)
+    return
+  }
+
+  const host = document.createElement("div")
+  host.className = "invoice-print-area"
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  root.render(<InvoiceBody order={order} />)
+  // Let React paint before the (synchronous) print call.
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  try {
+    for (let i = 0; i < Math.max(1, settings.copies || 1); i++) window.print()
+  } finally {
+    root.unmount()
+    host.remove()
+  }
+}
+
 export function OrderInvoice({ order }) {
   const [open, setOpen] = useState(false)
 
@@ -155,7 +187,7 @@ export function OrderInvoice({ order }) {
 
         <InvoiceBody order={order} />
 
-        <Button className="w-full brand-bg text-white no-print" onClick={() => window.print()}>
+        <Button className="w-full brand-bg text-white no-print" onClick={() => printOrderReceipt(order)}>
           <Printer className="h-4 w-4 mr-2" /> Print / Save as PDF
         </Button>
       </DialogContent>

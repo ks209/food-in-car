@@ -44,6 +44,28 @@ export async function getAllBills() {
   })
 }
 
+// Synced bills are only kept so staff can reprint or check a recent one;
+// after a month the server is the record. Pending/failed ones are NEVER
+// removed — they're the only copy of a sale that hasn't landed yet.
+const SYNCED_KEEP_MS = 30 * 24 * 60 * 60 * 1000
+
+export async function pruneSyncedBills(maxAgeMs = SYNCED_KEEP_MS) {
+  const db = await openDb()
+  const cutoff = Date.now() - maxAgeMs
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(BILLS_STORE, "readwrite")
+    const store = tx.objectStore(BILLS_STORE)
+    const req = store.getAll()
+    req.onsuccess = () => {
+      for (const bill of req.result) {
+        if (bill.status === "synced" && bill.createdAt < cutoff) store.delete(bill.idempotencyKey)
+      }
+    }
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+}
+
 export async function cacheMenu(restaurantId, items) {
   const db = await openDb()
   return new Promise((resolve, reject) => {
@@ -62,4 +84,18 @@ export async function getCachedMenu(restaurantId) {
     req.onsuccess = () => resolve(req.result?.items || [])
     req.onerror = () => reject(req.error)
   })
+}
+
+// ── Held ("parked") bills ───────────────────────────────────────────────────
+// Unfinished carts, so the counter can serve a second customer without losing
+// the first. Device-local and short-lived, so localStorage rather than
+// IndexedDB — and never sent to the server: a held bill isn't a sale yet.
+const PARKED_KEY = "carkhanaa-parked-bills"
+
+export function loadParked() {
+  try { return JSON.parse(localStorage.getItem(PARKED_KEY) || "[]") } catch { return [] }
+}
+
+export function saveParked(list) {
+  try { localStorage.setItem(PARKED_KEY, JSON.stringify(list)) } catch { /* storage full/blocked */ }
 }

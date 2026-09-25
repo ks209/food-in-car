@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import { JWT_SECRET } from '../config/secrets.js';
 
 // Guards super-admin (support portal) routes. Verifies the adminToken JWT cookie.
 const supportAuth = (req, res, next) => {
@@ -6,7 +7,7 @@ const supportAuth = (req, res, next) => {
   if (!token) return res.status(403).json({ error: 'No token provided' });
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 's3cret');
+    const decoded = jwt.verify(token, JWT_SECRET);
     if (decoded.role !== 'admin') return res.status(403).json({ error: 'Not authorized' });
     req.admin = decoded;
     next();

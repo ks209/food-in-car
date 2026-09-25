@@ -109,6 +109,7 @@ model Restaurant {
   parkingSpots   ParkingSpot[]
   venues         VenueRestaurant[]
   dailyCounters  DailyCounter[]
+  wasteLogs      WasteLog[]
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
   isActive       Boolean
@@ -146,6 +147,7 @@ model MenuItem {
   optionGroups    OptionGroup[]
   orderItems      OrderItem[]
   menuItemHistory MenuItemHistory[]
+  wasteLogs       WasteLog[]
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
   isActive        Boolean
@@ -208,6 +210,11 @@ model Order {
   deliveryCode         String?              @unique
   deviceKey            String?
   deliveryInstructions String
+  // Why an order was cancelled / not fulfilled, captured at the moment the
+  // restaurant does it — the day-end report groups by this, and "kitchen
+  // error" vs "customer cancelled" are very different problems.
+  cancelReason         String?
+  cancelledBy          String?
   orderItems           OrderItem[]
   orderStatusHistory   OrderStatusHistory[]
   merchantTransaction  MerchantTransaction[]
@@ -307,6 +314,27 @@ model Refund {
   updatedAt   DateTime @updatedAt
 
   @@index([orderId])
+}
+
+// Food thrown away — spoilage, a dropped plate, end-of-day leftovers. Not tied
+// to an order: most waste never reaches one. The item name is snapshotted so
+// the log still reads correctly after the menu changes.
+model WasteLog {
+  id           Int        @id @default(autoincrement())
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  restaurantId Int
+  menuItem     MenuItem?  @relation(fields: [menuItemId], references: [id])
+  menuItemId   Int?
+  name         String
+  quantity     Float
+  reason       String
+  // What it cost the restaurant, at menu price unless overridden.
+  estimatedCost Float     @default(0)
+  note         String?
+  loggedBy     String?
+  createdAt    DateTime   @default(now())
+
+  @@index([restaurantId, createdAt])
 }
 
 model MerchantTransaction {

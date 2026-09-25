@@ -7,12 +7,16 @@ import { businessDateKey } from './businessHours.js';
 // at 2 AM continues the evening's numbering instead of restarting at #1.
 // Raw SQL upsert instead of a read-then-write so concurrent order creations
 // can't race each other onto the same number.
-export async function nextDailyOrderNumber(restaurantId) {
+// `when` is the moment the order was actually placed. It matters for offline
+// POS bills, which sync later — sometimes the next morning: without it a bill
+// rung up last night would take a number from today's series while being dated
+// yesterday, so yesterday's list would show #1, #2, then a stray #37.
+export async function nextDailyOrderNumber(restaurantId, when = new Date()) {
   const restaurant = await prisma.restaurant.findUnique({
     where: { id: restaurantId },
     select: { openingTime: true, closingTime: true },
   });
-  const date = businessDateKey(restaurant);
+  const date = businessDateKey(restaurant, when);
   const rows = await prisma.$queryRaw`
     INSERT INTO "DailyCounter" ("restaurantId", "date", "lastNumber")
     VALUES (${restaurantId}, ${date}, 1)

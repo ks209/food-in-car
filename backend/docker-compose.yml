@@ -11,6 +11,17 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/foodincar?schema=public
       REDIS_URL: redis://redis:6379
       PORT: 5000
+      # Rotating access.log + app.log on the host (see config/logger.js).
+      # Remove this to keep logs in `docker compose logs` only.
+      LOG_DIR: /app/logs
+    volumes:
+      - ./logs:/app/logs
+    # Container stdout is still the primary log — cap it so it can't fill the disk.
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
     depends_on:
       db:
         condition: service_healthy

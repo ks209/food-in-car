@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useEffect, useState } from "react"
-import { LayoutDashboard, ShoppingBag, Menu, LogOut, ScanLine, Users, Contact, Settings, BarChart3, Bell, BellOff, PanelLeft, X, Paintbrush, ChefHat, Receipt, WifiOff, RefreshCw } from "lucide-react"
+import { LayoutDashboard, ShoppingBag, Menu, LogOut, ScanLine, Users, Contact, Settings, BarChart3, Bell, BellOff, PanelLeft, X, Paintbrush, ChefHat, Receipt, WifiOff, RefreshCw, TrendingUp, FileText } from "lucide-react"
 import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
 import axios from "axios"
@@ -22,6 +22,8 @@ const navigation = [
   { name: "Servers", href: "/dashboard/waiters", icon: Users },
   { name: "Customers", href: "/dashboard/customers", icon: Contact },
   { name: "Menu", href: "/dashboard/menu", icon: Menu },
+  { name: "Menu Performance", href: "/dashboard/menu-performance", icon: TrendingUp },
+  { name: "Reports", href: "/dashboard/reports", icon: FileText },
   { name: "Customize", href: "/dashboard/customize", icon: Paintbrush },
   { name: "Settings", href: "/dashboard/settings", icon: Settings },
 ]
@@ -118,8 +120,10 @@ function Sidebar({ open, onClose }) {
 function BillingSyncBadge() {
   const billing = useBilling()
   if (!billing) return null
-  const { online, pendingCount, failedCount } = billing
-  if (online && pendingCount === 0 && failedCount === 0) return null
+  const { online, pendingCount, failedCount, mismatchCount } = billing
+  // Hidden on a quiet, connected till; visible the moment something needs
+  // attention — including a bill whose price changed between print and sync.
+  if (online && pendingCount === 0 && failedCount === 0 && !mismatchCount) return null
   return (
     <Link
       href="/dashboard/billing"
@@ -129,7 +133,11 @@ function BillingSyncBadge() {
       title={!online ? "You're offline — bills are being saved locally" : "Bills waiting to sync"}
     >
       {!online ? <WifiOff className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />}
-      {!online ? "Offline" : failedCount > 0 ? `${failedCount} sync failed` : `${pendingCount} pending sync`}
+      {!online
+        ? `Offline${pendingCount > 0 ? ` · ${pendingCount} to sync` : ""}`
+        : failedCount > 0 ? `${failedCount} sync failed`
+        : pendingCount > 0 ? `${pendingCount} pending sync`
+        : `${mismatchCount} price mismatch`}
     </Link>
   )
 }

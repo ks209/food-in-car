@@ -12,6 +12,7 @@ import axios from "axios"
 
 import { API } from "@/lib/api"
 import { StatusDot } from "@/components/ui/status-dot"
+import { todayStr, daysAgoStr, localDateRange } from "@/lib/format"
 
 export function WaiterManagement() {
   const [waiters, setWaiters] = useState([])
@@ -114,6 +115,8 @@ export function WaiterManagement() {
 
   return (
     <div className="max-w-2xl space-y-5">
+      <ServerPerformance />
+
       {/* Add server */}
       <Card className="border-0 shadow-sm">
         <CardHeader className="pb-3">
@@ -236,5 +239,68 @@ export function WaiterManagement() {
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+// How long each server takes between the kitchen marking an order READY and
+// scanning it as delivered. Averages over a couple of deliveries say nothing,
+// so rows without enough data are shown but not ranked on time.
+function ServerPerformance() {
+  const [days, setDays] = useState(30)
+  const [servers, setServers] = useState(null)
+
+  useEffect(() => {
+    const params = localDateRange(daysAgoStr(days - 1), todayStr())
+    axios.get(`${API}/api/reports/servers`, { params, withCredentials: true })
+      .then((r) => setServers(r.data.servers))
+      .catch(() => setServers([]))
+  }, [days])
+
+  if (!servers || servers.length === 0) return null
+
+  return (
+    <Card className="border-0 shadow-sm">
+      <CardHeader className="pb-3 flex-row items-center justify-between space-y-0">
+        <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-2">
+          <Users className="h-4 w-4" /> Delivery performance
+        </CardTitle>
+        <div className="flex gap-1.5">
+          {[7, 30].map((d) => (
+            <button key={d} onClick={() => setDays(d)} className={`filter-chip ${days === d ? "filter-chip-active" : ""}`}>
+              {d} days
+            </button>
+          ))}
+        </div>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="divide-y divide-slate-50">
+          {servers.map((s) => (
+            <div key={s.id} className="px-5 py-3 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-slate-800 truncate">{s.name}</p>
+                <p className="text-xs text-slate-400">
+                  {s.deliveries} deliver{s.deliveries === 1 ? "y" : "ies"}
+                  {s.claimedNotDelivered > 0 && ` · ${s.claimedNotDelivered} claimed, not delivered`}
+                </p>
+              </div>
+              <div className="text-right flex-shrink-0">
+                {s.medianMinutes === null ? (
+                  <p className="text-xs text-slate-400">No timed deliveries</p>
+                ) : (
+                  <>
+                    <p className={`text-sm font-semibold ${s.enoughData ? "text-slate-900" : "text-slate-400"}`}>
+                      {s.medianMinutes} min
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      typical{s.enoughData ? "" : " (too few to judge)"} · slowest {s.slowestMinutes} min
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   )
 }

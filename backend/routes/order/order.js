@@ -1,4 +1,5 @@
 import express from 'express';
+import { JWT_SECRET } from '../../config/secrets.js';
 import jwt from 'jsonwebtoken';
 import prisma from '../../config/prisma.js';
 import restaurantAuth from '../../middlewares/restaurant.auth.js';
@@ -91,9 +92,10 @@ orderRouter.get('/', restaurantAuth, async (req, res) => {
 orderRouter.get('/mine', userAuth, async (req, res) => {
   try {
     const orders = await prisma.order.findMany({
-      // Failed payment attempts aren't orders. PENDING stays — that's a
-      // payment the customer may still be completing.
-      where: { userId: req.userId, status: { not: 'PAYMENT_FAILED' } },
+      // Includes PAYMENT_FAILED: the customer should see an attempt that
+      // didn't go through (and that they weren't charged). The dashboard is
+      // the side that hides them — see NOT_REAL_ORDER_STATES.
+      where: { userId: req.userId },
       include: {
         orderItems: { include: { options: true } },
         orderStatusHistory: { orderBy: { updatedAt: 'desc' } },
@@ -251,7 +253,7 @@ orderRouter.get('/:id', async (req, res) => {
     const token = req.cookies?.userToken;
     if (!codeMatches && token) {
       try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 's3cret');
+        const decoded = jwt.verify(token, JWT_SECRET);
         ownsOrder = decoded.id === order.userId;
       } catch {
         // invalid/expired token — falls through to the 403 below
@@ -312,7 +314,20 @@ orderRouter.post('/pos', restaurantAuth, async (req, res) => {
       userId = customer.id;
     }
 
-    const dailyOrderNumber = await nextDailyOrderNumber(req.restaurantId);
+    // An offline bill syncs whenever connectivity returns — possibly the next
+    // morning. Keep the time it was actually rung up, or a night's takings
+    // land in the next day's reports. Bounded: never in the future, never
+    // older than a week, so a wrong device clock can't rewrite history.
+    const claimed = req.body.createdAt ? new Date(req.body.createdAt) : null;
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const createdAt = claimed && !isNaN(claimed) && claimed <= new Date() && claimed >= weekAgo
+      ? claimed
+      : undefined; // undefined = Prisma's default (now)
+
+    // Numbered against the business day the bill belongs to, not the day it
+    // synced — so a late-syncing offline bill continues that evening's series
+    // instead of taking a number out of today's.
+    const dailyOrderNumber = await nextDailyOrderNumber(req.restaurantId, createdAt);
 
     // GST computed here from the bill's items and the restaurant's current tax
     // settings (the POS screen shows the same breakdown), so the stored bill is
@@ -330,6 +345,7 @@ orderRouter.post('/pos', restaurantAuth, async (req, res) => {
         userId,
         dailyOrderNumber,
         idempotencyKey,
+        ...(createdAt ? { createdAt } : {}),
         // No name typed at the counter → use the known customer's name for this phone
         guestName: (guestName || '').trim() || customer?.customerName || 'Walk-in Customer',
         guestVehicle: vehicle,
@@ -414,12 +430,18 @@ orderRouter.put('/:id/status', restaurantAuth, async (req, res) => {
     // Conditional on the status we just checked: if something else moved the
     // order in between (another tab, the waiter scan), this changes nothing
     // instead of overwriting it.
+    // Why it died, recorded at the moment it dies — the day-end report groups
+    // by this, and "out of stock" and "kitchen error" need different fixes.
+    const ending = status === 'CANCELLED' || status === 'NOT_FULFILLED';
+    const reason = ending ? String(req.body.reason || '').trim().slice(0, 120) : null;
+    if (ending && !reason) return res.status(400).json({ error: 'A reason is required to cancel an order' });
+
     const { count } = await prisma.order.updateMany({
       where: { id: orderId, status: existing.status },
-      data: { status },
+      data: { status, ...(ending ? { cancelReason: reason, cancelledBy: 'restaurant' } : {}) },
     });
     if (!count) return res.status(409).json({ error: 'This order was just updated — refresh and try again' });
-    await prisma.orderStatusHistory.create({ data: { orderId, status, updatedBy: 'restaurant' } });
+    await prisma.orderStatusHistory.create({ data: { orderId, status, updatedBy: reason ? `restaurant (${reason})` : 'restaurant' } });
 
     // Paid online and now won't be served → record that a refund is owed.
     // Automatic refunds are off (see utils/refunds.js): the dashboard shows
